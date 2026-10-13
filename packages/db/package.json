@@ -8,7 +8,9 @@
 	"scripts": {
 		"generate": "drizzle-kit generate",
 		"migrate": "node src/migrate.ts",
-		"check": "tsc -p ."
+		"check": "tsc -p .",
+		"invite": "node src/invite.ts",
+		"test": "node --test src/*.test.ts"
 	},
 	"dependencies": {
 		"@cs-demo-cloud/shared": "workspace:*",

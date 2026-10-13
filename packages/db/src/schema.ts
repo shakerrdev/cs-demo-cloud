@@ -1,4 +1,12 @@
-import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import {
+	index,
+	integer,
+	primaryKey,
+	sqliteTable,
+	text,
+	uniqueIndex
+} from 'drizzle-orm/sqlite-core';
 
 export const demoSources = ['upload', 'valve', 'extension'] as const;
 export const demoStatuses = ['queued', 'processing', 'ready', 'failed'] as const;
@@ -6,11 +14,49 @@ export const demoFormats = ['dem', 'bz2', 'gz', 'zst'] as const;
 export const platforms = ['valve', 'faceit', 'other'] as const;
 export const sides = ['CT', 'T'] as const;
 export const teams = ['a', 'b'] as const;
+export const roles = ['admin', 'member'] as const;
 
 const createdAt = () =>
 	integer('created_at', { mode: 'timestamp_ms' })
 		.notNull()
 		.$defaultFn(() => new Date());
+
+export const users = sqliteTable(
+	'users',
+	{
+		id: text('id')
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		name: text('name').notNull(),
+		passwordHash: text('password_hash').notNull(),
+		role: text('role', { enum: roles }).notNull(),
+		createdAt: createdAt()
+	},
+	(table) => [uniqueIndex('users_name_lower_idx').on(sql`lower(${table.name})`)]
+);
+
+export const sessions = sqliteTable(
+	'sessions',
+	{
+		id: text('id').primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+		createdAt: createdAt()
+	},
+	(table) => [index('sessions_user_idx').on(table.userId)]
+);
+
+export const invites = sqliteTable('invites', {
+	id: text('id').primaryKey(),
+	role: text('role', { enum: roles }).notNull(),
+	createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+	expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+	usedAt: integer('used_at', { mode: 'timestamp_ms' }),
+	usedBy: text('used_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: createdAt()
+});
 
 export const demos = sqliteTable(
 	'demos',
@@ -26,6 +72,7 @@ export const demos = sqliteTable(
 		source: text('source', { enum: demoSources }).notNull(),
 		status: text('status', { enum: demoStatuses }).notNull().default('queued'),
 		error: text('error'),
+		uploadedBy: text('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
 		createdAt: createdAt(),
 		updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
 			.notNull()
@@ -135,3 +182,6 @@ export type NewRound = typeof rounds.$inferInsert;
 export type Kill = typeof kills.$inferSelect;
 export type NewKill = typeof kills.$inferInsert;
 export type Platform = (typeof platforms)[number];
+export type Role = (typeof roles)[number];
+export type User = typeof users.$inferSelect;
+export type Invite = typeof invites.$inferSelect;
