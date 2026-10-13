@@ -3,13 +3,14 @@ x-app: &app
   image: cs-demo-cloud
   restart: unless-stopped
   volumes:
-    - data:/data
+    - ${DATA_PATH:-data}:/data
+    - db:/db
 
 services:
   web:
     <<: *app
     environment:
-      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      ORIGIN: ${ORIGIN:-}
     ports:
       - ${BIND:-127.0.0.1}:${PORT:-3000}:3000
     healthcheck:
@@ -31,3 +32,4 @@ services:
 
 volumes:
   data:
+  db:

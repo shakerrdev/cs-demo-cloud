@@ -26,6 +26,7 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
 	DATA_DIR=/data \
+	DATABASE_PATH=/db/app.db \
 	PORT=3000 \
 	BODY_SIZE_LIMIT=Infinity
 WORKDIR /app
@@ -34,8 +35,8 @@ COPY packages ./packages
 COPY apps/worker ./apps/worker
 COPY --from=build /app/apps/web/build ./apps/web/build
 COPY apps/web/server.js ./apps/web/
-RUN mkdir -p /data && chown node:node /data
+RUN mkdir -p /data /db && chown node:node /data /db
 USER node
-VOLUME /data
+VOLUME ["/data", "/db"]
 EXPOSE 3000
 CMD ["sh", "-c", "node packages/db/src/migrate.ts && exec node apps/web/server.js"]
