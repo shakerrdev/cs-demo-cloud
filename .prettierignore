@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+/data
+/apps/*/build
+/apps/*/.svelte-kit
+/apps/web/static
+/packages/db/drizzle
