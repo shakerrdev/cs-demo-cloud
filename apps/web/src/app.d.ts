@@ -1,5 +1,11 @@
+import type { SessionUser } from '@cs-demo-cloud/db';
+
 declare global {
-	namespace App {}
+	namespace App {
+		interface Locals {
+			user: SessionUser | null;
+		}
+	}
 }
 
 export {};
