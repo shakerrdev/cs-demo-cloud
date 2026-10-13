@@ -20,7 +20,8 @@ export const init: ServerInit = () => {
 
 	removeBootstrapInvites(db);
 	const { token } = createInvite(db, { role: 'admin' });
-	const origin = (process.env.ORIGIN || (dev ? 'http://localhost:5173' : '')).replace(/\/$/, '');
+	const fallback = dev ? 'http://localhost:5173' : `http://localhost:${process.env.PORT || 3000}`;
+	const origin = (process.env.ORIGIN || fallback).replace(/\/$/, '');
 	console.log(
 		`\nNo accounts yet. Create the admin account with this link (valid for 7 days):\n${origin}/invite/${token}\n`
 	);
