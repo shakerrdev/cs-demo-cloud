@@ -5,10 +5,18 @@
 	"scripts": {
 		"dev": "node --watch src/index.ts",
 		"start": "node src/index.ts",
-		"check": "tsc -p ."
+		"check": "tsc -p .",
+		"test": "node --test src/*.test.ts",
+		"import": "node src/import.ts"
 	},
 	"dependencies": {
 		"@cs-demo-cloud/db": "workspace:*",
-		"@cs-demo-cloud/shared": "workspace:*"
+		"@cs-demo-cloud/replay": "workspace:*",
+		"@cs-demo-cloud/shared": "workspace:*",
+		"@laihoe/demoparser2": "^0.42.0",
+		"unbzip2-stream": "^1.4.3"
+	},
+	"devDependencies": {
+		"@types/unbzip2-stream": "^1.4.3"
 	}
 }
