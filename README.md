@@ -39,11 +39,13 @@ Map assets come from Valve's game files, which is fine for a private instance bu
 
 ## Demo sources
 
+Upload is the primary way in and always works. Auto-fetch and import helpers build on top of it.
+
 | Source | How | Notes |
 | --- | --- | --- |
+| Upload | Drag and drop a `.dem` / `.dem.bz2` / `.dem.gz` / `.dem.zst` | Works for anything: matchmaking, FACEIT, scrims, servers |
 | Valve matchmaking | Steam Web API `GetNextMatchSharingCode` with your match-history auth code, then the Game Coordinator resolves each share code to a download URL | Needs a logged-in Steam account for the GC (a separate bot account is safest). Download links expire about a month after the match, so fetch promptly |
-| Upload | Drag and drop a `.dem` / `.dem.bz2` | Works for anything: FACEIT, scrims, servers |
-| FACEIT | Data API for match lists | Demo downloads are behind a restricted API; manual upload until access is granted |
+| Companion extension | Browser extension / userscript that adds a "Send to cs-demo-cloud" button on sites like FACEIT and sends the demo with your own logged-in session | Works around platforms that lock demo downloads behind private APIs. Authenticates with a personal API token |
 
 ## Proposed stack
 
@@ -64,4 +66,6 @@ Map assets come from Valve's game files, which is fine for a private instance bu
 - [ ] Match list and scoreboards
 - [ ] Auto-fetch via share codes + Game Coordinator
 - [ ] Auth with invite links
+- [ ] Personal API tokens
+- [ ] Companion extension (FACEIT and other sites)
 - [ ] 3D viewer
