@@ -77,7 +77,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` applies migrations, then starts the web app on http://localhost:5173 and the worker. Data lives in `./data` unless `DATA_DIR` is set.
+`pnpm dev` applies migrations, then starts the web app on http://localhost:5173 and the worker. With no accounts yet, the first request prints an admin invite link in the terminal. Data lives in `./data` unless `DATA_DIR` is set.
 
 | Command                     | What it does                                       |
 | --------------------------- | -------------------------------------------------- |
@@ -89,8 +89,46 @@ pnpm dev
 | `pnpm db:generate`          | Create a migration after a schema change           |
 | `pnpm db:migrate`           | Apply migrations                                   |
 | `pnpm demos:import <files>` | Queue demo files from disk, same as uploading them |
+| `pnpm invite [--admin]`     | Print a new invite link                            |
 
 In production the web app needs `BODY_SIZE_LIMIT=Infinity` (or e.g. `2G`), since adapter-node rejects request bodies over 512 KB by default and demos are a few hundred MB.
+
+## Accounts
+
+Everything requires signing in, and accounts only come from invite links.
+
+- On first start (no accounts yet) the web app prints a one-time admin invite link to its log. Open it to create your account.
+- Admins create more invite links in **Settings** (member or admin, valid once for 7 days), see open invites and remove people. Everyone can change their own password there.
+- Invited people share one match library; each upload remembers who added it.
+- Lost access? Create a fresh admin invite from the server: `pnpm invite --admin` (or `docker compose exec web node packages/db/src/invite.ts --admin`).
+
+Passwords are hashed with scrypt; sessions last 30 days (extended while in use) in an http-only cookie. Logins are rate limited per name and address.
+
+## Deploy
+
+One image runs both parts: the web app (`apps/web/server.js`) and the worker (`apps/worker/src/index.ts`), sharing a `data` volume with the SQLite database, demos, replays and radar images. Back up that volume.
+
+```sh
+cp .env.example .env    # set ORIGIN to the address people will open
+docker compose up -d --build
+docker compose logs web # shows the admin invite link on first start
+```
+
+| Variable | Default                 | What it does                                                                                                                       |
+| -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `ORIGIN` | `http://localhost:3000` | The public address, e.g. `https://demos.example.com`. Used for links and login protection, so it must match what the browser shows |
+| `BIND`   | `127.0.0.1`             | Interface the port is published on. Keep it local and put a reverse proxy in front                                                 |
+| `PORT`   | `3000`                  | Published port                                                                                                                     |
+
+HTTPS via a reverse proxy, for example Caddy:
+
+```
+demos.example.com {
+	reverse_proxy 127.0.0.1:3000
+}
+```
+
+Behind a proxy, add `ADDRESS_HEADER=x-forwarded-for` to the web service so login rate limits see real client addresses (only set it when a proxy always adds that header). The worker needs outbound internet once per map to download radar images. Updating is `git pull && docker compose up -d --build`; migrations run when the web container starts.
 
 ## Roadmap
 
@@ -99,7 +137,8 @@ In production the web app needs `BODY_SIZE_LIMIT=Infinity` (or e.g. `2G`), since
 - [x] 2D radar viewer
 - [x] Match list and scoreboards
 - [ ] Auto-fetch via share codes + Game Coordinator
-- [ ] Auth with invite links
+- [x] Auth with invite links
+- [x] Docker image and compose setup
 - [ ] Personal API tokens
 - [ ] Companion extension (FACEIT and other sites)
 - [ ] 3D viewer
