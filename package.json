@@ -9,13 +9,14 @@
 	"scripts": {
 		"dev": "pnpm db:migrate && pnpm --parallel --filter \"./apps/*\" dev",
 		"build": "pnpm --filter \"./apps/*\" build",
-		"check": "pnpm -r check",
+		"start": "node scripts/start.ts",
+		"check": "pnpm -r check && tsc -p scripts",
+		"test": "pnpm -r test",
 		"lint": "prettier --check .",
 		"format": "prettier --write .",
 		"db:generate": "pnpm --filter @cs-demo-cloud/db generate",
 		"db:migrate": "pnpm --filter @cs-demo-cloud/db migrate",
 		"demos:import": "node apps/worker/src/import.ts",
-		"test": "pnpm -r test",
 		"invite": "node packages/db/src/invite.ts"
 	},
 	"devDependencies": {
