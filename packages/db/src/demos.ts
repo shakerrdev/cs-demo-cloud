@@ -1,9 +1,35 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt } from 'drizzle-orm';
 import type { Db } from './client.ts';
-import { demos, type Demo } from './schema.ts';
+import { demos, matches, type Demo, type NewDemo } from './schema.ts';
 
-export function listDemos(db: Db): Demo[] {
-	return db.select().from(demos).orderBy(desc(demos.createdAt)).all();
+export function listDemos(db: Db) {
+	return db
+		.select({
+			demo: demos,
+			match: {
+				map: matches.map,
+				platform: matches.platform,
+				scoreA: matches.scoreA,
+				scoreB: matches.scoreB,
+				durationSeconds: matches.durationSeconds
+			}
+		})
+		.from(demos)
+		.leftJoin(matches, eq(matches.demoId, demos.id))
+		.orderBy(desc(demos.createdAt))
+		.all();
+}
+
+export function getDemo(db: Db, id: string): Demo | undefined {
+	return db.select().from(demos).where(eq(demos.id, id)).get();
+}
+
+export function findDemoBySha256(db: Db, sha256: string): Demo | undefined {
+	return db.select().from(demos).where(eq(demos.sha256, sha256)).get();
+}
+
+export function createDemo(db: Db, demo: NewDemo): Demo {
+	return db.insert(demos).values(demo).returning().get();
 }
 
 export function claimNextDemo(db: Db): Demo | undefined {
@@ -36,10 +62,23 @@ export function failDemo(db: Db, id: string, error: string): void {
 		.run();
 }
 
-export function requeueStaleDemos(db: Db): number {
+export function requeueDemo(db: Db, id: string): void {
+	db.update(demos)
+		.set({ status: 'queued', error: null, updatedAt: new Date() })
+		.where(eq(demos.id, id))
+		.run();
+}
+
+export function touchDemo(db: Db, id: string): void {
+	db.update(demos).set({ updatedAt: new Date() }).where(eq(demos.id, id)).run();
+}
+
+export function requeueStaleDemos(db: Db, staleAfterMs: number): number {
 	return db
 		.update(demos)
 		.set({ status: 'queued', updatedAt: new Date() })
-		.where(eq(demos.status, 'processing'))
+		.where(
+			and(eq(demos.status, 'processing'), lt(demos.updatedAt, new Date(Date.now() - staleAfterMs)))
+		)
 		.run().changes;
 }
