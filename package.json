@@ -13,7 +13,9 @@
 		"lint": "prettier --check .",
 		"format": "prettier --write .",
 		"db:generate": "pnpm --filter @cs-demo-cloud/db generate",
-		"db:migrate": "pnpm --filter @cs-demo-cloud/db migrate"
+		"db:migrate": "pnpm --filter @cs-demo-cloud/db migrate",
+		"demos:import": "node apps/worker/src/import.ts",
+		"test": "pnpm -r test"
 	},
 	"devDependencies": {
 		"@types/node": "^22.18.0",
