@@ -121,7 +121,9 @@
 	</section>
 
 	<footer class="actions">
-		<span class="file">{data.demo.fileName}</span>
+		<span class="file">
+			{data.demo.fileName}{details.uploader ? ` · uploaded by ${details.uploader}` : ''}
+		</span>
 		<form method="POST" action="?/reparse">
 			<button type="submit">Parse again</button>
 		</form>

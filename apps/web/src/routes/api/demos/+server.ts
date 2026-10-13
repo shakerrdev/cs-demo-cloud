@@ -6,7 +6,7 @@ import { db } from '#lib/server/db.ts';
 import { storage } from '#lib/server/storage.ts';
 import type { RequestHandler } from './$types';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!request.body) error(400, 'The upload was empty');
 
 	const fileName =
@@ -21,7 +21,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		const { demo, duplicate } = await registerDemo(db, storage, incoming, {
 			fileName,
 			fileModifiedAt: Number.isFinite(modified) && modified > 0 ? new Date(modified) : null,
-			source: 'upload'
+			source: 'upload',
+			uploadedBy: locals.user?.id ?? null
 		});
 		return json({ id: demo.id, duplicate }, { status: duplicate ? 200 : 201 });
 	} catch (cause) {
