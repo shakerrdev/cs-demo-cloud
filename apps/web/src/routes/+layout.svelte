@@ -77,7 +77,7 @@
 	}
 
 	main {
-		max-width: 1100px;
+		max-width: 1440px;
 		margin: 0 auto;
 		padding: 32px 24px;
 	}

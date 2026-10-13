@@ -18,3 +18,19 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
 export function formatDate(date: Date): string {
 	return dateFormat.format(date);
 }
+
+export function formatDuration(seconds: number): string {
+	const minutes = Math.round(seconds / 60);
+	return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
+}
+
+export function formatClock(seconds: number): string {
+	const total = Math.max(0, Math.ceil(seconds));
+	return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+const platformNames = { valve: 'Valve', faceit: 'FACEIT', other: 'Other' } as const;
+
+export function platformName(platform: keyof typeof platformNames): string {
+	return platformNames[platform];
+}
