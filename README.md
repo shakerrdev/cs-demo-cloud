@@ -41,26 +41,55 @@ Map assets come from Valve's game files, which is fine for a private instance bu
 
 Upload is the primary way in and always works. Auto-fetch and import helpers build on top of it.
 
-| Source | How | Notes |
-| --- | --- | --- |
-| Upload | Drag and drop a `.dem` / `.dem.bz2` / `.dem.gz` / `.dem.zst` | Works for anything: matchmaking, FACEIT, scrims, servers |
-| Valve matchmaking | Steam Web API `GetNextMatchSharingCode` with your match-history auth code, then the Game Coordinator resolves each share code to a download URL | Needs a logged-in Steam account for the GC (a separate bot account is safest). Download links expire about a month after the match, so fetch promptly |
-| Companion extension | Browser extension / userscript that adds a "Send to cs-demo-cloud" button on sites like FACEIT and sends the demo with your own logged-in session | Works around platforms that lock demo downloads behind private APIs. Authenticates with a personal API token |
+| Source              | How                                                                                                                                               | Notes                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload              | Drag and drop a `.dem` / `.dem.bz2` / `.dem.gz` / `.dem.zst`                                                                                      | Works for anything: matchmaking, FACEIT, scrims, servers                                                                                              |
+| Valve matchmaking   | Steam Web API `GetNextMatchSharingCode` with your match-history auth code, then the Game Coordinator resolves each share code to a download URL   | Needs a logged-in Steam account for the GC (a separate bot account is safest). Download links expire about a month after the match, so fetch promptly |
+| Companion extension | Browser extension / userscript that adds a "Send to cs-demo-cloud" button on sites like FACEIT and sends the demo with your own logged-in session | Works around platforms that lock demo downloads behind private APIs. Authenticates with a personal API token                                          |
 
-## Proposed stack
+## Stack
 
-- **TypeScript** end to end
+- **TypeScript** end to end, run directly by Node (no build step outside the web app)
 - **Parser**: [`@laihoe/demoparser2`](https://github.com/LaihoE/demoparser) (Rust core with Node bindings)
 - **Steam/GC**: `steam-user` + `globaloffensive`
-- **Web**: SvelteKit (UI + API)
+- **Web**: SvelteKit 3 (UI + API), adapter-node
 - **Worker**: separate process for fetching and parsing, so the web app never blocks
-- **DB**: SQLite to start (Drizzle), Postgres later if needed
+- **DB**: SQLite via Drizzle, which also serves as the job queue
 - **Storage**: local disk or any S3-compatible bucket behind one interface
 - **Deploy**: Docker Compose on a small VPS
 
+## Layout
+
+```
+apps/web         SvelteKit app
+apps/worker      fetch + parse jobs
+packages/db      schema, migrations, queries
+packages/shared  code used by everything
+```
+
+## Development
+
+Requires Node 22.18+ and pnpm 10.
+
+```sh
+pnpm install
+pnpm dev
+```
+
+`pnpm dev` applies migrations, then starts the web app on http://localhost:5173 and the worker. Data lives in `./data` unless `DATA_DIR` is set.
+
+| Command            | What it does                             |
+| ------------------ | ---------------------------------------- |
+| `pnpm check`       | Type check every package                 |
+| `pnpm lint`        | Check formatting                         |
+| `pnpm format`      | Format everything                        |
+| `pnpm build`       | Production build of the web app          |
+| `pnpm db:generate` | Create a migration after a schema change |
+| `pnpm db:migrate`  | Apply migrations                         |
+
 ## Roadmap
 
-- [ ] Project scaffold (web, worker, shared types)
+- [x] Project scaffold (web, worker, shared types)
 - [ ] Upload + parse a demo into replay blobs and stats
 - [ ] 2D radar viewer
 - [ ] Match list and scoreboards
