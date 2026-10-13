@@ -79,19 +79,73 @@ pnpm dev
 
 `pnpm dev` applies migrations, then starts the web app on http://localhost:5173 and the worker. With no accounts yet, the first request prints an admin invite link in the terminal. Data lives in `./data` unless `DATA_DIR` is set.
 
-| Command                     | What it does                                       |
-| --------------------------- | -------------------------------------------------- |
-| `pnpm check`                | Type check every package                           |
-| `pnpm test`                 | Run the tests                                      |
-| `pnpm lint`                 | Check formatting                                   |
-| `pnpm format`               | Format everything                                  |
-| `pnpm build`                | Production build of the web app                    |
-| `pnpm db:generate`          | Create a migration after a schema change           |
-| `pnpm db:migrate`           | Apply migrations                                   |
-| `pnpm demos:import <files>` | Queue demo files from disk, same as uploading them |
-| `pnpm invite [--admin]`     | Print a new invite link                            |
+| Command                     | What it does                                         |
+| --------------------------- | ---------------------------------------------------- |
+| `pnpm check`                | Type check every package                             |
+| `pnpm test`                 | Run the tests                                        |
+| `pnpm lint`                 | Check formatting                                     |
+| `pnpm format`               | Format everything                                    |
+| `pnpm build`                | Production build of the web app                      |
+| `pnpm start`                | Run the production build: migrations, web and worker |
+| `pnpm db:generate`          | Create a migration after a schema change             |
+| `pnpm db:migrate`           | Apply migrations                                     |
+| `pnpm demos:import <files>` | Queue demo files from disk, same as uploading them   |
+| `pnpm invite [--admin]`     | Print a new invite link                              |
 
 In production the web app needs `BODY_SIZE_LIMIT=Infinity` (or e.g. `2G`), since adapter-node rejects request bodies over 512 KB by default and demos are a few hundred MB.
+
+## Run it at home
+
+Runs on Windows, macOS and Linux, including a Raspberry Pi 4 (64-bit OS, 4 GB RAM or more). Needs Node 22.18+ (24 LTS recommended) and pnpm 10.
+
+```sh
+pnpm install
+pnpm build
+pnpm start
+```
+
+Open http://localhost:3000; the first start prints the admin invite link. Other devices on your network use `http://<this machine's IP>:3000`. Ctrl+C stops it. After `git pull`, run `pnpm install && pnpm build` again.
+
+To bring in demos you already have, import CS2's replays folder (where in-game downloads end up) or any other folder:
+
+```sh
+pnpm demos:import "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\replays"
+```
+
+| Variable        | Default             | What it does                                           |
+| --------------- | ------------------- | ------------------------------------------------------ |
+| `DATA_DIR`      | `./data`            | Demos, replays, radar images and temp files            |
+| `DATABASE_PATH` | `<DATA_DIR>/app.db` | The SQLite database                                    |
+| `PORT`          | `3000`              | Port                                                   |
+| `HOST`          | `0.0.0.0`           | `127.0.0.1` keeps it to this machine                   |
+| `ORIGIN`        | empty               | Only needed behind a reverse proxy or a public address |
+
+### Raspberry Pi with a NAS
+
+Demos are big (150–400 MB each), so on a Pi with only an SD card put them on a NAS and keep the database on the Pi. Mount a share (NFS works best, e.g. at `/mnt/nas`) and point `DATA_DIR` at it. Don't put the database on the share: SQLite's locking isn't reliable over network filesystems and its WAL mode needs the file on the machine that uses it. The database is only a few MB and rarely written, so the SD card is fine for it.
+
+To start it on boot, save this as `/etc/systemd/system/cs-demo-cloud.service` (adjust user and paths), then `sudo systemctl enable --now cs-demo-cloud`:
+
+```ini
+[Unit]
+Description=cs-demo-cloud
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/mnt/nas
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/cs-demo-cloud
+Environment=DATA_DIR=/mnt/nas/cs-demo-cloud
+Environment=DATABASE_PATH=/home/pi/cs-demo-cloud-db/app.db
+ExecStart=/usr/bin/env node scripts/start.ts
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`journalctl -u cs-demo-cloud` shows the log, including the first admin invite link.
 
 ## Accounts
 
@@ -109,16 +163,17 @@ Passwords are hashed with scrypt; sessions last 30 days (extended while in use) 
 One image runs both parts: the web app (`apps/web/server.js`) and the worker (`apps/worker/src/index.ts`), sharing a `data` volume with the SQLite database, demos, replays and radar images. Back up that volume.
 
 ```sh
-cp .env.example .env    # set ORIGIN to the address people will open
+cp .env.example .env    # ORIGIN for a public address, BIND=0.0.0.0 for your network
 docker compose up -d --build
 docker compose logs web # shows the admin invite link on first start
 ```
 
-| Variable | Default                 | What it does                                                                                                                       |
-| -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `ORIGIN` | `http://localhost:3000` | The public address, e.g. `https://demos.example.com`. Used for links and login protection, so it must match what the browser shows |
-| `BIND`   | `127.0.0.1`             | Interface the port is published on. Keep it local and put a reverse proxy in front                                                 |
-| `PORT`   | `3000`                  | Published port                                                                                                                     |
+| Variable    | Default     | What it does                                                                                                                               |
+| ----------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ORIGIN`    | empty       | The public address when it runs behind a reverse proxy, e.g. `https://demos.example.com`. Leave empty for local network use                |
+| `BIND`      | `127.0.0.1` | Interface the port is published on. `0.0.0.0` for other devices on your network, or keep it local behind a reverse proxy                   |
+| `PORT`      | `3000`      | Published port                                                                                                                             |
+| `DATA_PATH` | `data`      | Where demos, replays and radars live: a Docker volume name or a host folder such as a NAS mount. The database stays in its own `db` volume |
 
 HTTPS via a reverse proxy, for example Caddy:
 
