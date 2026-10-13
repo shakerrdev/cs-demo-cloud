@@ -1,0 +1,14 @@
+{
+	"name": "@cs-demo-cloud/worker",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "node --watch src/index.ts",
+		"start": "node src/index.ts",
+		"check": "tsc -p ."
+	},
+	"dependencies": {
+		"@cs-demo-cloud/db": "workspace:*",
+		"@cs-demo-cloud/shared": "workspace:*"
+	}
+}
