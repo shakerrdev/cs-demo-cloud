@@ -6,6 +6,7 @@ import {
 	matchPlayers,
 	matches,
 	rounds,
+	users,
 	type NewKill,
 	type NewMatch,
 	type NewMatchPlayer,
@@ -40,9 +41,10 @@ export function saveMatch(db: Db, parsed: ParsedMatch): void {
 
 export function getMatch(db: Db, demoId: string) {
 	const row = db
-		.select({ demo: demos, match: matches })
+		.select({ demo: demos, match: matches, uploader: users.name })
 		.from(demos)
 		.innerJoin(matches, eq(matches.demoId, demos.id))
+		.leftJoin(users, eq(users.id, demos.uploadedBy))
 		.where(eq(demos.id, demoId))
 		.get();
 	if (!row) return undefined;

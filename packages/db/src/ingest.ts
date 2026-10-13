@@ -9,6 +9,7 @@ export interface DemoInfo {
 	fileName: string;
 	fileModifiedAt: Date | null;
 	source: DemoSource;
+	uploadedBy?: string | null;
 }
 
 export async function registerDemo(
@@ -35,7 +36,8 @@ export async function registerDemo(
 		fileSize: incoming.size,
 		fileModifiedAt: info.fileModifiedAt,
 		sha256: incoming.sha256,
-		source: info.source
+		source: info.source,
+		uploadedBy: info.uploadedBy ?? null
 	});
 	return { demo, duplicate: false };
 }
