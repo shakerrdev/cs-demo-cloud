@@ -1,0 +1,33 @@
+x-app: &app
+  build: .
+  image: cs-demo-cloud
+  restart: unless-stopped
+  volumes:
+    - data:/data
+
+services:
+  web:
+    <<: *app
+    environment:
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+    ports:
+      - ${BIND:-127.0.0.1}:${PORT:-3000}:3000
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+
+  worker:
+    <<: *app
+    command: ['node', 'apps/worker/src/index.ts']
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  data:
