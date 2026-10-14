@@ -137,6 +137,8 @@ export interface PackTonemap {
 	whitePoint: number;
 }
 
+export type BloomBlendMode = 'add' | 'screen' | 'blur';
+
 export interface PackBloom {
 	strength: number;
 	screenStrength: number;
@@ -144,6 +146,9 @@ export interface PackBloom {
 	threshold: number;
 	thresholdWidth: number;
 	skyboxStrength: number;
+	blendMode?: BloomBlendMode;
+	blurWeights?: number[];
+	blurTints?: Vec3[];
 }
 
 export interface PackPostProcess {

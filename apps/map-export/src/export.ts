@@ -9,7 +9,9 @@ import {
 	TEXTURE_CLAMP_T,
 	TEXTURE_VOLUME,
 	encodePackTexture,
+	type BloomBlendMode,
 	type MapPackManifest,
+	type PackBloom,
 	type PackCubemapFog,
 	type PackFog,
 	type PackGradientFog,
@@ -536,6 +538,29 @@ function numberField(object: Record<string, Kv3Value> | undefined, key: string, 
 	return typeof value === 'number' ? value : fallback;
 }
 
+export function bloomBlendMode(value: Kv3Value | undefined): BloomBlendMode | undefined {
+	if (typeof value === 'number') return (['add', 'screen', 'blur'] as const)[value];
+	if (typeof value !== 'string') return undefined;
+	if (value.endsWith('SCREEN')) return 'screen';
+	if (value.endsWith('BLUR')) return 'blur';
+	if (value.endsWith('ADD')) return 'add';
+	return undefined;
+}
+
+function bloomBlend(params: Record<string, Kv3Value>): Partial<PackBloom> {
+	const weights = kv3Array(params.m_flBlurWeight).filter((v): v is number => typeof v === 'number');
+	const tints = kv3Array(params.m_vBlurTint)
+		.map((tint) => kv3Array(tint).filter((v): v is number => typeof v === 'number'))
+		.filter((tint) => tint.length >= 3)
+		.map((tint) => [tint[0]!, tint[1]!, tint[2]!] as Vec3);
+	const blendMode = bloomBlendMode(params.m_blendMode);
+	return {
+		...(blendMode ? { blendMode } : {}),
+		...(weights.length === 5 ? { blurWeights: weights } : {}),
+		...(tints.length === 5 ? { blurTints: tints } : {})
+	};
+}
+
 async function postProcessFrom(
 	entities: Entity[],
 	vrf: Vrf,
@@ -597,7 +622,8 @@ async function postProcessFrom(
 					blurStrength: numberField(bloomParams, 'm_flBlurBloomStrength', 0),
 					threshold: numberField(bloomParams, 'm_flBloomThreshold', 1),
 					thresholdWidth: numberField(bloomParams, 'm_flBloomThresholdWidth', 1),
-					skyboxStrength: numberField(bloomParams, 'm_flSkyboxBloomStrength', 1)
+					skyboxStrength: numberField(bloomParams, 'm_flSkyboxBloomStrength', 1),
+					...bloomBlend(bloomParams)
 				}
 			: null,
 		lut
