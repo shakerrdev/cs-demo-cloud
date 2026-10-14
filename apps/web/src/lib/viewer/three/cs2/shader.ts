@@ -1,4 +1,6 @@
 export const MAX_PROBE_VOLUMES = 128;
+export const MAX_ENV_VOLUMES = 128;
+export const ENV_VOLUME_TEXELS = 7;
 
 export const vertexShader = /* glsl */ `
 in vec4 tangent;
@@ -146,6 +148,13 @@ uniform int uProbeCount;
 uniform float uProbeDepth;
 #endif
 
+#ifdef ENV_MAP
+uniform sampler2DArray uEnvMap;
+uniform sampler2D uEnvVolumes;
+uniform int uEnvCount;
+uniform float uEnvMips;
+#endif
+
 #ifdef FOG_CUBE
 uniform samplerCube uFogCube;
 uniform vec4 uFogDistance;
@@ -247,6 +256,76 @@ void probeLighting(vec3 position, vec3 normal, out vec3 irradiance, out vec4 sha
 		#endif
 		coverage += weight;
 	}
+}
+#endif
+
+#ifdef ENV_MAP
+vec3 sampleCubeArray(vec3 dir, float layer, float lod) {
+	vec3 a = abs(dir);
+	float face;
+	float major;
+	vec2 st;
+	if (a.x >= a.y && a.x >= a.z) {
+		major = a.x;
+		face = dir.x > 0.0 ? 0.0 : 1.0;
+		st = vec2(dir.x > 0.0 ? -dir.z : dir.z, -dir.y);
+	} else if (a.y >= a.z) {
+		major = a.y;
+		face = dir.y > 0.0 ? 2.0 : 3.0;
+		st = vec2(dir.x, dir.y > 0.0 ? dir.z : -dir.z);
+	} else {
+		major = a.z;
+		face = dir.z > 0.0 ? 4.0 : 5.0;
+		st = vec2(dir.z > 0.0 ? dir.x : -dir.x, -dir.y);
+	}
+	vec2 uv = st / max(major, 1e-6) * 0.5 + 0.5;
+	return textureLod(uEnvMap, vec3(uv, layer * 6.0 + face), lod).rgb;
+}
+
+vec4 envTexel(int volume, int row) {
+	return texelFetch(uEnvVolumes, ivec2(volume * ${ENV_VOLUME_TEXELS} + row, 0), 0);
+}
+
+vec3 environment(vec3 position, vec3 reflection, float lod, out vec4 normalizationSh) {
+	vec3 env = vec3(0.0);
+	vec4 sh = vec4(0.0);
+	float total = 0.01;
+	for (int i = 0; i < ${MAX_ENV_VOLUMES}; i++) {
+		if (i >= uEnvCount || total > 0.99) break;
+		vec4 r0 = envTexel(i, 0);
+		vec4 r1 = envTexel(i, 1);
+		vec4 r2 = envTexel(i, 2);
+		vec3 local = vec3(dot(r0, vec4(position, 1.0)), dot(r1, vec4(position, 1.0)), dot(r2, vec4(position, 1.0)));
+		if (any(lessThan(local, vec3(0.0))) || any(greaterThan(local, vec3(1.0)))) continue;
+		vec4 minIndex = envTexel(i, 3);
+		vec4 sizeBox = envTexel(i, 4);
+		vec3 direction = vec3(dot(r0.xyz, reflection), dot(r1.xyz, reflection), dot(r2.xyz, reflection));
+		float weight = 1.0;
+		if (sizeBox.w > 0.5) {
+			vec3 fade = clamp(min(local, 1.0 - local) * envTexel(i, 5).xyz, 0.0, 1.0);
+			float edge = min(fade.x, min(fade.y, fade.z));
+			if (edge <= 0.0) continue;
+			weight = edge * edge * (3.0 - 2.0 * edge) * (1.0 - total);
+			vec3 far = max((vec3(0.0) - local) / direction, (vec3(1.0) - local) / direction);
+			float distance = min(far.x, min(far.y, far.z));
+			direction = minIndex.xyz + (local + direction * distance) * sizeBox.xyz;
+		} else {
+			direction *= sizeBox.xyz;
+		}
+		total += weight;
+		env += sampleCubeArray(normalize(direction), minIndex.w, lod) * weight;
+		sh += envTexel(i, 6) * weight;
+	}
+	normalizationSh = sh / max(total, 1e-4);
+	return env;
+}
+
+vec2 envBrdf(float roughness, float nDotV) {
+	const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+	const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+	vec4 r = roughness * c0 + c1;
+	float a004 = min(r.x * r.x, exp2(-9.28 * nDotV)) * r.x + r.y;
+	return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 #endif
 
@@ -450,7 +529,26 @@ void main() {
 #endif
 
 	vec3 indirectSpecular = vec3(0.0);
-#ifdef SPECULAR_INDIRECT
+#ifdef ENV_MAP
+	float nDotV = saturate1(dot(normal, view));
+	vec2 brdf = envBrdf(roughness, nDotV);
+	vec3 singleScatter = specularColor * brdf.x + brdf.y;
+	float missing = 1.0 - (brdf.x + brdf.y);
+	vec3 averageFresnel = specularColor + (1.0 - specularColor) / 21.0;
+	vec3 multiScatter = singleScatter * averageFresnel / (1.0 - averageFresnel * missing) * missing;
+	float roughnessSquared = roughness * roughness;
+	float smoothness = saturate1(1.0 - roughnessSquared);
+	vec3 reflection = reflect(-view, normal);
+	reflection = normalize(mix(normal, reflection, smoothness * (sqrt(smoothness) + roughnessSquared)));
+	vec4 normalizationSh;
+	vec3 env = environment(vPosition, reflection, sqrt(saturate1(roughness)) * uEnvMips, normalizationSh);
+	float bakedLuma = dot(vec4(normal, 1.0), normalizationSh);
+	float normalization = bakedLuma > 0.0
+		? min(dot(indirect, vec3(0.2125, 0.7154, 0.0721)) / bakedLuma, max(roughness * 2.0 + 1.0, 1.0))
+		: 1.0;
+	indirectSpecular = env * singleScatter * normalization + multiScatter * indirect;
+	indirect *= max(vec3(1.0) - (singleScatter + multiScatter), vec3(0.0));
+#elif defined(SPECULAR_INDIRECT)
 	indirectSpecular = specularColor * indirect * 0.5;
 #endif
 

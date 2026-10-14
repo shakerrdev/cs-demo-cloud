@@ -386,7 +386,12 @@ export function createCs2Material(
 		}
 	}
 
-	if (I.F_SPECULAR_INDIRECT === 1) defines.SPECULAR_INDIRECT = 1;
+	const ibl =
+		shader === 'csgo_lightmappedgeneric' || shader === 'csgo_vertexlitgeneric'
+			? I.F_SPECULAR_INDIRECT === 1
+			: shader !== 'generic';
+	if (ibl && world.defines.WORLD_ENV_MAP) defines.ENV_MAP = 1;
+	else if (I.F_SPECULAR_INDIRECT === 1) defines.SPECULAR_INDIRECT = 1;
 
 	if (layout.lightmap !== null && world.defines.WORLD_LIGHTMAP) {
 		defines.LIGHTMAP = 1;
