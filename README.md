@@ -8,7 +8,7 @@ Invite-only multi-user, but built for one person first.
 
 - **Auto-fetch** new matchmaking demos (Premier, Competitive, Wingman) without manual downloads
 - **Store** demos and parsed data cheaply
-- **Watch** demos in the browser: 2D radar first, 3D later
+- **Watch** demos in the browser, on a 2D radar or in 3D
 - **Stats** per match, round and player
 - **Fast**: a match opens in about a second, scrubbing is instant
 - **Light**: runs on one small server
@@ -30,12 +30,19 @@ Running a real CS2 client per viewer and streaming video needs a GPU server, a S
 - The browser interpolates between samples (lerp, shortest-path for angles)
 - In practice about 30 KB per round and under 1 MB per match; a round loads in ~10 ms and the next one is prefetched
 
-### Viewer phases
+### Viewer
 
-1. **2D radar** (done): players with view cones, health, bomb and kit, grenades in flight, smokes, fires, flashes, shots, kill markers, kill feed, round clock, timeline with kill/plant markers, speed control, upper/lower level for Nuke, Vertigo and co. Plain Canvas 2D: ten players and some grenades don't need a WebGL engine.
-2. **3D**: map geometry exported from the game files with Source2Viewer-CLI to glTF, compressed with gltfpack (meshopt + KTX2), rendered with three.js. Free camera, plus player POV from eye position and view angles.
+Both views share the same playback, HUD, kill feed and timeline; **V** switches between them.
 
-Map assets come from Valve's game files, which is fine for a private instance but not something to redistribute publicly, so none are committed here. The worker downloads a map's radar image (and lower-level image) the first time it parses a demo on that map, from [CS Demo Manager](https://github.com/akiver/cs-demo-manager)'s repository at a pinned commit, into `data/maps`. Map calibration (origin, scale, lower-level height) lives in `packages/replay/src/maps.ts`.
+- **2D radar**: players with view cones, health, bomb and kit, grenades in flight, smokes, fires, flashes, shots, kill markers, upper/lower level for Nuke, Vertigo and co. Plain Canvas 2D: ten players and some grenades don't need a WebGL engine.
+- **3D**: the map's collision geometry rendered with three.js, floors coloured with the radar image, players as capsules facing where they aim, smokes, fires, flash and HE bursts, grenade trails, shots, the bomb and kill markers. Players, smokes and trails behind walls show through faintly. Cameras: **Free** (drag to pan, right-drag to rotate, scroll to zoom), **Follow** (orbits the selected player) and **POV** (the player's eye position and view angles). **Cut roofs** hides everything above the players. three.js only loads when you open the 3D view.
+
+Map assets come from Valve's game files, which is fine for a private instance but not something to redistribute publicly, so none are committed here. The worker downloads them the first time it parses a demo on a map (and on start for maps it already has demos of) into `data/maps`:
+
+- radar images (and lower-level images) from [CS Demo Manager](https://github.com/akiver/cs-demo-manager)'s repository at a pinned commit
+- 3D geometry from [awpy-data](https://github.com/pnxenopoulos/awpy-data)'s release for game build 2000930: per-map collision meshes, read straight out of the release zip with range requests (about 1 MB per map downloaded, CRC-checked), quantized to 16 bits and stored gzipped (0.2 to 2.5 MB per map)
+
+Map calibration (origin, scale, lower-level height) lives in `packages/replay/src/maps.ts`. Maps without awpy geometry still play in 2D.
 
 ## Demo sources
 
@@ -70,7 +77,8 @@ Valve keeps demos for about a month, so older matches show up as _Not available_
 - **Web**: SvelteKit 3 (UI + API), adapter-node
 - **Worker**: separate process for fetching and parsing, so the web app never blocks
 - **DB**: SQLite via Drizzle, which also serves as the job queue
-- **Storage**: local disk (`data/`): demos as uploaded, replays per round, radar images; S3-compatible storage later if needed
+- **Viewer**: Canvas 2D for the radar, three.js (WebGL 2) for 3D
+- **Storage**: local disk (`data/`): demos as uploaded, replays per round, radar images and 3D maps; S3-compatible storage later if needed
 - **Deploy**: Docker Compose on a small VPS
 
 ## Layout
@@ -79,7 +87,7 @@ Valve keeps demos for about a month, so older matches show up as _Not available_
 apps/web         SvelteKit app: upload, match list, match page, replay viewer
 apps/worker      parse jobs: decompress, parse, build replays, save stats
 packages/db      schema, migrations, queries
-packages/replay  replay file format, map calibration (runs in the browser too)
+packages/replay  replay and map mesh formats, map calibration (runs in the browser too)
 packages/shared  storage layout and upload handling (server only)
 ```
 
@@ -129,7 +137,7 @@ pnpm demos:import "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike 
 
 | Variable        | Default             | What it does                                           |
 | --------------- | ------------------- | ------------------------------------------------------ |
-| `DATA_DIR`      | `./data`            | Demos, replays, radar images and temp files            |
+| `DATA_DIR`      | `./data`            | Demos, replays, radar images, 3D maps and temp files   |
 | `DATABASE_PATH` | `<DATA_DIR>/app.db` | The SQLite database                                    |
 | `PORT`          | `3000`              | Port                                                   |
 | `HOST`          | `0.0.0.0`           | `127.0.0.1` keeps it to this machine                   |
@@ -201,7 +209,7 @@ To build the image yourself instead: `docker build -t ghcr.io/shakerrdev/cs-demo
 | `PORT`        | `3000`    | Port on the host                                                                                                            |
 | `BIND`        | `0.0.0.0` | Interface the port is published on. `127.0.0.1` when a reverse proxy on the same host is the only way in                    |
 | `ORIGIN`      | empty     | The public address when it runs behind a reverse proxy, e.g. `https://demos.example.com`. Leave empty on your local network |
-| `DATA_PATH`   | `./data`  | Host folder for demos, replays and radar images                                                                             |
+| `DATA_PATH`   | `./data`  | Host folder for demos, replays, radar images and 3D maps                                                                    |
 | `DB_PATH`     | `./db`    | Host folder for the database. Keep it on a local disk of the machine running the containers, never on a network share       |
 | `PUID`/`PGID` | `1000`    | User and group the app runs as and that owns the files                                                                      |
 
@@ -215,7 +223,7 @@ demos.example.com {
 }
 ```
 
-Behind a proxy, add `ADDRESS_HEADER=x-forwarded-for` to the web service so login rate limits see real client addresses (only when a proxy always adds that header). The worker needs outbound internet once per map to download radar images.
+Behind a proxy, add `ADDRESS_HEADER=x-forwarded-for` to the web service so login rate limits see real client addresses (only when a proxy always adds that header). The worker needs outbound internet once per map to download radar images and 3D geometry.
 
 Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web container (UGOS: **Container → cs-demo-cloud-web-1 → Terminal**, or `docker compose exec web node packages/db/src/invite.ts --admin`).
 
@@ -229,6 +237,6 @@ Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web 
 - [x] Auth with invite links
 - [x] Docker image and compose setup
 - [x] Published image with CI
+- [x] 3D viewer
 - [ ] Personal API tokens
 - [ ] Companion extension (FACEIT and other sites)
-- [ ] 3D viewer
