@@ -35,8 +35,9 @@ COPY packages ./packages
 COPY apps/worker ./apps/worker
 COPY --from=build /app/apps/web/build ./apps/web/build
 COPY apps/web/server.js ./apps/web/
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
 RUN mkdir -p /data /db && chown node:node /data /db
-USER node
 VOLUME ["/data", "/db"]
 EXPOSE 3000
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["sh", "-c", "node packages/db/src/migrate.ts && exec node apps/web/server.js"]
