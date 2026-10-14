@@ -1,0 +1,17 @@
+{
+	"name": "@cs-demo-cloud/map-export",
+	"private": true,
+	"type": "module",
+	"bin": {
+		"cs-demo-cloud-map-export": "./src/index.ts"
+	},
+	"scripts": {
+		"export": "node src/index.ts",
+		"check": "tsc -p .",
+		"test": "node --test \"src/**/*.test.ts\""
+	},
+	"dependencies": {
+		"@cs-demo-cloud/replay": "workspace:*",
+		"@cs-demo-cloud/shared": "workspace:*"
+	}
+}

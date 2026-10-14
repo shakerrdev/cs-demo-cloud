@@ -6,6 +6,7 @@ WORKDIR /app
 
 FROM base AS manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/map-export/package.json apps/map-export/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
 COPY packages/db/package.json packages/db/

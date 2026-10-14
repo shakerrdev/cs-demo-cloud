@@ -21,6 +21,15 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  apps/map-export:
+    dependencies:
+      '@cs-demo-cloud/replay':
+        specifier: workspace:*
+        version: link:../../packages/replay
+      '@cs-demo-cloud/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+
   apps/web:
     dependencies:
       '@cs-demo-cloud/db':
