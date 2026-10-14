@@ -22,8 +22,12 @@ export const init: ServerInit = () => {
 	const { token } = createInvite(db, { role: 'admin' });
 	const fallback = dev ? 'http://localhost:5173' : `http://localhost:${process.env.PORT || 3000}`;
 	const origin = (process.env.ORIGIN || fallback).replace(/\/$/, '');
+	const hint =
+		process.env.ORIGIN || dev
+			? ''
+			: `On another device, replace ${fallback} with this machine's address.\n`;
 	console.log(
-		`\nNo accounts yet. Create the admin account with this link (valid for 7 days):\n${origin}/invite/${token}\n`
+		`\nNo accounts yet. Create the admin account with this link (valid for 7 days):\n${origin}/invite/${token}\n${hint}`
 	);
 };
 
