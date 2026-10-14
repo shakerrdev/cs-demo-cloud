@@ -1,18 +1,19 @@
 x-app: &app
-  build: .
-  image: cs-demo-cloud
+  image: ghcr.io/shakerrdev/cs-demo-cloud:latest
   restart: unless-stopped
+  environment:
+    ORIGIN: ${ORIGIN:-}
+    PUID: ${PUID:-1000}
+    PGID: ${PGID:-1000}
   volumes:
-    - ${DATA_PATH:-data}:/data
-    - db:/db
+    - ${DATA_PATH:-./data}:/data
+    - ${DB_PATH:-./db}:/db
 
 services:
   web:
     <<: *app
-    environment:
-      ORIGIN: ${ORIGIN:-}
     ports:
-      - ${BIND:-127.0.0.1}:${PORT:-3000}:3000
+      - ${BIND:-0.0.0.0}:${PORT:-3000}:3000
     healthcheck:
       test:
         - CMD
@@ -29,7 +30,3 @@ services:
     depends_on:
       web:
         condition: service_healthy
-
-volumes:
-  data:
-  db:
