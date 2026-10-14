@@ -154,28 +154,45 @@ Everything requires signing in, and accounts only come from invite links.
 - On first start (no accounts yet) the web app prints a one-time admin invite link to its log. Open it to create your account.
 - Admins create more invite links in **Settings** (member or admin, valid once for 7 days), see open invites and remove people. Everyone can change their own password there.
 - Invited people share one match library; each upload remembers who added it.
-- Lost access? Create a fresh admin invite from the server: `pnpm invite --admin` (or `docker compose exec web node packages/db/src/invite.ts --admin`).
+- Lost access? Create a fresh admin invite from the server: `pnpm invite --admin`, or in Docker as described below.
 
 Passwords are hashed with scrypt; sessions last 30 days (extended while in use) in an http-only cookie. Logins are rate limited per name and address.
 
-## Deploy
+## Docker (NAS or server)
 
-One image runs both parts: the web app (`apps/web/server.js`) and the worker (`apps/worker/src/index.ts`), sharing a `data` volume with the SQLite database, demos, replays and radar images. Back up that volume.
+Every push to `main` is checked, tested and published as `ghcr.io/shakerrdev/cs-demo-cloud:latest` (x86-64) by GitHub Actions, including a smoke test of the image. [`compose.yaml`](compose.yaml) runs it as two containers from that image: `web` (runs migrations, then the site) and `worker` (parsing). They share two folders next to the compose file: `data` (demos, replays, radar images) and `db` (the SQLite database). Back up both.
+
+### UGREEN NAS (UGOS Pro)
+
+1. Open **Docker → Project → Create**. Name it `cs-demo-cloud` and keep the suggested storage path (a folder in the `docker` shared folder).
+2. Paste the contents of [`compose.yaml`](compose.yaml) and click **Deploy**. Docker pulls the image and starts both containers.
+3. Open **Docker → Container → cs-demo-cloud-web-1 → Log**. It shows the one-time admin link, e.g. `http://localhost:3000/invite/…`. Replace `localhost` with the NAS's address (e.g. `http://192.168.1.20:3000/invite/…`), open it and create your account.
+4. From then on the site is at `http://<nas-ip>:3000`.
+
+`data` and `db` appear inside the project folder, so you can see and back them up in File Manager. The container fixes their ownership on start and then runs as uid 1000; set `PUID`/`PGID` to your NAS user's ids (`id` over SSH) if you want the files to belong to you. Port 3000 taken? Set `PORT` in the project's environment. To update: pull `ghcr.io/shakerrdev/cs-demo-cloud:latest` again (**Docker → Image**) and redeploy the project; migrations run automatically.
+
+### Any other Docker host
 
 ```sh
-cp .env.example .env    # ORIGIN for a public address, BIND=0.0.0.0 for your network
-docker compose up -d --build
-docker compose logs web # shows the admin invite link on first start
+curl -O https://raw.githubusercontent.com/shakerrdev/cs-demo-cloud/main/compose.yaml
+docker compose up -d
+docker compose logs web # the admin invite link
 ```
 
-| Variable    | Default     | What it does                                                                                                                               |
-| ----------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ORIGIN`    | empty       | The public address when it runs behind a reverse proxy, e.g. `https://demos.example.com`. Leave empty for local network use                |
-| `BIND`      | `127.0.0.1` | Interface the port is published on. `0.0.0.0` for other devices on your network, or keep it local behind a reverse proxy                   |
-| `PORT`      | `3000`      | Published port                                                                                                                             |
-| `DATA_PATH` | `data`      | Where demos, replays and radars live: a Docker volume name or a host folder such as a NAS mount. The database stays in its own `db` volume |
+To build the image yourself instead: `docker build -t ghcr.io/shakerrdev/cs-demo-cloud:latest .` before `docker compose up -d`.
 
-HTTPS via a reverse proxy, for example Caddy:
+| Variable      | Default   | What it does                                                                                                                |
+| ------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`        | `3000`    | Port on the host                                                                                                            |
+| `BIND`        | `0.0.0.0` | Interface the port is published on. `127.0.0.1` when a reverse proxy on the same host is the only way in                    |
+| `ORIGIN`      | empty     | The public address when it runs behind a reverse proxy, e.g. `https://demos.example.com`. Leave empty on your local network |
+| `DATA_PATH`   | `./data`  | Host folder for demos, replays and radar images                                                                             |
+| `DB_PATH`     | `./db`    | Host folder for the database. Keep it on a local disk of the machine running the containers, never on a network share       |
+| `PUID`/`PGID` | `1000`    | User and group the app runs as and that owns the files                                                                      |
+
+Put them in a `.env` file next to `compose.yaml` (see [`.env.example`](.env.example)) or in the project's environment settings.
+
+HTTPS via a reverse proxy, for example Caddy (with `BIND=127.0.0.1` and `ORIGIN=https://demos.example.com`):
 
 ```
 demos.example.com {
@@ -183,7 +200,9 @@ demos.example.com {
 }
 ```
 
-Behind a proxy, add `ADDRESS_HEADER=x-forwarded-for` to the web service so login rate limits see real client addresses (only set it when a proxy always adds that header). The worker needs outbound internet once per map to download radar images. Updating is `git pull && docker compose up -d --build`; migrations run when the web container starts.
+Behind a proxy, add `ADDRESS_HEADER=x-forwarded-for` to the web service so login rate limits see real client addresses (only when a proxy always adds that header). The worker needs outbound internet once per map to download radar images.
+
+Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web container (UGOS: **Container → cs-demo-cloud-web-1 → Terminal**, or `docker compose exec web node packages/db/src/invite.ts --admin`).
 
 ## Roadmap
 
@@ -194,6 +213,7 @@ Behind a proxy, add `ADDRESS_HEADER=x-forwarded-for` to the web service so login
 - [ ] Auto-fetch via share codes + Game Coordinator
 - [x] Auth with invite links
 - [x] Docker image and compose setup
+- [x] Published image with CI
 - [ ] Personal API tokens
 - [ ] Companion extension (FACEIT and other sites)
 - [ ] 3D viewer
