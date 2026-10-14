@@ -25,7 +25,11 @@ function run(name: string, script: string): ChildProcess {
 const [migrated] = await once(run('migrate', 'packages/db/src/migrate.ts'), 'exit');
 if (migrated !== 0) process.exit(1);
 
-const children = [run('web', 'apps/web/server.js'), run('worker', 'apps/worker/src/index.ts')];
+const children = [
+	run('web', 'apps/web/server.js'),
+	run('worker', 'apps/worker/src/index.ts'),
+	run('fetcher', 'apps/worker/src/fetcher.ts')
+];
 let stopping = false;
 
 function stop(code: number) {

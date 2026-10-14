@@ -71,6 +71,10 @@ jobs:
           for _ in $(seq 15); do docker logs worker 2>&1 | grep -q 'Worker ready' && break; sleep 1; done
           docker logs worker
           docker logs worker 2>&1 | grep -q 'Worker ready'
+          docker run -d --name fetcher $mounts cs-demo-cloud:test node apps/worker/src/fetcher.ts
+          for _ in $(seq 15); do docker logs fetcher 2>&1 | grep -q 'Valve fetcher ready' && break; sleep 1; done
+          docker logs fetcher
+          docker logs fetcher 2>&1 | grep -q 'Valve fetcher ready'
           test "$(docker exec web stat -c %u /proc/1)" = 1000
 
       - if: github.event_name == 'push'

@@ -30,3 +30,10 @@ services:
     depends_on:
       web:
         condition: service_healthy
+
+  fetcher:
+    <<: *app
+    command: ['node', 'apps/worker/src/fetcher.ts']
+    depends_on:
+      web:
+        condition: service_healthy
