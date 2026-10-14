@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
@@ -840,8 +840,11 @@ export async function exportMap(options: ExportOptions): Promise<{ pack: string;
 			false
 		);
 		await pack.close();
-		log(`Copying the pack to ${packPath}`);
-		await copyFile(partPath, packPath);
+		log(`Moving the pack to ${packPath}`);
+		await rename(partPath, packPath).catch(async (error: NodeJS.ErrnoException) => {
+			if (error.code !== 'EXDEV') throw error;
+			await copyFile(partPath, packPath);
+		});
 		return { pack: packPath, bytes: pack.bytes };
 	} catch (error) {
 		await pack.close().catch(() => {});
