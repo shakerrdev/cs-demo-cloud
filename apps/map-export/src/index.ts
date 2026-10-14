@@ -16,6 +16,7 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --keep-work       Keep the temporary files
   --reuse-work      Reuse Source 2 Viewer output kept by --keep-work
   --max-texture-size <px>  Drop texture mips above this size (smaller packs)
+  --low-memory      Run Source 2 Viewer on one thread with less memory (slower, for 4 GB machines)
   --all             Every map in the game's maps folder
 
 Example: node apps/map-export/src/index.ts de_dust2 de_mirage`;
@@ -30,6 +31,7 @@ const { values, positionals } = parseArgs({
 		'keep-work': { type: 'boolean', default: false },
 		'reuse-work': { type: 'boolean', default: false },
 		'max-texture-size': { type: 'string' },
+		'low-memory': { type: 'boolean', default: false },
 		all: { type: 'boolean', default: false },
 		help: { type: 'boolean', short: 'h', default: false }
 	}
@@ -41,6 +43,13 @@ if (values.help || (!positionals.length && !values.all)) {
 }
 
 const log = (message: string) => console.log(message);
+if (values['low-memory'])
+	Object.assign(process.env, {
+		DOTNET_gcServer: '0',
+		DOTNET_GCConserveMemory: '9',
+		DOTNET_ThreadPool_ForceMinWorkerThreads: '1',
+		DOTNET_ThreadPool_ForceMaxWorkerThreads: '1'
+	});
 const csgo = findCsgo(values.game);
 log(`CS2: ${csgo}`);
 const tools = await ensureTools(values.tools ?? defaultToolsDir(), log);
