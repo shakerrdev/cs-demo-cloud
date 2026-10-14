@@ -15,6 +15,7 @@ export const platforms = ['valve', 'faceit', 'other'] as const;
 export const sides = ['CT', 'T'] as const;
 export const teams = ['a', 'b'] as const;
 export const roles = ['admin', 'member'] as const;
+export const valveMatchStatuses = ['pending', 'done', 'unavailable', 'failed'] as const;
 
 const createdAt = () =>
 	integer('created_at', { mode: 'timestamp_ms' })
@@ -169,6 +170,47 @@ export const kills = sqliteTable(
 	(table) => [index('kills_demo_round_idx').on(table.demoId, table.round)]
 );
 
+export const settings = sqliteTable('settings', {
+	key: text('key').primaryKey(),
+	value: text('value').notNull(),
+	updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date())
+});
+
+export const steamLinks = sqliteTable('steam_links', {
+	userId: text('user_id')
+		.primaryKey()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	steamId: text('steam_id').notNull(),
+	authCode: text('auth_code').notNull(),
+	knownCode: text('known_code').notNull(),
+	enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+	lastCheckedAt: integer('last_checked_at', { mode: 'timestamp_ms' }),
+	lastError: text('last_error'),
+	createdAt: createdAt()
+});
+
+export const valveMatches = sqliteTable(
+	'valve_matches',
+	{
+		matchId: text('match_id').primaryKey(),
+		shareCode: text('share_code').notNull(),
+		foundBy: text('found_by').references(() => users.id, { onDelete: 'set null' }),
+		status: text('status', { enum: valveMatchStatuses }).notNull().default('pending'),
+		demoUrl: text('demo_url'),
+		matchTime: integer('match_time', { mode: 'timestamp_ms' }),
+		demoId: text('demo_id').references(() => demos.id, { onDelete: 'set null' }),
+		attempts: integer('attempts').notNull().default(0),
+		error: text('error'),
+		createdAt: createdAt(),
+		updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date())
+	},
+	(table) => [index('valve_matches_status_idx').on(table.status, table.createdAt)]
+);
+
 export type Demo = typeof demos.$inferSelect;
 export type NewDemo = typeof demos.$inferInsert;
 export type DemoSource = (typeof demoSources)[number];
@@ -185,3 +227,6 @@ export type Platform = (typeof platforms)[number];
 export type Role = (typeof roles)[number];
 export type User = typeof users.$inferSelect;
 export type Invite = typeof invites.$inferSelect;
+export type SteamLink = typeof steamLinks.$inferSelect;
+export type ValveMatch = typeof valveMatches.$inferSelect;
+export type ValveMatchStatus = (typeof valveMatchStatuses)[number];
