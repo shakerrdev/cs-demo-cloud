@@ -1,11 +1,53 @@
 <script lang="ts">
-	import { formatDate } from '#lib/format.ts';
+	import { invalidateAll } from '$app/navigation';
+	import { formatBytes, formatDate } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 
 	const admin = $derived(data.user?.role === 'admin');
 	let copied = $state(false);
+	let packUpload = $state<{ name: string; loaded: number; total: number } | null>(null);
+	let packMessage = $state<{ ok: boolean; text: string } | null>(null);
+	let packInput = $state<HTMLInputElement>();
+
+	function uploadPack(file: File) {
+		packMessage = null;
+		packUpload = { name: file.name, loaded: 0, total: file.size };
+		const request = new XMLHttpRequest();
+		request.open('POST', '/api/maps');
+		request.setRequestHeader('content-type', 'application/octet-stream');
+		request.upload.onprogress = (event) => {
+			if (packUpload) packUpload.loaded = event.loaded;
+		};
+		request.onload = async () => {
+			packUpload = null;
+			if (request.status === 201) {
+				const pack = JSON.parse(request.responseText) as { map: string };
+				packMessage = { ok: true, text: `${pack.map} is ready in 3D` };
+				await invalidateAll();
+			} else {
+				let text = `Server answered ${request.status}`;
+				try {
+					text = (JSON.parse(request.responseText) as { message?: string }).message ?? text;
+				} catch {}
+				packMessage = { ok: false, text };
+			}
+		};
+		request.onerror = () => {
+			packUpload = null;
+			packMessage = { ok: false, text: 'Connection lost' };
+		};
+		request.send(file);
+	}
+
+	async function removePack(map: string) {
+		if (!confirm(`Remove the 3D map for ${map}? Matches on it fall back to the simple 3D view.`))
+			return;
+		const response = await fetch(`/api/maps/${map}`, { method: 'DELETE' });
+		if (!response.ok) packMessage = { ok: false, text: `Could not remove ${map}` };
+		await invalidateAll();
+	}
 
 	async function copy(link: string) {
 		try {
@@ -122,6 +164,61 @@
 		</ul>
 		{#if form?.action === 'remove' && form.message}<p class="form-error">{form.message}</p>{/if}
 	</section>
+
+	<section class="panel">
+		<h2>3D maps</h2>
+		<p class="hint">
+			Maps with textures, lighting and sky for the 3D view. Make a pack on a PC with CS2 using the
+			map exporter (see the README), then add the zip here.
+		</p>
+		{#if data.mapPacks.length}
+			<ul class="list">
+				{#each data.mapPacks as pack (pack.map)}
+					<li>
+						<span>{pack.map}</span>
+						<span class="muted"
+							>{formatBytes(pack.bytes)} · game {pack.build ?? 'unknown'} · exported {formatDate(
+								new Date(pack.exportedAt)
+							)}</span
+						>
+						<button type="button" class="small danger" onclick={() => removePack(pack.map)}
+							>Remove</button
+						>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+		<div class="row">
+			<input
+				bind:this={packInput}
+				type="file"
+				accept=".zip,application/zip"
+				hidden
+				onchange={(e) => {
+					const file = e.currentTarget.files?.[0];
+					if (file) uploadPack(file);
+					e.currentTarget.value = '';
+				}}
+			/>
+			<button
+				type="button"
+				class="primary"
+				disabled={!!packUpload}
+				onclick={() => packInput?.click()}>Add map pack</button
+			>
+			{#if packUpload}
+				<span class="muted" role="status"
+					>{packUpload.loaded < packUpload.total
+						? `Uploading ${packUpload.name} · ${Math.floor((packUpload.loaded / packUpload.total) * 100)} %`
+						: `Unpacking ${packUpload.name}…`}</span
+				>
+			{:else if packMessage}
+				<span class:form-error={!packMessage.ok} class:form-ok={packMessage.ok} role="status"
+					>{packMessage.text}</span
+				>
+			{/if}
+		</div>
+	</section>
 {/if}
 
 <style>
@@ -194,7 +291,8 @@
 		background: var(--surface-2);
 	}
 
-	.list li form {
+	.list li form,
+	.list li > button {
 		margin-left: auto;
 	}
 

@@ -11,8 +11,10 @@ import {
 	type Role,
 	type SessionUser
 } from '@cs-demo-cloud/db';
+import { listMapPacks } from '@cs-demo-cloud/shared';
 import { db } from '#lib/server/db.ts';
 import { SESSION_COOKIE } from '#lib/server/session.ts';
+import { storage } from '#lib/server/storage.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 function requireAdmin(user: SessionUser | null): SessionUser {
@@ -20,11 +22,12 @@ function requireAdmin(user: SessionUser | null): SessionUser {
 	return user;
 }
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const admin = locals.user?.role === 'admin';
 	return {
 		users: admin ? listUsers(db) : [],
-		invites: admin ? listOpenInvites(db) : []
+		invites: admin ? listOpenInvites(db) : [],
+		mapPacks: await listMapPacks(storage)
 	};
 };
 
