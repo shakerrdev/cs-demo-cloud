@@ -1,8 +1,8 @@
 import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
-import { openDb, registerDemo } from '@cs-demo-cloud/db';
-import { createStorage, receiveDemo } from '@cs-demo-cloud/shared';
+import { basename, dirname, join, resolve } from 'node:path';
+import { databasePath, openDb, registerDemo } from '@cs-demo-cloud/db';
+import { createStorage, receiveDemo, runAsOwnerOf } from '@cs-demo-cloud/shared';
 
 const demoFile = /\.(dem|bz2|gz|zst)$/i;
 
@@ -23,6 +23,7 @@ if (targets.length === 0) {
 	process.exit(1);
 }
 
+runAsOwnerOf(dirname(databasePath()));
 const db = openDb();
 const storage = createStorage();
 let queued = 0;
