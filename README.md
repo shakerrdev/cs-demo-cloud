@@ -47,6 +47,21 @@ Upload is the primary way in and always works. Auto-fetch and import helpers bui
 | Valve matchmaking   | Steam Web API `GetNextMatchSharingCode` with your match-history auth code, then the Game Coordinator resolves each share code to a download URL   | Needs a logged-in Steam account for the GC (a separate bot account is safest). Download links expire about a month after the match, so fetch promptly |
 | Companion extension | Browser extension / userscript that adds a "Send to cs-demo-cloud" button on sites like FACEIT and sends the demo with your own logged-in session | Works around platforms that lock demo downloads behind private APIs. Authenticates with a personal API token                                          |
 
+## Auto-import from Valve
+
+The **Auto-import** page downloads new Premier, Competitive and Wingman matches on its own:
+
+1. Every 10 minutes (or on **Check now**) the fetcher asks the Steam Web API (`GetNextMatchSharingCode`) for match codes newer than the last one it knows, for everyone who linked their account.
+2. A **bot account** logs in, briefly launches CS2 and asks the Game Coordinator for each match's demo link, then logs off again.
+3. The `.dem.bz2` is downloaded from Valve's replay servers and parsed like an upload. Teammates who both linked their accounts share one copy.
+
+What it needs:
+
+- **Each person**: their SteamID, their match history **auth code** and their **latest match code**, both from [Steam's CS2 match history page](https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128). Only matches from that code onwards can be found; Steam has no way to list older ones.
+- **Admins, once**: a [Steam Web API key](https://steamcommunity.com/dev/apikey) and a **separate, free Steam account** for the bot. Logging in your own account would kick you out of CS2. The bot login supports Steam Guard email codes, app codes and app approval; the app keeps the login token (valid about 200 days, renewed automatically), never the password.
+
+Valve keeps demos for about a month, so older matches show up as _Not available_. A failed download is retried up to 5 times; **Retry** puts it back in the queue. The fetcher runs as its own process (`apps/worker/src/fetcher.ts`, the `fetcher` service in Docker); set `VALVE_INTERVAL_MINUTES` to change how often it checks.
+
 ## Stack
 
 - **TypeScript** end to end, run directly by Node (no build step outside the web app)
@@ -77,20 +92,20 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` applies migrations, then starts the web app on http://localhost:5173 and the worker. With no accounts yet, the first request prints an admin invite link in the terminal. Data lives in `./data` unless `DATA_DIR` is set.
+`pnpm dev` applies migrations, then starts the web app on http://localhost:5173 and the worker (run `node apps/worker/src/fetcher.ts` too when working on auto-import). With no accounts yet, the first request prints an admin invite link in the terminal. Data lives in `./data` unless `DATA_DIR` is set.
 
-| Command                     | What it does                                         |
-| --------------------------- | ---------------------------------------------------- |
-| `pnpm check`                | Type check every package                             |
-| `pnpm test`                 | Run the tests                                        |
-| `pnpm lint`                 | Check formatting                                     |
-| `pnpm format`               | Format everything                                    |
-| `pnpm build`                | Production build of the web app                      |
-| `pnpm start`                | Run the production build: migrations, web and worker |
-| `pnpm db:generate`          | Create a migration after a schema change             |
-| `pnpm db:migrate`           | Apply migrations                                     |
-| `pnpm demos:import <files>` | Queue demo files from disk, same as uploading them   |
-| `pnpm invite [--admin]`     | Print a new invite link                              |
+| Command                     | What it does                                                       |
+| --------------------------- | ------------------------------------------------------------------ |
+| `pnpm check`                | Type check every package                                           |
+| `pnpm test`                 | Run the tests                                                      |
+| `pnpm lint`                 | Check formatting                                                   |
+| `pnpm format`               | Format everything                                                  |
+| `pnpm build`                | Production build of the web app                                    |
+| `pnpm start`                | Run the production build: migrations, then web, worker and fetcher |
+| `pnpm db:generate`          | Create a migration after a schema change                           |
+| `pnpm db:migrate`           | Apply migrations                                                   |
+| `pnpm demos:import <files>` | Queue demo files from disk, same as uploading them                 |
+| `pnpm invite [--admin]`     | Print a new invite link                                            |
 
 In production the web app needs `BODY_SIZE_LIMIT=Infinity` (or e.g. `2G`), since adapter-node rejects request bodies over 512 KB by default and demos are a few hundred MB.
 
@@ -160,7 +175,7 @@ Passwords are hashed with scrypt; sessions last 30 days (extended while in use) 
 
 ## Docker (NAS or server)
 
-Every push to `main` is checked, tested and published as `ghcr.io/shakerrdev/cs-demo-cloud:latest` (x86-64) by GitHub Actions, including a smoke test of the image. [`compose.yaml`](compose.yaml) runs it as two containers from that image: `web` (runs migrations, then the site) and `worker` (parsing). They share two folders next to the compose file: `data` (demos, replays, radar images) and `db` (the SQLite database). Back up both.
+Every push to `main` is checked, tested and published as `ghcr.io/shakerrdev/cs-demo-cloud:latest` (x86-64) by GitHub Actions, including a smoke test of the image. [`compose.yaml`](compose.yaml) runs it as three containers from that image: `web` (runs migrations, then the site), `worker` (parsing) and `fetcher` (auto-import from Valve). They share two folders next to the compose file: `data` (demos, replays, radar images) and `db` (the SQLite database). Back up both.
 
 ### UGREEN NAS (UGOS Pro)
 
@@ -210,7 +225,7 @@ Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web 
 - [x] Upload + parse a demo into replay blobs and stats
 - [x] 2D radar viewer
 - [x] Match list and scoreboards
-- [ ] Auto-fetch via share codes + Game Coordinator
+- [x] Auto-fetch via share codes + Game Coordinator
 - [x] Auth with invite links
 - [x] Docker image and compose setup
 - [x] Published image with CI
