@@ -91,9 +91,10 @@ function copy(data: Uint8Array): Uint8Array {
 export function createTexture(packed: PackTexture, options: TextureOptions = {}): THREE.Texture {
 	const compressed = compressedFormats[packed.format];
 	const volume = (packed.flags & TEXTURE_VOLUME) !== 0;
+	const cubeArray = packed.faces === 6 && (packed.depth > 1 || options.array === true);
 	let texture: THREE.Texture;
 
-	if (packed.faces === 6) {
+	if (packed.faces === 6 && !cubeArray) {
 		const faceMips = Array.from({ length: 6 }, () => [] as THREE.CompressedTexture['mipmaps']);
 		packed.mipData.forEach((mip, level) => {
 			const faceBytes = mip.length / 6;
@@ -130,8 +131,8 @@ export function createTexture(packed: PackTexture, options: TextureOptions = {})
 			cube.generateMipmaps = false;
 			texture = cube;
 		}
-	} else if (packed.depth > 1 || options.array) {
-		const layers = packed.depth;
+	} else if (cubeArray || packed.depth > 1 || options.array) {
+		const layers = packed.depth * packed.faces;
 		if (compressed) {
 			const level0 = packed.mipData[0]!;
 			const mipmaps = (volume ? [level0] : packed.mipData).map((data, level) => ({

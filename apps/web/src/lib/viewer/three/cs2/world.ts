@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-import type { MapPackManifest, PackProbeVolume, PackWorld, Vec3 } from '@cs-demo-cloud/replay';
+import type {
+	MapPackManifest,
+	PackEnvMapVolume,
+	PackProbeVolume,
+	PackWorld,
+	Vec3
+} from '@cs-demo-cloud/replay';
 import { defaultTextures, type WorldShading } from './material.ts';
-import { MAX_PROBE_VOLUMES } from './shader.ts';
+import { ENV_VOLUME_TEXELS, MAX_ENV_VOLUMES, MAX_PROBE_VOLUMES } from './shader.ts';
 
 export function anglesToMatrix(angles: Vec3): THREE.Matrix4 {
 	const [pitch, yaw, roll] = angles.map((a) => (a * Math.PI) / 180) as Vec3;
@@ -55,6 +61,41 @@ function probeTable(volumes: PackProbeVolume[]): THREE.DataTexture {
 	return texture;
 }
 
+function normalizeMatrix(origin: Vec3, angles: Vec3, min: Vec3, max: Vec3): THREE.Matrix4 {
+	const toWorld = anglesToMatrix(angles).setPosition(...origin);
+	const size = new THREE.Vector3(...max).sub(new THREE.Vector3(...min));
+	return new THREE.Matrix4()
+		.makeScale(1 / size.x, 1 / size.y, 1 / size.z)
+		.multiply(new THREE.Matrix4().makeTranslation(-min[0], -min[1], -min[2]))
+		.multiply(toWorld.invert());
+}
+
+function envTable(volumes: PackEnvMapVolume[]): THREE.DataTexture {
+	const count = Math.min(volumes.length, MAX_ENV_VOLUMES);
+	const width = Math.max(1, count) * ENV_VOLUME_TEXELS;
+	const data = new Float32Array(width * 4);
+	volumes.slice(0, count).forEach((volume, i) => {
+		const e = normalizeMatrix(volume.origin, volume.angles, volume.min, volume.max).elements;
+		const base = i * ENV_VOLUME_TEXELS * 4;
+		for (let row = 0; row < 3; row++) {
+			data.set([e[row]!, e[row + 4]!, e[row + 8]!, e[row + 12]!], base + row * 4);
+		}
+		const size = volume.max.map((v, axis) => v - volume.min[axis]!);
+		data.set([...volume.min, volume.arrayIndex], base + 12);
+		data.set([...size, volume.box ? 1 : 0], base + 16);
+		data.set(
+			size.map((s, axis) => s / Math.max(volume.edgeFade[axis]!, 1e-3)),
+			base + 20
+		);
+		data.set(volume.normalization, base + 24);
+	});
+	const texture = new THREE.DataTexture(data, width, 1, THREE.RGBAFormat, THREE.FloatType);
+	texture.minFilter = THREE.NearestFilter;
+	texture.magFilter = THREE.NearestFilter;
+	texture.needsUpdate = true;
+	return texture;
+}
+
 const emptyArray = (() => {
 	const texture = new THREE.DataArrayTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, 1);
 	texture.needsUpdate = true;
@@ -69,6 +110,7 @@ export interface WorldShadingSetup {
 		shadows: THREE.IUniform;
 	};
 	probeUniforms: { irradiance: THREE.IUniform; shadows: THREE.IUniform };
+	envUniforms: { texture: THREE.IUniform; mips: THREE.IUniform };
 	dispose(): void;
 }
 
@@ -108,6 +150,16 @@ export function createWorldShading(
 		return ref ? ref.depth / 6 : 1;
 	})();
 
+	const envUniforms = {
+		texture: { value: emptyArray as THREE.Texture },
+		mips: { value: 0 }
+	};
+	let envVolumes: THREE.DataTexture | null = null;
+	if (world.envMaps?.volumes.length) {
+		defines.WORLD_ENV_MAP = 1;
+		envVolumes = envTable(world.envMaps.volumes);
+	}
+
 	if (manifest.fog?.cubemap && manifest.sky) defines.FOG_CUBE = 1;
 	if (manifest.fog?.gradient) defines.FOG_GRADIENT = 1;
 
@@ -133,6 +185,10 @@ export function createWorldShading(
 		uProbeVolumes: { value: table ?? defaultTextures.black },
 		uProbeCount: { value: Math.min(world.probes?.volumes.length ?? 0, MAX_PROBE_VOLUMES) },
 		uProbeDepth: { value: probeDepth },
+		uEnvMap: envUniforms.texture,
+		uEnvMips: envUniforms.mips,
+		uEnvVolumes: { value: envVolumes ?? defaultTextures.black },
+		uEnvCount: { value: Math.min(world.envMaps?.volumes.length ?? 0, MAX_ENV_VOLUMES) },
 		uSkyOrigin: { value: new THREE.Vector3(...origin) },
 		uWorldScale: { value: scale },
 		uCutZ: world.kind === 'world' ? shared.uCutZ! : { value: 1e9 }
@@ -142,7 +198,11 @@ export function createWorldShading(
 		shading: { uniforms, defines },
 		lightmapUniforms,
 		probeUniforms,
-		dispose: () => table?.dispose()
+		envUniforms,
+		dispose: () => {
+			table?.dispose();
+			envVolumes?.dispose();
+		}
 	};
 }
 

@@ -264,6 +264,24 @@ export class MapPack {
 			);
 			add(lightmaps.shadows, setup.lightmapUniforms.shadows, 'linear');
 		}
+		const envMaps = world.envMaps;
+		const envRef = envMaps ? textures[envMaps.texture] : undefined;
+		if (
+			envMaps &&
+			envRef &&
+			supportsFormat(this.support, envRef.format) &&
+			envRef.depth * envRef.faces <= this.support.maxArrayLayers
+		)
+			this.enqueue(
+				`${envMaps.texture}|envmap`,
+				envRef,
+				1,
+				{ clamp: true, filter: 'trilinear', array: true },
+				setup.envUniforms.texture,
+				(texture) => {
+					setup.envUniforms.mips.value = Math.max(0, texture.mipmaps.length - 1);
+				}
+			);
 		const probes = world.probes;
 		if (probes) {
 			const irradiance = textures[probes.irradiance];
