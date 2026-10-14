@@ -91,7 +91,7 @@ interface ManifestShape {
 	exportedAt?: unknown;
 	build?: unknown;
 	worlds?: { model?: unknown }[];
-	textures?: Record<string, { file?: unknown }>;
+	textures?: Record<string, { file?: unknown; low?: { file?: unknown } }>;
 }
 
 export async function installMapPack(storage: Storage, zipPath: string): Promise<InstalledMapPack> {
@@ -121,7 +121,9 @@ export async function installMapPack(storage: Storage, zipPath: string): Promise
 
 		const referenced = [
 			...manifest.worlds.map((world) => world.model),
-			...Object.values(manifest.textures ?? {}).map((texture) => texture.file)
+			...Object.values(manifest.textures ?? {}).flatMap((texture) =>
+				texture.low ? [texture.file, texture.low.file] : [texture.file]
+			)
 		];
 		for (const file of referenced) {
 			if (typeof file !== 'string' || !zip.entries.has(file))
