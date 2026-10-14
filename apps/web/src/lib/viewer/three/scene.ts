@@ -4,8 +4,15 @@ import { FLAG_PRESENT, type MapInfo, type MapMesh, type RoundReplay } from '@cs-
 import { playerStates, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight } from './actors.ts';
 import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
+import type { MapPack, PackProgress } from './cs2/pack.ts';
 
 export type CameraMode = 'free' | 'follow' | 'pov';
+
+export type PackStatus =
+	| { state: 'none' }
+	| { state: 'loading'; progress: PackProgress | null }
+	| { state: 'ready'; progress: PackProgress }
+	| { state: 'error'; message: string };
 
 export interface SceneFrame {
 	replay: RoundReplay;
@@ -23,6 +30,7 @@ const MAX_PLAYER_SCALE = 3;
 
 export class ReplayScene {
 	onPick: ((index: number) => void) | null = null;
+	onPackStatus: ((status: PackStatus) => void) | null = null;
 
 	private renderer: THREE.WebGLRenderer;
 	private scene = new THREE.Scene();
@@ -51,6 +59,9 @@ export class ReplayScene {
 	private raycaster = new THREE.Raycaster();
 	private projected = new THREE.Vector3();
 	private detach: () => void;
+	private pack: MapPack | null = null;
+	private packKey = '';
+	private started = performance.now();
 
 	constructor(canvas: HTMLCanvasElement, overlay: HTMLCanvasElement) {
 		this.renderer = new THREE.WebGLRenderer({
@@ -90,6 +101,7 @@ export class ReplayScene {
 		};
 		canvas.addEventListener('pointerdown', down);
 		canvas.addEventListener('pointerup', up);
+		if (import.meta.env.DEV) (window as unknown as { replayScene: ReplayScene }).replayScene = this;
 		this.detach = () => {
 			canvas.removeEventListener('pointerdown', down);
 			canvas.removeEventListener('pointerup', up);
@@ -103,6 +115,10 @@ export class ReplayScene {
 		this.pixelRatio = pixelRatio;
 		this.renderer.setPixelRatio(pixelRatio);
 		this.renderer.setSize(this.width, this.height, false);
+		this.pack?.post.setSize(
+			Math.round(this.width * pixelRatio),
+			Math.round(this.height * pixelRatio)
+		);
 		this.overlay.canvas.width = Math.round(this.width * pixelRatio);
 		this.overlay.canvas.height = Math.round(this.height * pixelRatio);
 		this.camera.aspect = this.width / this.height;
@@ -124,6 +140,7 @@ export class ReplayScene {
 			if (mesh) {
 				this.mapObject = new THREE.Mesh(createMapGeometry(mesh), this.mapMaterial);
 				this.mapObject.frustumCulled = false;
+				this.mapObject.visible = !this.pack;
 				placeMap(this.mapObject, mesh);
 				this.scene.add(this.mapObject);
 			}
@@ -139,6 +156,56 @@ export class ReplayScene {
 
 		if (this.map?.name !== map?.name) this.framedMap = null;
 		this.map = map;
+		this.dirty = true;
+	}
+
+	setPack(map: string, version: string | null) {
+		const key = version ? `${map}@${version}` : '';
+		if (key === this.packKey) return;
+		this.packKey = key;
+		this.clearPack();
+		if (!version) {
+			this.onPackStatus?.({ state: 'none' });
+			return;
+		}
+		this.onPackStatus?.({ state: 'loading', progress: null });
+		import('./cs2/pack.ts')
+			.then(({ MapPack }) =>
+				MapPack.load(this.renderer, map, version, (progress) => {
+					if (this.packKey !== key) return;
+					this.onPackStatus?.(
+						progress.ready ? { state: 'ready', progress } : { state: 'loading', progress }
+					);
+				})
+			)
+			.then((pack) => {
+				if (this.packKey !== key) {
+					pack.dispose();
+					return;
+				}
+				this.pack = pack;
+				pack.onChange = this.markDirty;
+				pack.post.setSize(
+					Math.round(this.width * this.pixelRatio),
+					Math.round(this.height * this.pixelRatio)
+				);
+				this.scene.add(pack.main);
+				if (this.mapObject) this.mapObject.visible = false;
+				this.dirty = true;
+			})
+			.catch((error: Error) => {
+				if (this.packKey !== key) return;
+				console.warn(error);
+				this.onPackStatus?.({ state: 'error', message: error.message });
+			});
+	}
+
+	private clearPack() {
+		if (!this.pack) return;
+		this.scene.remove(this.pack.main);
+		this.pack.dispose();
+		this.pack = null;
+		if (this.mapObject) this.mapObject.visible = true;
 		this.dirty = true;
 	}
 
@@ -175,13 +242,39 @@ export class ReplayScene {
 		else this.followAnchor = null;
 		if (mode === 'pov' && focused) this.placePov(focused);
 
-		this.mapMaterial.uniforms.uCutZ!.value = roofs ? 1e9 : this.cutHeight(focused) + ROOF_CUT;
+		const cutZ = roofs ? 1e9 : this.cutHeight(focused) + ROOF_CUT;
+		this.mapMaterial.uniforms.uCutZ!.value = cutZ;
+		this.pack?.setCutZ(cutZ);
 		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
-		this.renderer.render(this.scene, this.camera);
+		if (this.pack) this.renderPack(this.pack);
+		else this.renderer.render(this.scene, this.camera);
 		this.drawOverlay(focus);
 	}
 
+	private renderPack(pack: MapPack) {
+		const renderer = this.renderer;
+		this.camera.updateMatrixWorld();
+		pack.update(this.camera, (performance.now() - this.started) / 1000);
+		const background = this.scene.background;
+		this.scene.background = null;
+		renderer.autoClear = false;
+		renderer.setRenderTarget(pack.post.target);
+		renderer.setClearColor(0x000000, 1);
+		renderer.clear(true, true, true);
+		if (pack.skyboxScene) {
+			renderer.render(pack.skyboxScene, pack.skyboxCamera);
+			renderer.clearDepth();
+		}
+		renderer.render(this.scene, this.camera);
+		pack.post.render(renderer);
+		renderer.autoClear = true;
+		renderer.setClearColor(background as THREE.Color);
+		this.scene.background = background;
+	}
+
 	dispose() {
+		this.packKey = '';
+		this.clearPack();
 		this.detach();
 		this.controls.removeEventListener('change', this.markDirty);
 		this.controls.dispose();

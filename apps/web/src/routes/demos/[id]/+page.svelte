@@ -65,6 +65,7 @@
 		demoId={data.demo.id}
 		version={match.parsedAt.getTime()}
 		map={match.map}
+		mapPack={data.mapPack}
 		{rounds}
 		{teamNames}
 	/>

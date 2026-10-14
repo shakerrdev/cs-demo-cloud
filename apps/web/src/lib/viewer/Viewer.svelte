@@ -11,7 +11,7 @@
 	import { drawFrame, sideColors } from './draw.ts';
 	import { bombState, lastTick, playerStates } from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
-	import type { CameraMode, ReplayScene } from './three/scene.ts';
+	import type { CameraMode, PackStatus, ReplayScene } from './three/scene.ts';
 
 	interface RoundInfo {
 		number: number;
@@ -27,11 +27,12 @@
 		demoId: string;
 		version: number;
 		map: string;
+		mapPack: string | null;
 		rounds: RoundInfo[];
 		teamNames: Record<TeamKey, string>;
 	}
 
-	let { demoId, version, map, rounds, teamNames }: Props = $props();
+	let { demoId, version, map, mapPack, rounds, teamNames }: Props = $props();
 
 	const ROUND_SECONDS = 115;
 	const BOMB_SECONDS = 40;
@@ -65,6 +66,7 @@
 	let mesh = $state.raw<MapMesh | null | undefined>(undefined);
 	let meshError = $state<string | null>(null);
 	let sceneError = $state<string | null>(null);
+	let packStatus = $state<PackStatus>({ state: 'none' });
 
 	let radar = $state.raw<HTMLImageElement | null>(null);
 	let lowerRadar = $state.raw<HTMLImageElement | null>(null);
@@ -165,6 +167,7 @@
 				if (disposed) return;
 				created = new ReplayScene(canvas, overlay);
 				created.onPick = (index) => (focus = focus === index ? null : index);
+				created.onPackStatus = (status) => (packStatus = status);
 				scene3d = created;
 			})
 			.catch((cause: Error) => {
@@ -196,6 +199,10 @@
 	$effect(() => {
 		if (!scene3d || mesh === undefined) return;
 		scene3d.setMap(mapInfo, mesh, { upper: radar, lower: lowerRadar });
+	});
+
+	$effect(() => {
+		scene3d?.setPack(map, mapPack);
 	});
 
 	$effect(() => {
@@ -451,14 +458,24 @@
 			{#if view === '3d' && !loading && !error}
 				{#if sceneError}
 					<div class="notice error">{sceneError}</div>
-				{:else if meshError}
-					<div class="notice error">{meshError}</div>
-				{:else if mesh === undefined}
-					<div class="notice">Loading 3D map…</div>
-				{:else if mesh === null}
-					<div class="notice faint">
-						No 3D map for {map} yet. The worker downloads it the next time it starts.
+				{:else if packStatus.state === 'loading'}
+					<div class="notice">
+						Loading textured map{packStatus.progress?.textures
+							? ` · ${packStatus.progress.texturesLoaded}/${packStatus.progress.textures} textures`
+							: '…'}
 					</div>
+				{:else if packStatus.state === 'error'}
+					<div class="notice error">{packStatus.message}</div>
+				{:else if packStatus.state === 'none'}
+					{#if meshError}
+						<div class="notice error">{meshError}</div>
+					{:else if mesh === undefined}
+						<div class="notice">Loading 3D map…</div>
+					{:else if mesh === null}
+						<div class="notice faint">
+							No 3D map for {map} yet. The worker downloads it the next time it starts.
+						</div>
+					{/if}
 				{/if}
 			{/if}
 			<ol class="killfeed">
