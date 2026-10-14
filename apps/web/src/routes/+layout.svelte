@@ -19,6 +19,7 @@
 	{#if data.user}
 		<nav>
 			<a href="/" class:active={page.url.pathname === '/'}>Matches</a>
+			<a href="/auto-import" class:active={page.url.pathname === '/auto-import'}>Auto-import</a>
 			<a href="/settings" class:active={page.url.pathname === '/settings'}>Settings</a>
 			<form method="POST" action="/logout">
 				<button type="submit" title="Sign out">{data.user.name} · Sign out</button>
@@ -92,7 +93,7 @@
 		outline-offset: 1px;
 	}
 
-	:global(form button, a.button) {
+	:global(form button, .button) {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
