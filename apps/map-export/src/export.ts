@@ -13,6 +13,7 @@ import {
 	type MapPackManifest,
 	type PackBloom,
 	type PackCubemapFog,
+	type PackEnvMaps,
 	type PackFog,
 	type PackGradientFog,
 	type PackLightmaps,
@@ -23,7 +24,8 @@ import {
 	type PackSun,
 	type PackTextureRef,
 	type PackWorld,
-	type Vec3
+	type Vec3,
+	type Vec4
 } from '@cs-demo-cloud/replay';
 import { ZipWriter } from '@cs-demo-cloud/shared/zip';
 import {
@@ -118,6 +120,7 @@ export class PackBuilder {
 	private zip: ZipWriter;
 	private names = new Set<string>();
 	readonly textures: Record<string, PackTextureRef> = {};
+	readonly radianceSh = new Map<string, number[]>();
 	private missing = new Set<string>();
 	private log: (message: string) => void;
 	private maxTextureSize: number;
@@ -179,6 +182,7 @@ export class PackBuilder {
 			bytes: texture.mipData.reduce((sum, mip) => sum + mip.length, 0)
 		};
 		this.textures[key] = ref;
+		if (parsed.info.radianceSh) this.radianceSh.set(key, parsed.info.radianceSh);
 		return ref;
 	}
 
@@ -239,6 +243,11 @@ function sunFrom(entities: Entity[]): PackSun | null {
 }
 
 const PROBE_CLASSES = new Set(['env_combined_light_probe_volume', 'env_light_probe_volume']);
+const ENV_MAP_CLASSES = new Set([
+	'env_combined_light_probe_volume',
+	'env_cubemap_box',
+	'env_cubemap'
+]);
 
 function indoorLevel(entity: Entity): number {
 	return number(entity, 'indoor_outdoor_level', 0);
@@ -288,6 +297,63 @@ async function probesFrom(
 				],
 				atlasSize: size(e)
 			}))
+	};
+}
+
+export function envMapNormalization(radianceSh: number[] | undefined, arrayIndex: number): Vec4 {
+	const perChannel = 9;
+	const offset = arrayIndex * perChannel * 3;
+	if (!radianceSh || arrayIndex < 0 || offset + perChannel * 3 > radianceSh.length)
+		return [0, 0, 0, 0];
+	const luma = [0, 1, 2, 3].map(
+		(band) =>
+			radianceSh[offset + band]! * 0.2125 +
+			radianceSh[offset + perChannel + band]! * 0.7154 +
+			radianceSh[offset + perChannel * 2 + band]! * 0.0721
+	);
+	const linear = 0.325735;
+	return [luma[3]! * linear, luma[1]! * linear, luma[2]! * linear, luma[0]! * 0.282095];
+}
+
+async function envMapsFrom(
+	entities: Entity[],
+	pack: PackBuilder,
+	vpks: Vpk[]
+): Promise<PackEnvMaps | null> {
+	const volumes = entities.filter(
+		(e) =>
+			ENV_MAP_CLASSES.has(className(e)) &&
+			enabled(e) &&
+			text(e, 'cubemaptexture') &&
+			!text(e, 'customcubemaptexture')
+	);
+	if (!volumes.length) return null;
+	const texture = text(volumes[0]!, 'cubemaptexture')!.replace(/_c$/, '');
+	const ref = await pack.addTexture(texture, vpks, 'envmaps');
+	if (!ref || ref.faces !== 6) return null;
+	const radianceSh = pack.radianceSh.get(texture);
+	const arrayIndex = (e: Entity) => number(e, 'array_index', 0);
+
+	return {
+		texture,
+		volumes: volumes
+			.filter((e) => text(e, 'cubemaptexture')!.replace(/_c$/, '') === texture)
+			.filter((e) => arrayIndex(e) < ref.depth)
+			.sort((a, b) => indoorLevel(b) - indoorLevel(a) || arrayIndex(a) - arrayIndex(b))
+			.map((e) => {
+				const sphere = className(e) === 'env_cubemap';
+				const radius = number(e, 'influenceradius', 512);
+				return {
+					origin: vec3(e, 'origin', [0, 0, 0]),
+					angles: vec3(e, 'angles', [0, 0, 0]),
+					min: sphere ? [-radius, -radius, -radius] : vec3(e, 'box_mins', [-64, -64, -64]),
+					max: sphere ? [radius, radius, radius] : vec3(e, 'box_maxs', [64, 64, 64]),
+					edgeFade: vec3(e, 'edge_fade_dists', [8, 8, 8]),
+					arrayIndex: arrayIndex(e),
+					box: !sphere,
+					normalization: envMapNormalization(radianceSh, arrayIndex(e))
+				};
+			})
 	};
 }
 
@@ -383,6 +449,7 @@ async function exportWorld(
 	}
 
 	const probes = await probesFrom(entities, pack, [source.vpk, ...vpks]);
+	const envMaps = await envMapsFrom(entities, pack, [source.vpk, ...vpks]);
 	log(`${source.id}: [${seconds()}] done`);
 	if (!options.keepWork) await rm(gltfDir, { recursive: true, force: true });
 
@@ -395,6 +462,7 @@ async function exportWorld(
 			model,
 			lightmaps,
 			probes,
+			envMaps,
 			sun: sunFrom(entities),
 			skyCamera:
 				source.kind === 'skybox' && skyCamera

@@ -1,5 +1,7 @@
 import type { Vec3 } from './mesh.ts';
 
+export type Vec4 = [number, number, number, number];
+
 export const MAP_PACK_VERSION = 1;
 export const MAP_PACK_MANIFEST = 'map.json';
 
@@ -76,12 +78,29 @@ export interface PackProbes {
 	volumes: PackProbeVolume[];
 }
 
+export interface PackEnvMapVolume {
+	origin: Vec3;
+	angles: Vec3;
+	min: Vec3;
+	max: Vec3;
+	edgeFade: Vec3;
+	arrayIndex: number;
+	box: boolean;
+	normalization: Vec4;
+}
+
+export interface PackEnvMaps {
+	texture: string;
+	volumes: PackEnvMapVolume[];
+}
+
 export interface PackWorld {
 	id: string;
 	kind: 'world' | 'skybox';
 	model: string;
 	lightmaps: PackLightmaps | null;
 	probes: PackProbes | null;
+	envMaps?: PackEnvMaps | null;
 	sun: PackSun | null;
 	skyCamera: { origin: Vec3; scale: number } | null;
 }
