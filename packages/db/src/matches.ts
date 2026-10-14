@@ -65,3 +65,11 @@ export function getMatch(db: Db, demoId: string) {
 			.all()
 	};
 }
+
+export function listMatchMaps(db: Db): string[] {
+	return db
+		.selectDistinct({ map: matches.map })
+		.from(matches)
+		.all()
+		.map((row) => row.map);
+}

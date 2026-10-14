@@ -3,12 +3,14 @@ import {
 	claimNextDemo,
 	completeDemo,
 	failDemo,
+	listMatchMaps,
 	openDb,
 	requeueStaleDemos,
 	touchDemo
 } from '@cs-demo-cloud/db';
 import { createStorage } from '@cs-demo-cloud/shared';
 import { removeOldFiles } from './housekeeping.ts';
+import { ensureMapAssets } from './map-assets.ts';
 import { processDemo, type WorkerContext } from './process-demo.ts';
 
 const idleDelayMs = 1000;
@@ -33,6 +35,10 @@ if (requeued > 0) console.log(`Requeued ${requeued} interrupted demo(s)`);
 await removeOldFiles(storage.workDir, hour);
 await removeOldFiles(storage.uploadDir, 6 * hour);
 console.log('Worker ready');
+
+void (async () => {
+	for (const map of listMatchMaps(db)) await ensureMapAssets(storage, map, context.log);
+})();
 
 while (!shutdown.signal.aborted) {
 	const demo = claimNextDemo(db);

@@ -6,7 +6,7 @@ import { REPLAY_VERSION, encodeRound } from '@cs-demo-cloud/replay';
 import type { Storage } from '@cs-demo-cloud/shared';
 import { analyzeDemo } from './analyze.ts';
 import { openDemoFile } from './decompress.ts';
-import { ensureRadars } from './radars.ts';
+import { ensureMapAssets } from './map-assets.ts';
 
 const compress = promisify(gzip);
 
@@ -70,9 +70,7 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 			kills: analyzed.kills.map((kill) => ({ ...kill, demoId: demo.id }))
 		});
 
-		await ensureRadars(storage, analyzed.map).catch((error: Error) =>
-			log(`Radar for ${analyzed.map}: ${error.message}`)
-		);
+		await ensureMapAssets(storage, analyzed.map, log);
 
 		log(
 			`${demo.fileName}: ${analyzed.map} ${analyzed.scoreA}-${analyzed.scoreB}, ${analyzed.rounds.length} rounds, ` +
