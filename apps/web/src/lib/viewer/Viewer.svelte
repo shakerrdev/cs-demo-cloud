@@ -459,9 +459,11 @@
 				{#if sceneError}
 					<div class="notice error">{sceneError}</div>
 				{:else if packStatus.state === 'loading'}
-					<div class="notice">
-						Loading textured map{packStatus.progress?.textures
-							? ` · ${packStatus.progress.texturesLoaded}/${packStatus.progress.textures} textures`
+					<div class="notice" class:faint={packStatus.progress?.preview}>
+						{packStatus.progress?.preview
+							? 'Sharpening textures'
+							: 'Loading textured map'}{packStatus.progress?.textures
+							? ` · ${packStatus.progress.texturesLoaded}/${packStatus.progress.textures}`
 							: '…'}
 					</div>
 				{:else if packStatus.state === 'error'}

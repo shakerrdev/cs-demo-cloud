@@ -43,8 +43,11 @@ const CONCURRENT_DOWNLOADS = 6;
 export interface PackProgress {
 	textures: number;
 	texturesLoaded: number;
+	preview: boolean;
 	ready: boolean;
 }
+
+const PREVIEW_PRIORITY = 1;
 
 interface LoadedWorld {
 	world: PackWorld;
@@ -54,11 +57,16 @@ interface LoadedWorld {
 
 interface TextureJob {
 	key: string;
+	file: string;
 	ref: PackTextureRef;
 	priority: number;
 	options: TextureOptions;
 	targets: THREE.IUniform[];
 	onLoad?: (texture: THREE.Texture) => void;
+	low?: TextureJob;
+	full?: TextureJob;
+	texture?: THREE.Texture;
+	done?: boolean;
 }
 
 export class UnsupportedPackError extends Error {}
@@ -70,7 +78,12 @@ export class MapPack {
 	readonly sky: THREE.Mesh<THREE.BoxGeometry, THREE.ShaderMaterial>;
 	readonly skyboxCamera = new THREE.PerspectiveCamera(50, 1, 0.5, 200000);
 	readonly post = new PostProcess();
-	readonly progress: PackProgress = { textures: 0, texturesLoaded: 0, ready: false };
+	readonly progress: PackProgress = {
+		textures: 0,
+		texturesLoaded: 0,
+		preview: false,
+		ready: false
+	};
 	onChange: (() => void) | null = null;
 
 	private base: string;
@@ -81,6 +94,7 @@ export class MapPack {
 	private jobs = new Map<string, TextureJob>();
 	private queue: TextureJob[] = [];
 	private active = 0;
+	private previewPending = 0;
 	private textures = new Set<THREE.Texture>();
 	private materials = new Set<THREE.Material>();
 	private abort = new AbortController();
@@ -235,12 +249,46 @@ export class MapPack {
 	) {
 		let job = this.jobs.get(key);
 		if (!job) {
-			job = { key, ref, priority, options, targets: [], onLoad };
+			job = { key, file: ref.file, ref, priority, options, targets: [], onLoad };
 			this.jobs.set(key, job);
 			this.queue.push(job);
 			this.progress.textures++;
+			if (ref.low) {
+				const low: TextureJob = {
+					key: `${key}|low`,
+					file: ref.low.file,
+					ref,
+					priority: Math.min(priority, PREVIEW_PRIORITY),
+					options,
+					targets: job.targets,
+					full: job
+				};
+				job.low = low;
+				job.priority = priority + 2;
+				this.queue.push(low);
+				this.progress.textures++;
+				if (low.priority <= PREVIEW_PRIORITY) this.previewPending++;
+			}
+			if (job.priority <= PREVIEW_PRIORITY) this.previewPending++;
 		}
 		if (target) job.targets.push(target);
+	}
+
+	private apply(job: TextureJob, texture: THREE.Texture) {
+		if (job.full?.done) {
+			texture.dispose();
+			return;
+		}
+		this.textures.add(texture);
+		for (const target of job.targets) target.value = texture;
+		job.texture = texture;
+		const low = job.low?.texture;
+		if (low) {
+			low.dispose();
+			this.textures.delete(low);
+			job.low!.texture = undefined;
+		}
+		if (!job.full) job.onLoad?.(texture);
 	}
 
 	private requestWorldTextures(world: PackWorld, setup: WorldShadingSetup) {
@@ -275,7 +323,7 @@ export class MapPack {
 			this.enqueue(
 				`${envMaps.texture}|envmap`,
 				envRef,
-				1,
+				2,
 				{ clamp: true, filter: 'trilinear', array: true },
 				setup.envUniforms.texture,
 				(texture) => {
@@ -352,13 +400,10 @@ export class MapPack {
 		while (this.active < CONCURRENT_DOWNLOADS && this.queue.length) {
 			const job = this.queue.shift()!;
 			this.active++;
-			fetchPackTexture(this.url(job.ref.file), this.abort.signal)
+			fetchPackTexture(this.url(job.file), this.abort.signal)
 				.then((packed) => {
 					if (this.abort.signal.aborted) return;
-					const texture = createTexture(packed, job.options);
-					this.textures.add(texture);
-					for (const target of job.targets) target.value = texture;
-					job.onLoad?.(texture);
+					this.apply(job, createTexture(packed, job.options));
 				})
 				.catch((error: Error) => {
 					if (!this.abort.signal.aborted)
@@ -366,8 +411,14 @@ export class MapPack {
 				})
 				.finally(() => {
 					this.active--;
+					job.done = true;
 					this.progress.texturesLoaded++;
-					if (!this.queue.length && this.active === 0) this.progress.ready = true;
+					if (job.priority <= PREVIEW_PRIORITY && --this.previewPending === 0)
+						this.progress.preview = true;
+					if (!this.queue.length && this.active === 0) {
+						this.progress.ready = true;
+						this.progress.preview = true;
+					}
 					if (!this.abort.signal.aborted) {
 						this.onTexture();
 						this.pump();
