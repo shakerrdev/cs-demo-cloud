@@ -238,6 +238,12 @@ function sunFrom(entities: Entity[]): PackSun | null {
 	};
 }
 
+const PROBE_CLASSES = new Set(['env_combined_light_probe_volume', 'env_light_probe_volume']);
+
+function indoorLevel(entity: Entity): number {
+	return number(entity, 'indoor_outdoor_level', 0);
+}
+
 async function probesFrom(
 	entities: Entity[],
 	pack: PackBuilder,
@@ -245,7 +251,7 @@ async function probesFrom(
 ): Promise<PackProbes | null> {
 	const volumes = entities.filter(
 		(e) =>
-			className(e) === 'env_combined_light_probe_volume' &&
+			PROBE_CLASSES.has(className(e)) &&
 			enabled(e) &&
 			e.has('light_probe_atlas_x') &&
 			text(e, 'lightprobetexture')
@@ -256,11 +262,19 @@ async function probesFrom(
 	if (!(await pack.addTexture(irradiance, vpks, 'probes'))) return null;
 	const hasShadows = shadows ? (await pack.addTexture(shadows, vpks, 'probes')) !== null : false;
 
+	const size = (e: Entity): Vec3 => [
+		number(e, 'light_probe_size_x', 1),
+		number(e, 'light_probe_size_y', 1),
+		number(e, 'light_probe_size_z', 1)
+	];
+	const lengthSq = (v: Vec3) => v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+
 	return {
 		irradiance,
 		shadows: hasShadows ? shadows : null,
 		volumes: volumes
 			.filter((e) => text(e, 'lightprobetexture') === irradiance)
+			.sort((a, b) => indoorLevel(b) - indoorLevel(a) || lengthSq(size(a)) - lengthSq(size(b)))
 			.map((e) => ({
 				origin: vec3(e, 'origin', [0, 0, 0]),
 				angles: vec3(e, 'angles', [0, 0, 0]),
@@ -272,11 +286,7 @@ async function probesFrom(
 					number(e, 'light_probe_atlas_y', 0),
 					number(e, 'light_probe_atlas_z', 0)
 				],
-				atlasSize: [
-					number(e, 'light_probe_size_x', 1),
-					number(e, 'light_probe_size_y', 1),
-					number(e, 'light_probe_size_z', 1)
-				]
+				atlasSize: size(e)
 			}))
 	};
 }
