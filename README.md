@@ -44,6 +44,20 @@ Map assets come from Valve's game files, which is fine for a private instance bu
 
 Map calibration (origin, scale, lower-level height) lives in `packages/replay/src/maps.ts`. Maps without awpy geometry still play in 2D.
 
+### Game-look 3D maps
+
+With a map pack installed, the 3D view shows the map as it looks in CS2 instead of the collision mesh: the real geometry and props with their textures, the baked lightmaps (irradiance, directional light and sun shadows), light probes for props, the 3D skybox, the sky, cubemap and gradient fog, and the map's tonemap and colour grading. Matches on maps without a pack keep the simple view.
+
+Packs are made from the game files on a PC with CS2 installed, then uploaded once:
+
+1. Install [Node.js](https://nodejs.org) 22.18 or newer and pnpm, clone this repository and run `pnpm install`
+2. Run `node apps/map-export/src/index.ts de_dust2 de_mirage` (or `--all`). It finds CS2 through Steam (or pass `--game <folder>`), and on the first run downloads [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI 20.0 and [gltfpack](https://github.com/zeux/meshoptimizer) 1.3 into a local cache
+3. In **Settings → 3D maps**, add the zip from `map-packs/` (admins only). Uploading a pack again replaces it
+
+Source 2 Viewer exports geometry and materials as glTF; the exporter keeps the lightmap UVs, drops tool brushes, compresses the meshes with meshopt and copies textures straight out of the VPKs in their GPU formats (BC1 to BC7, no re-encoding). Lightmaps, probes, sky and fog settings come from the world and entity lumps. de_dust2 makes a pack of about 230 MB; `--max-texture-size 1024` makes smaller ones.
+
+The browser needs S3TC and BPTC texture compression (any desktop GPU); phones without it keep the simple view.
+
 ## Demo sources
 
 Upload is the primary way in and always works. Auto-fetch and import helpers build on top of it.
@@ -86,9 +100,10 @@ Valve keeps demos for about a month, so older matches show up as _Not available_
 ```
 apps/web         SvelteKit app: upload, match list, match page, replay viewer
 apps/worker      parse jobs: decompress, parse, build replays, save stats
+apps/map-export  turns CS2 maps into 3D map packs (runs on a PC with CS2)
 packages/db      schema, migrations, queries
-packages/replay  replay and map mesh formats, map calibration (runs in the browser too)
-packages/shared  storage layout and upload handling (server only)
+packages/replay  replay, map mesh and map pack formats, map calibration (runs in the browser too)
+packages/shared  storage layout, uploads, zip files and map packs (server only)
 ```
 
 ## Development
