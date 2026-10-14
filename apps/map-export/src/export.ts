@@ -37,7 +37,7 @@ import {
 	vec3,
 	type Entity
 } from './entities.ts';
-import { processWorldGltf, type Gltf } from './gltf.ts';
+import { processWorldGltf, repackBuffers, type Gltf } from './gltf.ts';
 import { kv3Array, kv3Object, type Kv3Value } from './kv3.ts';
 import { gameBuild } from './steam.ts';
 import { run, Vrf } from './vrf.ts';
@@ -357,6 +357,20 @@ async function envMapsFrom(
 	};
 }
 
+async function prepareGltf(gltfPath: string, processed: string, lightmapUvScale: number | null) {
+	const gltf = JSON.parse(await readFile(gltfPath, 'utf8')) as Gltf;
+	const binName = (gltf.buffers as { uri?: string }[] | undefined)?.[0]?.uri;
+	if (!binName) throw new Error('The glTF has no buffer');
+	const bin = await readFile(join(dirname(gltfPath), decodeURIComponent(binName)));
+	const result = processWorldGltf(gltf, bin, lightmapUvScale);
+	const repacked = repackBuffers(gltf, bin);
+	const binPath = processed.replace(/\.gltf$/, '.bin');
+	gltf.buffers = [{ byteLength: repacked.bin.length, uri: basename(binPath) }];
+	await writeFile(binPath, repacked.bin);
+	await writeFile(processed, JSON.stringify(gltf));
+	return { ...result, compacted: repacked.compacted };
+}
+
 async function exportWorld(
 	source: WorldSource,
 	options: ExportOptions,
@@ -393,16 +407,11 @@ async function exportWorld(
 		if (!existsSync(gltfPath)) throw new Error(`Source 2 Viewer wrote no ${gltfPath}`);
 	}
 
-	const gltf = JSON.parse(await readFile(gltfPath, 'utf8')) as Gltf;
-	const binName = (gltf.buffers as { uri?: string }[] | undefined)?.[0]?.uri;
-	if (!binName) throw new Error('The glTF has no buffer');
-	const bin = await readFile(join(dirname(gltfPath), decodeURIComponent(binName)));
-	const result = processWorldGltf(gltf, bin, lightmapUvScale);
-	log(
-		`${source.id}: [${seconds()}] ${result.primitives} primitives (${result.lightmapped} lightmapped, ${result.dropped} tool primitives dropped), ${result.materials} materials, ${result.textures.size} textures`
-	);
 	const processed = join(dirname(gltfPath), 'world.processed.gltf');
-	await writeFile(processed, JSON.stringify(gltf));
+	const result = await prepareGltf(gltfPath, processed, lightmapUvScale);
+	log(
+		`${source.id}: [${seconds()}] ${result.primitives} primitives (${result.lightmapped} lightmapped, ${result.compacted} compacted, ${result.dropped} tool primitives dropped), ${result.materials} materials, ${result.textures.size} textures`
+	);
 
 	const glb = join(workDir, `${source.id}.glb`);
 	await run(tools.gltfpack, [

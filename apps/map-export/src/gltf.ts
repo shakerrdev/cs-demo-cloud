@@ -285,3 +285,219 @@ export function processWorldGltf(
 
 	return { textures, materials: newMaterials.length, primitives, dropped, lightmapped };
 }
+
+const COMPONENT_BYTES: Record<number, number> = {
+	5120: 1,
+	5121: 1,
+	5122: 2,
+	5123: 2,
+	5125: 4,
+	5126: 4
+};
+const TYPE_COMPONENTS: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+const UNSIGNED_INT = 5125;
+const UNSIGNED_SHORT = 5123;
+
+function align4(value: number): number {
+	return (value + 3) & ~3;
+}
+
+class BufferOut {
+	private chunks: Uint8Array[] = [];
+	length = 0;
+
+	add(bytes: Uint8Array): number {
+		const offset = this.length;
+		this.chunks.push(bytes);
+		this.length += bytes.length;
+		const padding = align4(this.length) - this.length;
+		if (padding) {
+			this.chunks.push(new Uint8Array(padding));
+			this.length += padding;
+		}
+		return offset;
+	}
+
+	concat(): Uint8Array {
+		const out = new Uint8Array(this.length);
+		let offset = 0;
+		for (const chunk of this.chunks) {
+			out.set(chunk, offset);
+			offset += chunk.length;
+		}
+		return out;
+	}
+}
+
+export interface RepackResult {
+	bin: Uint8Array;
+	compacted: number;
+}
+
+export function repackBuffers(gltf: Gltf, bin: Uint8Array): RepackResult {
+	const view = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+	const accessors = gltf.accessors;
+	const views = gltf.bufferViews;
+	const out = new BufferOut();
+	const newAccessors: GltfAccessor[] = [];
+	const newViews: Gltf['bufferViews'] = [];
+	const copied = new Map<number, number>();
+	let compacted = 0;
+
+	const layout = (index: number) => {
+		const accessor = accessors[index]!;
+		const bufferView = views[accessor.bufferView ?? -1];
+		const elementBytes = COMPONENT_BYTES[accessor.componentType]! * TYPE_COMPONENTS[accessor.type]!;
+		return {
+			accessor,
+			bufferView,
+			elementBytes,
+			stride: bufferView?.byteStride ?? elementBytes,
+			start: (bufferView?.byteOffset ?? 0) + (accessor.byteOffset ?? 0)
+		};
+	};
+
+	const push = (
+		source: GltfAccessor,
+		bytes: Uint8Array,
+		count: number,
+		stride: number,
+		target: number | undefined,
+		bounds?: { min: number[]; max: number[] }
+	): number => {
+		const byteOffset = out.add(bytes);
+		const bufferView: Gltf['bufferViews'][number] & { target?: number } = {
+			buffer: 0,
+			byteOffset,
+			byteLength: bytes.length
+		};
+		if (target !== undefined) bufferView.target = target;
+		if (stride !== COMPONENT_BYTES[source.componentType]! * TYPE_COMPONENTS[source.type]!)
+			bufferView.byteStride = stride;
+		newViews.push(bufferView);
+		const accessor: GltfAccessor = {
+			bufferView: newViews.length - 1,
+			componentType: source.componentType,
+			count,
+			type: source.type
+		};
+		if (source.normalized) accessor.normalized = true;
+		if (bounds) {
+			accessor.min = bounds.min;
+			accessor.max = bounds.max;
+		} else if (source.min && source.max) {
+			accessor.min = source.min;
+			accessor.max = source.max;
+		}
+		newAccessors.push(accessor);
+		return newAccessors.length - 1;
+	};
+
+	const copyWhole = (index: number, isIndices: boolean): number => {
+		const existing = copied.get(index);
+		if (existing !== undefined) return existing;
+		const { accessor, elementBytes, stride, start } = layout(index);
+		const outStride = isIndices ? elementBytes : align4(elementBytes);
+		const bytes = new Uint8Array(accessor.count * outStride);
+		for (let i = 0; i < accessor.count; i++)
+			bytes.set(bin.subarray(start + i * stride, start + i * stride + elementBytes), i * outStride);
+		const created = push(accessor, bytes, accessor.count, outStride, isIndices ? 34963 : 34962);
+		copied.set(index, created);
+		return created;
+	};
+
+	const readIndices = (index: number): Uint32Array => {
+		const { accessor, stride, start } = layout(index);
+		const indices = new Uint32Array(accessor.count);
+		for (let i = 0; i < accessor.count; i++) {
+			const at = start + i * stride;
+			indices[i] =
+				accessor.componentType === UNSIGNED_INT
+					? view.getUint32(at, true)
+					: accessor.componentType === UNSIGNED_SHORT
+						? view.getUint16(at, true)
+						: view.getUint8(at);
+		}
+		return indices;
+	};
+
+	for (const mesh of gltf.meshes ?? []) {
+		for (const primitive of mesh.primitives) {
+			const attributes = Object.entries(primitive.attributes);
+			const vertexCount = attributes.length ? accessors[attributes[0]![1]]!.count : 0;
+			if (primitive.indices === undefined) {
+				for (const [name, index] of attributes)
+					primitive.attributes[name] = copyWhole(index, false);
+				continue;
+			}
+
+			const indices = readIndices(primitive.indices);
+			const remap = new Int32Array(vertexCount).fill(-1);
+			const used: number[] = [];
+			for (const vertex of indices) {
+				if (remap[vertex] === -1) {
+					remap[vertex] = used.length;
+					used.push(vertex);
+				}
+			}
+			if (used.length > vertexCount * 0.75) {
+				for (const [name, index] of attributes)
+					primitive.attributes[name] = copyWhole(index, false);
+				primitive.indices = copyWhole(primitive.indices, true);
+				continue;
+			}
+
+			compacted++;
+			for (const [name, index] of attributes) {
+				const { accessor, elementBytes, stride, start } = layout(index);
+				const outStride = align4(elementBytes);
+				const bytes = new Uint8Array(used.length * outStride);
+				used.forEach((vertex, i) =>
+					bytes.set(
+						bin.subarray(start + vertex * stride, start + vertex * stride + elementBytes),
+						i * outStride
+					)
+				);
+				let bounds: { min: number[]; max: number[] } | undefined;
+				if (name === 'POSITION' && accessor.componentType === FLOAT && accessor.type === 'VEC3') {
+					const floats = new DataView(bytes.buffer);
+					const min = [Infinity, Infinity, Infinity];
+					const max = [-Infinity, -Infinity, -Infinity];
+					for (let i = 0; i < used.length; i++) {
+						for (let axis = 0; axis < 3; axis++) {
+							const value = floats.getFloat32(i * outStride + axis * 4, true);
+							if (value < min[axis]!) min[axis] = value;
+							if (value > max[axis]!) max[axis] = value;
+						}
+					}
+					bounds = { min, max };
+				}
+				primitive.attributes[name] = push(accessor, bytes, used.length, outStride, 34962, bounds);
+			}
+			const wide = used.length > 0xffff;
+			const indexBytes = new Uint8Array(indices.length * (wide ? 4 : 2));
+			const indexView = new DataView(indexBytes.buffer);
+			indices.forEach((vertex, i) => {
+				if (wide) indexView.setUint32(i * 4, remap[vertex]!, true);
+				else indexView.setUint16(i * 2, remap[vertex]!, true);
+			});
+			primitive.indices = push(
+				{
+					componentType: wide ? UNSIGNED_INT : UNSIGNED_SHORT,
+					count: indices.length,
+					type: 'SCALAR'
+				},
+				indexBytes,
+				indices.length,
+				wide ? 4 : 2,
+				34963
+			);
+		}
+	}
+
+	const result = out.concat();
+	gltf.accessors = newAccessors;
+	gltf.bufferViews = newViews;
+	gltf.buffers = [{ byteLength: result.length }];
+	return { bin: result, compacted };
+}
