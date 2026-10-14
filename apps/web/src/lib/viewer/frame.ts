@@ -3,8 +3,10 @@ import {
 	FLAG_BOMB,
 	FLAG_DEFUSER,
 	FLAG_DEFUSING,
+	FLAG_DUCKING,
 	FLAG_HELMET,
 	FLAG_PRESENT,
+	FLAG_SCOPED,
 	lerpAngle,
 	unpackPitch,
 	unpackYaw,
@@ -27,6 +29,8 @@ export interface PlayerState extends ReplayPlayer {
 	bomb: boolean;
 	alive: boolean;
 	present: boolean;
+	ducking: boolean;
+	scoped: boolean;
 	weapon: string;
 	money: number;
 	blind: number;
@@ -68,7 +72,7 @@ export function playerStates(replay: RoundReplay, tick: number): PlayerState[] {
 			y: columns.y[a]! + (columns.y[b]! - columns.y[a]!) * t,
 			z: columns.z[a]! + (columns.z[b]! - columns.z[a]!) * t,
 			yaw: lerpAngle(unpackYaw(columns.yaw[a]!), unpackYaw(columns.yaw[b]!), t),
-			pitch: unpackPitch(columns.pitch[c]!),
+			pitch: unpackPitch(columns.pitch[a]! + (columns.pitch[b]! - columns.pitch[a]!) * t),
 			health: columns.health[c]!,
 			armor: columns.armor[c]!,
 			helmet: (flags & FLAG_HELMET) !== 0,
@@ -77,6 +81,8 @@ export function playerStates(replay: RoundReplay, tick: number): PlayerState[] {
 			bomb: (flags & FLAG_BOMB) !== 0,
 			alive: (flags & FLAG_ALIVE) !== 0,
 			present: (flags & FLAG_PRESENT) !== 0,
+			ducking: (flags & FLAG_DUCKING) !== 0,
+			scoped: (flags & FLAG_SCOPED) !== 0,
 			weapon: meta.weapons[columns.weapon[c]!] ?? '',
 			money: columns.money[c]!,
 			blind,

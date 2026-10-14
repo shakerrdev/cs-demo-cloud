@@ -2,6 +2,7 @@
 	import {
 		maps,
 		weaponTitle,
+		type MapMesh,
 		type RoundReplay,
 		type Side,
 		type TeamKey
@@ -9,7 +10,8 @@
 	import { formatClock } from '#lib/format.ts';
 	import { drawFrame, sideColors } from './draw.ts';
 	import { bombState, lastTick, playerStates } from './frame.ts';
-	import { loadRound } from './loader.ts';
+	import { loadMapMesh, loadRound } from './loader.ts';
+	import type { CameraMode, ReplayScene } from './three/scene.ts';
 
 	interface RoundInfo {
 		number: number;
@@ -35,6 +37,12 @@
 	const BOMB_SECONDS = 40;
 	const speeds = [0.5, 1, 2, 4, 8];
 	const teamKeys: TeamKey[] = ['a', 'b'];
+	const cameraModes: { mode: CameraMode; label: string }[] = [
+		{ mode: 'free', label: 'Free' },
+		{ mode: 'follow', label: 'Follow' },
+		{ mode: 'pov', label: 'POV' }
+	];
+	const viewKey = 'viewer.view';
 
 	const mapInfo = $derived(maps[map] ?? null);
 
@@ -48,6 +56,15 @@
 	let speed = $state(1);
 	let level = $state<'upper' | 'lower'>('upper');
 	let focus = $state<number | null>(null);
+	let view = $state<'2d' | '3d'>(savedView());
+	let cameraMode = $state<CameraMode>('free');
+	let roofs = $state(true);
+	let scene3d = $state.raw<ReplayScene | null>(null);
+	let canvas3d = $state<HTMLCanvasElement | null>(null);
+	let overlay3d = $state<HTMLCanvasElement | null>(null);
+	let mesh = $state.raw<MapMesh | null | undefined>(undefined);
+	let meshError = $state<string | null>(null);
+	let sceneError = $state<string | null>(null);
 
 	let radar = $state.raw<HTMLImageElement | null>(null);
 	let lowerRadar = $state.raw<HTMLImageElement | null>(null);
@@ -58,10 +75,36 @@
 
 	const cssSize = $derived(Math.max(240, Math.min(wrapWidth, innerHeight - 190)));
 	const canvasPx = $derived(Math.round(cssSize * pixelRatio));
+	const stageWidth = $derived(view === '3d' ? Math.max(240, wrapWidth) : cssSize);
 	const roundInfo = $derived(rounds.find((r) => r.number === round) ?? null);
 	const previousRound = $derived(rounds.find((r) => r.number === round - 1) ?? null);
 	const end = $derived(replay ? lastTick(replay) : 0);
 	const hudPlayers = $derived(replay ? playerStates(replay, hudTick) : []);
+
+	function savedView(): '2d' | '3d' {
+		try {
+			return localStorage.getItem(viewKey) === '3d' ? '3d' : '2d';
+		} catch {
+			return '2d';
+		}
+	}
+
+	function setView(next: '2d' | '3d') {
+		view = next;
+		try {
+			localStorage.setItem(viewKey, next);
+		} catch {
+			return;
+		}
+	}
+
+	function setCameraMode(mode: CameraMode) {
+		cameraMode = mode;
+		if (mode === 'free' || !replay) return;
+		const players = playerStates(replay, tick);
+		if (focus === null || !players[focus]?.alive)
+			focus = players.find((p) => p.alive && p.present)?.index ?? focus;
+	}
 
 	function startOf(next: RoundReplay): number {
 		const { freezeEndTick, startTick, tickRate } = next.meta;
@@ -111,11 +154,61 @@
 	});
 
 	$effect(() => {
+		if (view !== '3d' || !canvas3d || !overlay3d) return;
+		const canvas = canvas3d;
+		const overlay = overlay3d;
+		let disposed = false;
+		let created: ReplayScene | null = null;
+		sceneError = null;
+		import('./three/scene.ts')
+			.then(({ ReplayScene }) => {
+				if (disposed) return;
+				created = new ReplayScene(canvas, overlay);
+				created.onPick = (index) => (focus = focus === index ? null : index);
+				scene3d = created;
+			})
+			.catch((cause: Error) => {
+				if (!disposed) sceneError = `3D view unavailable: ${cause.message}`;
+			});
+		return () => {
+			disposed = true;
+			created?.dispose();
+			scene3d = null;
+		};
+	});
+
+	$effect(() => {
+		if (view !== '3d') return;
+		const name = map;
+		mesh = undefined;
+		meshError = null;
+		loadMapMesh(name)
+			.then((loaded) => {
+				if (name === map) mesh = loaded;
+			})
+			.catch((cause: Error) => {
+				if (name !== map) return;
+				meshError = cause.message;
+				mesh = null;
+			});
+	});
+
+	$effect(() => {
+		if (!scene3d || mesh === undefined) return;
+		scene3d.setMap(mapInfo, mesh, { upper: radar, lower: lowerRadar });
+	});
+
+	$effect(() => {
+		scene3d?.setSize(stageWidth, cssSize, pixelRatio);
+	});
+
+	$effect(() => {
 		pixelRatio = Math.min(2, window.devicePixelRatio || 1);
 		let frame = 0;
 		let previous = performance.now();
 		let lastHud = 0;
 		let lastKey = '';
+		let lastCanvas: HTMLCanvasElement | null = null;
 
 		const loop = (now: number) => {
 			const elapsed = Math.min(0.1, (now - previous) / 1000);
@@ -139,11 +232,15 @@
 				lastHud = now;
 			}
 
-			if (canvas && current) {
+			if (view === '3d') {
+				if (scene3d && current)
+					scene3d.render({ replay: current, tick, focus, mode: cameraMode, roofs });
+			} else if (canvas && current) {
 				const image = level === 'lower' && lowerRadar ? lowerRadar : radar;
 				const key = `${tick}|${canvasPx}|${level}|${image?.src}|${current.meta.round}|${focus}`;
-				if (key !== lastKey) {
+				if (key !== lastKey || canvas !== lastCanvas) {
 					lastKey = key;
+					lastCanvas = canvas;
 					const ctx = canvas.getContext('2d');
 					if (ctx)
 						drawFrame({
@@ -181,7 +278,11 @@
 		else if (event.key === 'PageUp' || event.key === '[') goToRound(round - 1);
 		else if (event.key === 'PageDown' || event.key === ']') goToRound(round + 1);
 		else if (/^[1-5]$/.test(event.key)) speed = speeds[Number(event.key) - 1]!;
-		else return;
+		else if (event.key === 'v' || event.key === 'V') setView(view === '3d' ? '2d' : '3d');
+		else if ((event.key === 'c' || event.key === 'C') && view === '3d') {
+			const index = cameraModes.findIndex((option) => option.mode === cameraMode);
+			setCameraMode(cameraModes[(index + 1) % cameraModes.length]!.mode);
+		} else return;
 		event.preventDefault();
 	}
 
@@ -296,17 +397,70 @@
 			<span class="label">{clock.label}</span>
 			<span class="time">{clock.time}</span>
 		</div>
-		<div class="canvas-wrap" style:width="{cssSize}px" style:height="{cssSize}px">
-			<canvas
-				bind:this={canvas}
-				width={canvasPx}
-				height={canvasPx}
-				style:width="{cssSize}px"
-				style:height="{cssSize}px"
-			></canvas>
+		<div class="canvas-wrap" style:width="{stageWidth}px" style:height="{cssSize}px">
+			{#if view === '3d'}
+				<canvas
+					bind:this={canvas3d}
+					class="scene"
+					style:width="{stageWidth}px"
+					style:height="{cssSize}px"
+				></canvas>
+				<canvas
+					bind:this={overlay3d}
+					class="overlay"
+					style:width="{stageWidth}px"
+					style:height="{cssSize}px"
+				></canvas>
+				<div class="toolbar">
+					<div class="segmented" role="group" aria-label="Camera">
+						{#each cameraModes as option (option.mode)}
+							<button
+								type="button"
+								class:active={cameraMode === option.mode}
+								aria-pressed={cameraMode === option.mode}
+								onclick={() => setCameraMode(option.mode)}>{option.label}</button
+							>
+						{/each}
+					</div>
+					<button
+						type="button"
+						class:active={!roofs}
+						aria-pressed={!roofs}
+						title="Hide everything above the players"
+						onclick={() => (roofs = !roofs)}>Cut roofs</button
+					>
+					<button type="button" onclick={() => scene3d?.resetView()}>Reset</button>
+					{#if cameraMode !== 'free' && focus !== null && replay?.meta.players[focus]}
+						<span class="following">{replay.meta.players[focus].name}</span>
+					{/if}
+				</div>
+			{:else}
+				<canvas
+					bind:this={canvas}
+					width={canvasPx}
+					height={canvasPx}
+					style:width="{cssSize}px"
+					style:height="{cssSize}px"
+				></canvas>
+			{/if}
 			{#if loading}<div class="notice">Loading round {round}…</div>{/if}
 			{#if error}<div class="notice error">{error}</div>{/if}
-			{#if !radar && !loading}<div class="notice faint">No radar image for {map}</div>{/if}
+			{#if view === '2d' && !radar && !loading}
+				<div class="notice faint">No radar image for {map}</div>
+			{/if}
+			{#if view === '3d' && !loading && !error}
+				{#if sceneError}
+					<div class="notice error">{sceneError}</div>
+				{:else if meshError}
+					<div class="notice error">{meshError}</div>
+				{:else if mesh === undefined}
+					<div class="notice">Loading 3D map…</div>
+				{:else if mesh === null}
+					<div class="notice faint">
+						No 3D map for {map} yet. The worker downloads it the next time it starts.
+					</div>
+				{/if}
+			{/if}
 			<ol class="killfeed">
 				{#each killFeed as kill (kill.tick + ':' + kill.victim)}
 					{@const attacker = replay?.meta.players[kill.attacker]}
@@ -376,7 +530,21 @@
 					<option value={option}>{option}×</option>
 				{/each}
 			</select>
-			{#if mapInfo?.lowerBelowZ !== null && mapInfo}
+			<div class="segmented" role="group" aria-label="View">
+				<button
+					type="button"
+					class:active={view === '2d'}
+					aria-pressed={view === '2d'}
+					onclick={() => setView('2d')}>2D</button
+				>
+				<button
+					type="button"
+					class:active={view === '3d'}
+					aria-pressed={view === '3d'}
+					onclick={() => setView('3d')}>3D</button
+				>
+			</div>
+			{#if view === '2d' && mapInfo?.lowerBelowZ !== null && mapInfo}
 				<button
 					type="button"
 					class="level"
@@ -406,7 +574,11 @@
 	{/each}
 </nav>
 <p class="hint">
-	Space play/pause · ←/→ 5 s (Shift 1 s) · [ / ] round · 1–5 speed · click a player to highlight
+	Space play/pause · ←/→ 5 s (Shift 1 s) · [ / ] round · 1–5 speed · V 2D/3D · click a player to
+	highlight
+	{#if view === '3d'}
+		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode
+	{/if}
 </p>
 
 <style>
@@ -621,6 +793,75 @@
 		display: block;
 	}
 
+	canvas.overlay {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+
+	.toolbar {
+		position: absolute;
+		top: 10px;
+		left: 10px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		max-width: calc(100% - 240px);
+	}
+
+	@media (max-width: 560px) {
+		.toolbar {
+			max-width: calc(100% - 20px);
+		}
+	}
+
+	.toolbar button {
+		height: 28px;
+		padding: 0 10px;
+		border: 1px solid rgb(255 255 255 / 0.14);
+		border-radius: 7px;
+		background: rgb(0 0 0 / 0.6);
+		color: var(--text);
+		font: inherit;
+		font-size: 12.5px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.toolbar button.active {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	.toolbar .segmented button {
+		border-radius: 0;
+	}
+
+	.toolbar .segmented button:first-child {
+		border-radius: 7px 0 0 7px;
+	}
+
+	.toolbar .segmented button:last-child {
+		border-radius: 0 7px 7px 0;
+	}
+
+	.following {
+		padding: 4px 9px;
+		border-radius: 6px;
+		background: rgb(0 0 0 / 0.6);
+		font-size: 12.5px;
+		font-weight: 600;
+	}
+
+	.segmented {
+		display: flex;
+	}
+
+	.segmented button + button {
+		margin-left: -1px;
+	}
+
 	.notice {
 		position: absolute;
 		left: 12px;
@@ -692,6 +933,24 @@
 	.controls button:disabled {
 		opacity: 0.4;
 		cursor: default;
+	}
+
+	.controls .segmented button {
+		padding: 0 10px;
+		border-radius: 0;
+	}
+
+	.controls .segmented button:first-child {
+		border-radius: 8px 0 0 8px;
+	}
+
+	.controls .segmented button:last-child {
+		border-radius: 0 8px 8px 0;
+	}
+
+	.controls .segmented button.active {
+		background: var(--surface-2);
+		color: var(--accent);
 	}
 
 	.controls .play {
