@@ -116,6 +116,12 @@ export function limitTextureSize(texture: PackTexture, maxSize: number): PackTex
 	};
 }
 
+export function lowTextureSize(folder: string): number {
+	if (folder === 'textures') return 256;
+	if (folder.startsWith('lightmaps/')) return 1024;
+	return 0;
+}
+
 export class PackBuilder {
 	private zip: ZipWriter;
 	private names = new Set<string>();
@@ -181,6 +187,25 @@ export class PackBuilder {
 			faces: texture.faces,
 			bytes: texture.mipData.reduce((sum, mip) => sum + mip.length, 0)
 		};
+		const lowSize = lowTextureSize(folder);
+		if (
+			lowSize &&
+			texture.faces === 1 &&
+			texture.depth === 1 &&
+			Math.max(texture.width, texture.height) > lowSize
+		) {
+			const low = limitTextureSize(texture, lowSize);
+			ref.low = {
+				file: await this.addFile(
+					this.uniqueName(folder, `${key.replace(/\.vtex$/, '')}_low`),
+					encodePackTexture(low),
+					true
+				),
+				width: low.width,
+				height: low.height,
+				bytes: low.mipData.reduce((sum, mip) => sum + mip.length, 0)
+			};
+		}
 		this.textures[key] = ref;
 		if (parsed.info.radianceSh) this.radianceSh.set(key, parsed.info.radianceSh);
 		return ref;

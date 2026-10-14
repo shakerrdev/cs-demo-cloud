@@ -45,6 +45,7 @@ export interface PackTextureRef {
 	depth: number;
 	faces: 1 | 6;
 	bytes: number;
+	low?: { file: string; width: number; height: number; bytes: number };
 }
 
 export interface PackLightmaps {
