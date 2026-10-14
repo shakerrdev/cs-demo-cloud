@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { PackTonemap } from '@cs-demo-cloud/replay';
+import type { PackBloom, PackTonemap } from '@cs-demo-cloud/replay';
+import { Bloom, bloomStrengths } from './bloom.ts';
 
 const skyVertex = /* glsl */ `
 out vec3 vDirection;
@@ -63,6 +64,10 @@ uniform vec2 uLutRange;
 uniform float uExposure;
 uniform vec4 uCurveA;
 uniform vec4 uCurveB;
+uniform sampler2D uBloom;
+uniform float uBloomEnabled;
+uniform vec3 uBloomRaw;
+uniform vec3 uBloomNormalized;
 out vec4 outColor;
 
 vec3 curve(vec3 x) {
@@ -78,9 +83,21 @@ vec3 linearToSrgb(vec3 c) {
 
 void main() {
 	vec3 color = texture(uColor, vUv).rgb * uExposure;
+	vec3 bloom = vec3(0.0);
+	if (uBloomEnabled > 0.5) {
+		bloom = texture(uBloom, vUv).rgb;
+		color *= 1.0 - uBloomRaw.z;
+		color += bloom * (uBloomNormalized.z * uExposure);
+		color += bloom * uBloomNormalized.x;
+	}
 	color = min(color * 2.8, vec3(uCurveB.z));
 	color = curve(color) * uCurveB.w;
 	color = linearToSrgb(color);
+	if (uBloomEnabled > 0.5) {
+		vec3 screenBloom = bloom * uExposure;
+		vec3 screen = clamp(screenBloom / (screenBloom + 0.187) * 1.035, 0.0, 1.0) * uBloomNormalized.y;
+		color = color + screen - color * screen;
+	}
 	if (uLutEnabled > 0.5) {
 		vec3 lookup = clamp(color, 0.0, 1.0) * uLutRange.x + uLutRange.y;
 		color = texture(uLut, lookup).rgb;
@@ -105,6 +122,10 @@ export class PostProcess {
 	private scene = new THREE.Scene();
 	private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 	private material: THREE.ShaderMaterial;
+	private bloom: Bloom | null = null;
+	private exposure = 1;
+	private width = 1;
+	private height = 1;
 
 	constructor() {
 		this.target = new THREE.WebGLRenderTarget(1, 1, {
@@ -123,7 +144,11 @@ export class PostProcess {
 				uLutRange: { value: new THREE.Vector2(1, 0) },
 				uExposure: { value: 1 },
 				uCurveA: { value: new THREE.Vector4() },
-				uCurveB: { value: new THREE.Vector4() }
+				uCurveB: { value: new THREE.Vector4() },
+				uBloom: { value: null },
+				uBloomEnabled: { value: 0 },
+				uBloomRaw: { value: new THREE.Vector3() },
+				uBloomNormalized: { value: new THREE.Vector3() }
 			},
 			depthTest: false,
 			depthWrite: false
@@ -137,6 +162,7 @@ export class PostProcess {
 	setTonemap(settings: PackTonemap | null, exposure: number) {
 		const t = settings ?? defaultTonemap;
 		const u = this.material.uniforms;
+		this.exposure = exposure;
 		u.uExposure!.value = exposure * 2 ** t.exposureBias;
 		const white = t.whitePoint * 2.8;
 		const curve = (x: number) =>
@@ -153,6 +179,22 @@ export class PostProcess {
 		(u.uCurveB!.value as THREE.Vector4).set(t.toeNum, t.toeDenom, white, whiteScale);
 	}
 
+	setBloom(settings: PackBloom | null) {
+		this.bloom?.dispose();
+		this.bloom = null;
+		const u = this.material.uniforms;
+		u.uBloomEnabled!.value = 0;
+		u.uBloom!.value = null;
+		if (!settings) return;
+		const { raw, normalized } = bloomStrengths(settings);
+		if (raw.lengthSq() === 0) return;
+		this.bloom = new Bloom(settings);
+		this.bloom.setSize(this.width, this.height);
+		u.uBloom!.value = this.bloom.output;
+		(u.uBloomRaw!.value as THREE.Vector3).copy(raw);
+		(u.uBloomNormalized!.value as THREE.Vector3).copy(normalized);
+	}
+
 	setLut(texture: THREE.Data3DTexture | null) {
 		const u = this.material.uniforms;
 		u.uLut!.value = texture;
@@ -164,15 +206,22 @@ export class PostProcess {
 	}
 
 	setSize(width: number, height: number) {
-		this.target.setSize(Math.max(1, width), Math.max(1, height));
+		this.width = Math.max(1, width);
+		this.height = Math.max(1, height);
+		this.target.setSize(this.width, this.height);
+		this.bloom?.setSize(this.width, this.height);
 	}
 
 	render(renderer: THREE.WebGLRenderer) {
+		const bloom = this.bloom?.active ? this.bloom : null;
+		if (bloom) bloom.render(renderer, this.target.texture, this.exposure);
+		this.material.uniforms.uBloomEnabled!.value = bloom ? 1 : 0;
 		renderer.setRenderTarget(null);
 		renderer.render(this.scene, this.camera);
 	}
 
 	dispose() {
+		this.bloom?.dispose();
 		this.target.dispose();
 		this.material.dispose();
 	}

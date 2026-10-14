@@ -160,6 +160,7 @@ export class MapPack {
 
 		const exposure = manifest.exposure ? (manifest.exposure.min + manifest.exposure.max) / 2 : 1;
 		this.post.setTonemap(manifest.postProcess?.tonemap ?? null, exposure);
+		this.post.setBloom(manifest.postProcess?.bloom ?? null);
 
 		const report = () => onProgress?.(this.progress);
 		this.onTexture = () => {
