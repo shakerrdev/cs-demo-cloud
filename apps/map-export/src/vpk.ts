@@ -66,7 +66,7 @@ export class Vpk {
 	private dir: FileHandle;
 	private dataStart: number;
 	private files: Map<string, VpkFile>;
-	private archives = new Map<number, FileHandle>();
+	private archives = new Map<number, Promise<FileHandle>>();
 
 	private constructor(
 		path: string,
@@ -128,19 +128,24 @@ export class Vpk {
 	}
 
 	async close(): Promise<void> {
-		await Promise.all([this.dir, ...this.archives.values()].map((handle) => handle.close()));
+		const archives = await Promise.allSettled(this.archives.values());
+		const handles = archives.flatMap((result) =>
+			result.status === 'fulfilled' ? [result.value] : []
+		);
+		await Promise.all([this.dir, ...handles].map((handle) => handle.close()));
 		this.archives.clear();
 	}
 
-	private async archive(index: number): Promise<FileHandle> {
+	private archive(index: number): Promise<FileHandle> {
 		let handle = this.archives.get(index);
 		if (!handle) {
-			if (!/_dir\.vpk$/i.test(this.path)) throw new Error(`${this.path} has no archive ${index}`);
+			if (!/_dir\.vpk$/i.test(this.path))
+				return Promise.reject(new Error(`${this.path} has no archive ${index}`));
 			const archivePath = this.path.replace(
 				/_dir\.vpk$/i,
 				`_${String(index).padStart(3, '0')}.vpk`
 			);
-			handle = await open(archivePath, 'r');
+			handle = open(archivePath, 'r');
 			this.archives.set(index, handle);
 		}
 		return handle;
