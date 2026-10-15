@@ -1,7 +1,10 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { gzip as gzipCallback } from 'node:zlib';
+
+const gzip = promisify(gzipCallback);
 import {
 	MAP_PACK_MANIFEST,
 	MAP_PACK_VERSION,
@@ -116,6 +119,20 @@ export function limitTextureSize(texture: PackTexture, maxSize: number): PackTex
 	};
 }
 
+const TEXTURE_CONCURRENCY = 4;
+
+export async function forEachLimit<T>(
+	items: T[],
+	limit: number,
+	task: (item: T) => Promise<unknown>
+): Promise<void> {
+	let next = 0;
+	const worker = async () => {
+		while (next < items.length) await task(items[next++]!);
+	};
+	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
 export function lowTextureSize(folder: string): number {
 	if (folder === 'textures') return 256;
 	if (folder.startsWith('lightmaps/')) return 1024;
@@ -128,6 +145,7 @@ export class PackBuilder {
 	readonly textures: Record<string, PackTextureRef> = {};
 	readonly radianceSh = new Map<string, number[]>();
 	private missing = new Set<string>();
+	private writes: Promise<void> = Promise.resolve();
 	private log: (message: string) => void;
 	private maxTextureSize: number;
 	bytes = 0;
@@ -138,11 +156,13 @@ export class PackBuilder {
 		this.maxTextureSize = maxTextureSize;
 	}
 
-	async addFile(name: string, content: Uint8Array, gzip: boolean): Promise<string> {
-		const entry = gzip ? `${name}.gz` : name;
-		const data = gzip ? new Uint8Array(gzipSync(content, { level: 6 })) : content;
+	async addFile(name: string, content: Uint8Array, compress: boolean): Promise<string> {
+		const entry = compress ? `${name}.gz` : name;
+		const data = compress ? new Uint8Array(await gzip(content, { level: 6 })) : content;
 		this.bytes += data.length;
-		await this.zip.add(entry, data, !gzip);
+		const write = this.writes.then(() => this.zip.add(entry, data, !compress));
+		this.writes = write.catch(() => {});
+		await write;
 		return entry;
 	}
 
@@ -455,7 +475,9 @@ async function exportWorld(
 	const model = await pack.addFile(`${source.id}.glb`, await readFile(glb), true);
 
 	log(`${source.id}: [${seconds()}] packing ${result.textures.size} textures`);
-	for (const texture of [...result.textures].sort()) await pack.addTexture(texture, vpks);
+	await forEachLimit([...result.textures].sort(), TEXTURE_CONCURRENCY, (texture) =>
+		pack.addTexture(texture, vpks)
+	);
 
 	let lightmaps: PackLightmaps | null = null;
 	if (lighting?.m_bHasLightmaps !== false && lightmapFiles.length) {
