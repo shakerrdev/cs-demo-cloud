@@ -15,7 +15,7 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --work <folder>   Temporary folder (default: system temp)
   --keep-work       Keep the temporary files
   --reuse-work      Reuse Source 2 Viewer output kept by --keep-work
-  --max-texture-size <px>  Drop texture mips above this size (smaller packs)
+  --max-texture-size <px>  Drop texture mips above this size (default 2048, 0 keeps all)
   --low-memory      Run Source 2 Viewer on one thread with less memory (slower, for 4 GB machines)
   --all             Every map in the game's maps folder
 
@@ -76,7 +76,7 @@ for (const map of maps) {
 			log,
 			keepWork: values['keep-work'] || values['reuse-work'],
 			reuseWork: values['reuse-work'],
-			maxTextureSize: Number(values['max-texture-size'] ?? 0)
+			maxTextureSize: Number(values['max-texture-size'] ?? 2048)
 		});
 		log(
 			`${map}: ${pack} (${(bytes / 1024 / 1024).toFixed(1)} MB, ${((Date.now() - started) / 1000).toFixed(0)} s)`
