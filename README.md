@@ -46,7 +46,7 @@ Map calibration (origin, scale, lower-level height) lives in `packages/replay/sr
 
 ### Game-look 3D maps
 
-With a map pack installed, the 3D view shows the map as it looks in CS2 instead of the collision mesh: the real geometry and props with their textures, the baked lightmaps (irradiance, directional light and sun shadows), light probes for props, the 3D skybox, the sky, cubemap and gradient fog, and the map's tonemap and colour grading. Matches on maps without a pack keep the simple view.
+With a map pack installed, the 3D view shows the map as it looks in CS2 instead of the collision mesh: the real geometry and props with their textures, the baked lightmaps (irradiance, directional light and sun shadows), light probes for props, cube map reflections, the 3D skybox, the sky, cubemap and gradient fog, and the map's tonemap, bloom and colour grading. Matches on maps without a pack keep the simple view.
 
 Packs are made from the game files on a PC with CS2 installed, then uploaded once:
 
@@ -54,7 +54,11 @@ Packs are made from the game files on a PC with CS2 installed, then uploaded onc
 2. Run `node apps/map-export/src/index.ts de_dust2 de_mirage` (or `--all`). It finds CS2 through Steam (or pass `--game <folder>`), and on the first run downloads [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI 20.0 and [gltfpack](https://github.com/zeux/meshoptimizer) 1.3 into a local cache
 3. In **Settings → 3D maps**, add the zip from `map-packs/` (admins only). Uploading a pack again replaces it
 
-Source 2 Viewer exports geometry and materials as glTF; the exporter keeps the lightmap UVs, drops tool brushes, compresses the meshes with meshopt and copies textures straight out of the VPKs in their GPU formats (BC1 to BC7, no re-encoding). Lightmaps, probes, sky and fog settings come from the world and entity lumps. de_dust2 makes a pack of about 230 MB; `--max-texture-size 1024` makes smaller ones.
+Source 2 Viewer exports geometry and materials as glTF; the exporter keeps the lightmap UVs, drops tool brushes, gives every mesh only the vertices it uses, compresses the meshes with meshopt and copies textures straight out of the VPKs in their GPU formats (BC1 to BC7, no re-encoding), plus small copies of big textures and lightmaps so the viewer can show the map before the full ones arrive. Lightmaps, probes, cube maps, sky, fog and post processing come from the world and entity lumps.
+
+Packs are big because the game's textures are: Mirage about 320 MB, Dust II 760 MB, Ancient 1.2 GB, Overpass 1.7 GB, Cache 2 GB. Textures are capped at 2048 px by default (`--max-texture-size 0` keeps 4096 ones, `1024` halves the size). Source 2 Viewer needs a lot of memory for big maps (Inferno and Train don't fit in 4 GB); `--low-memory` helps on small machines at the cost of speed.
+
+The viewer's **Textures** menu picks how much of that to use per device: auto (high unless the map's textures pass 1.2 GB, then medium), high, medium (1024 px) or low (only the small copies, nothing else is downloaded).
 
 The browser needs S3TC and BPTC texture compression (any desktop GPU); phones without it keep the simple view.
 
