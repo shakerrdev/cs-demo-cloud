@@ -56,6 +56,7 @@ const compressedFormats: Partial<Record<TextureFormat, THREE.CompressedPixelForm
 };
 
 export interface TextureOptions {
+	maxSize?: number;
 	srgb?: boolean;
 	filter?: 'trilinear' | 'linear' | 'nearest';
 	anisotropy?: number;
@@ -88,7 +89,26 @@ function copy(data: Uint8Array): Uint8Array {
 	return data.byteOffset === 0 && data.byteLength === data.buffer.byteLength ? data : data.slice();
 }
 
-export function createTexture(packed: PackTexture, options: TextureOptions = {}): THREE.Texture {
+export function limitMips(packed: PackTexture, maxSize: number): PackTexture {
+	if (packed.faces !== 1 || packed.depth !== 1) return packed;
+	let skip = 0;
+	while (
+		skip < packed.mips - 1 &&
+		Math.max(mipSize(packed.width, skip), mipSize(packed.height, skip)) > maxSize
+	)
+		skip++;
+	if (!skip) return packed;
+	return {
+		...packed,
+		width: mipSize(packed.width, skip),
+		height: mipSize(packed.height, skip),
+		mips: packed.mips - skip,
+		mipData: packed.mipData.slice(skip)
+	};
+}
+
+export function createTexture(source: PackTexture, options: TextureOptions = {}): THREE.Texture {
+	const packed = options.maxSize ? limitMips(source, options.maxSize) : source;
 	const compressed = compressedFormats[packed.format];
 	const volume = (packed.flags & TEXTURE_VOLUME) !== 0;
 	const cubeArray = packed.faces === 6 && (packed.depth > 1 || options.array === true);

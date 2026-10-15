@@ -40,6 +40,23 @@ const GLTF_TO_SOURCE = new THREE.Matrix4().set(
 
 const CONCURRENT_DOWNLOADS = 6;
 
+export type TextureQuality = 'auto' | 'high' | 'medium' | 'low';
+
+const MEDIUM_TEXTURE_SIZE = 1024;
+const AUTO_HIGH_BUDGET = 1.2e9;
+
+export function resolveQuality(
+	quality: TextureQuality,
+	manifest: MapPackManifest
+): Exclude<TextureQuality, 'auto'> {
+	if (quality !== 'auto') return quality;
+	const bytes = Object.values(manifest.textures).reduce(
+		(sum, ref) => sum + (ref.file.startsWith('textures/') ? ref.bytes : 0),
+		0
+	);
+	return bytes > AUTO_HIGH_BUDGET ? 'medium' : 'high';
+}
+
 export interface PackProgress {
 	textures: number;
 	texturesLoaded: number;
@@ -99,13 +116,16 @@ export class MapPack {
 	private materials = new Set<THREE.Material>();
 	private abort = new AbortController();
 	private skyboxWorld: LoadedWorld | null = null;
+	private quality: Exclude<TextureQuality, 'auto'>;
 
 	private constructor(
 		base: string,
 		version: string,
 		manifest: MapPackManifest,
-		support: TextureSupport
+		support: TextureSupport,
+		quality: TextureQuality
 	) {
+		this.quality = resolveQuality(quality, manifest);
 		this.base = base;
 		this.version = version;
 		this.manifest = manifest;
@@ -129,7 +149,8 @@ export class MapPack {
 		renderer: THREE.WebGLRenderer,
 		map: string,
 		version: string,
-		onProgress?: (progress: PackProgress) => void
+		onProgress?: (progress: PackProgress) => void,
+		quality: TextureQuality = 'auto'
 	): Promise<MapPack> {
 		const base = `/maps/3d/${map}`;
 		const response = await fetch(`${base}/map.json?v=${version}`);
@@ -144,7 +165,7 @@ export class MapPack {
 				`This browser or GPU can’t show game textures (${missing.join(', ')} not supported)`
 			);
 
-		const pack = new MapPack(base, version, manifest, support);
+		const pack = new MapPack(base, version, manifest, support, quality);
 		await pack.build(onProgress);
 		return pack;
 	}
@@ -233,9 +254,12 @@ export class MapPack {
 			priority,
 			{
 				srgb,
-				anisotropy: Math.min(8, this.support.anisotropy)
+				anisotropy: Math.min(8, this.support.anisotropy),
+				maxSize: this.quality === 'medium' ? MEDIUM_TEXTURE_SIZE : undefined
 			},
-			target
+			target,
+			undefined,
+			this.quality === 'low'
 		);
 	}
 
@@ -245,9 +269,25 @@ export class MapPack {
 		priority: number,
 		options: TextureOptions,
 		target: THREE.IUniform | null,
-		onLoad?: (texture: THREE.Texture) => void
+		onLoad?: (texture: THREE.Texture) => void,
+		lowOnly = false
 	) {
 		let job = this.jobs.get(key);
+		if (!job && lowOnly && ref.low) {
+			job = {
+				key,
+				file: ref.low.file,
+				ref,
+				priority: Math.min(priority, PREVIEW_PRIORITY),
+				options,
+				targets: [],
+				onLoad
+			};
+			this.jobs.set(key, job);
+			this.queue.push(job);
+			this.progress.textures++;
+			this.previewPending++;
+		}
 		if (!job) {
 			job = { key, file: ref.file, ref, priority, options, targets: [], onLoad };
 			this.jobs.set(key, job);

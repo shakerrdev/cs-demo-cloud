@@ -4,7 +4,9 @@ import { FLAG_PRESENT, type MapInfo, type MapMesh, type RoundReplay } from '@cs-
 import { playerStates, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight } from './actors.ts';
 import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
-import type { MapPack, PackProgress } from './cs2/pack.ts';
+import type { MapPack, PackProgress, TextureQuality } from './cs2/pack.ts';
+
+export type { TextureQuality };
 
 export type CameraMode = 'free' | 'follow' | 'pov';
 
@@ -159,8 +161,8 @@ export class ReplayScene {
 		this.dirty = true;
 	}
 
-	setPack(map: string, version: string | null) {
-		const key = version ? `${map}@${version}` : '';
+	setPack(map: string, version: string | null, quality: TextureQuality = 'auto') {
+		const key = version ? `${map}@${version}@${quality}` : '';
 		if (key === this.packKey) return;
 		this.packKey = key;
 		this.clearPack();
@@ -171,12 +173,18 @@ export class ReplayScene {
 		this.onPackStatus?.({ state: 'loading', progress: null });
 		import('./cs2/pack.ts')
 			.then(({ MapPack }) =>
-				MapPack.load(this.renderer, map, version, (progress) => {
-					if (this.packKey !== key) return;
-					this.onPackStatus?.(
-						progress.ready ? { state: 'ready', progress } : { state: 'loading', progress }
-					);
-				})
+				MapPack.load(
+					this.renderer,
+					map,
+					version,
+					(progress) => {
+						if (this.packKey !== key) return;
+						this.onPackStatus?.(
+							progress.ready ? { state: 'ready', progress } : { state: 'loading', progress }
+						);
+					},
+					quality
+				)
 			)
 			.then((pack) => {
 				if (this.packKey !== key) {

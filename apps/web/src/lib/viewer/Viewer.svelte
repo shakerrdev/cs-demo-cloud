@@ -11,7 +11,7 @@
 	import { drawFrame, sideColors } from './draw.ts';
 	import { bombState, lastTick, playerStates } from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
-	import type { CameraMode, PackStatus, ReplayScene } from './three/scene.ts';
+	import type { CameraMode, PackStatus, ReplayScene, TextureQuality } from './three/scene.ts';
 
 	interface RoundInfo {
 		number: number;
@@ -44,6 +44,13 @@
 		{ mode: 'pov', label: 'POV' }
 	];
 	const viewKey = 'viewer.view';
+	const qualityKey = 'viewer.textures';
+	const qualities: { value: TextureQuality; label: string }[] = [
+		{ value: 'auto', label: 'Textures: auto' },
+		{ value: 'high', label: 'Textures: high' },
+		{ value: 'medium', label: 'Textures: medium' },
+		{ value: 'low', label: 'Textures: low' }
+	];
 
 	const mapInfo = $derived(maps[map] ?? null);
 
@@ -67,6 +74,7 @@
 	let meshError = $state<string | null>(null);
 	let sceneError = $state<string | null>(null);
 	let packStatus = $state<PackStatus>({ state: 'none' });
+	let textureQuality = $state<TextureQuality>(savedQuality());
 
 	let radar = $state.raw<HTMLImageElement | null>(null);
 	let lowerRadar = $state.raw<HTMLImageElement | null>(null);
@@ -95,6 +103,24 @@
 		view = next;
 		try {
 			localStorage.setItem(viewKey, next);
+		} catch {
+			return;
+		}
+	}
+
+	function savedQuality(): TextureQuality {
+		try {
+			const saved = localStorage.getItem(qualityKey);
+			return qualities.find((q) => q.value === saved)?.value ?? 'auto';
+		} catch {
+			return 'auto';
+		}
+	}
+
+	function setQuality(next: TextureQuality) {
+		textureQuality = next;
+		try {
+			localStorage.setItem(qualityKey, next);
 		} catch {
 			return;
 		}
@@ -202,7 +228,7 @@
 	});
 
 	$effect(() => {
-		scene3d?.setPack(map, mapPack);
+		scene3d?.setPack(map, mapPack, textureQuality);
 	});
 
 	$effect(() => {
@@ -437,6 +463,17 @@
 						onclick={() => (roofs = !roofs)}>Cut roofs</button
 					>
 					<button type="button" onclick={() => scene3d?.resetView()}>Reset</button>
+					{#if mapPack}
+						<select
+							aria-label="Texture quality"
+							value={textureQuality}
+							onchange={(e) => setQuality(e.currentTarget.value as TextureQuality)}
+						>
+							{#each qualities as option (option.value)}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					{/if}
 					{#if cameraMode !== 'free' && focus !== null && replay?.meta.players[focus]}
 						<span class="following">{replay.meta.players[focus].name}</span>
 					{/if}
@@ -835,7 +872,8 @@
 		}
 	}
 
-	.toolbar button {
+	.toolbar button,
+	.toolbar select {
 		height: 28px;
 		padding: 0 10px;
 		border: 1px solid rgb(255 255 255 / 0.14);
