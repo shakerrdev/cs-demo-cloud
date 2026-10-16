@@ -196,7 +196,12 @@ export class ReplayScene {
 					quality
 				)
 			)
-			.then((pack) => {
+			.then(async (pack) => {
+				if (this.packKey !== key) {
+					pack.dispose();
+					return;
+				}
+				await this.compile(pack.main, pack.post.target);
 				if (this.packKey !== key) {
 					pack.dispose();
 					return;
@@ -257,6 +262,18 @@ export class ReplayScene {
 			.catch((error: Error) => {
 				if (this.modelsKey === key) console.warn(error);
 			});
+	}
+
+	private async compile(object: THREE.Object3D, target: THREE.WebGLRenderTarget | null) {
+		const previous = this.renderer.getRenderTarget();
+		this.renderer.setRenderTarget(target);
+		const done = this.renderer.compileAsync(object, this.camera, this.scene);
+		this.renderer.setRenderTarget(previous);
+		try {
+			await done;
+		} catch (error) {
+			console.warn(error);
+		}
 	}
 
 	private clearModels() {
