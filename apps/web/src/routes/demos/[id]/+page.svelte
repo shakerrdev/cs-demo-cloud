@@ -4,7 +4,8 @@
 	import Viewer from '#lib/viewer/Viewer.svelte';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
+	let confirmDelete = $state(false);
 
 	const details = $derived(data.details);
 	const teamKeys: TeamKey[] = ['a', 'b'];
@@ -40,6 +41,7 @@
 		{#if data.demo.error}<br /><span class="error">{data.demo.error}</span>{/if}
 	</p>
 	<a href="/">Back to matches</a>
+	<div class="actions">{@render deleteForm()}</div>
 {:else}
 	{@const { match, players, rounds } = details}
 	<header class="match">
@@ -129,8 +131,26 @@
 		<form method="POST" action="?/reparse">
 			<button type="submit">Parse again</button>
 		</form>
+		{@render deleteForm()}
 	</footer>
 {/if}
+
+{#snippet deleteForm()}
+	{#if data.canDelete}
+		{#if confirmDelete}
+			<form method="POST" action="?/delete" class="confirm">
+				<span>Delete this demo and its replay for good?</span>
+				<button type="submit" class="danger">Delete</button>
+				<button type="button" onclick={() => (confirmDelete = false)}>Keep</button>
+			</form>
+		{:else}
+			<button type="button" class="danger" onclick={() => (confirmDelete = true)}
+				>Delete demo</button
+			>
+		{/if}
+		{#if form?.message}<p class="error">{form.message}</p>{/if}
+	{/if}
+{/snippet}
 
 <style>
 	.match {
@@ -272,6 +292,21 @@
 		color: var(--text);
 		font: inherit;
 		cursor: pointer;
+	}
+
+	.actions .file {
+		flex: 1;
+	}
+
+	.actions button.danger {
+		color: var(--danger);
+	}
+
+	.confirm {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.pending {
