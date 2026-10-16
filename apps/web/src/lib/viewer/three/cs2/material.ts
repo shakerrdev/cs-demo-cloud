@@ -21,6 +21,35 @@ export interface MaterialExtras {
 	vmat?: Vmat;
 	tint?: number[];
 	layout?: VertexLayout;
+	paint?: PaintExtras;
+}
+
+export interface PaintExtras {
+	style: number;
+	textures: { pattern?: string; normal?: string; wear?: string; grunge?: string; masks?: string };
+	colors: number[][];
+	pattern: [scale: number, rotation: number, x: number, y: number];
+	wearTransform: [scale: number, rotation: number, x: number, y: number];
+	grunge: [scale: number, rotation: number, x: number, y: number];
+	wear: number;
+	surface: [metalness: number, roughness: number];
+}
+
+export function paintTransform([scale, rotation, x, y]: number[]): THREE.Matrix3 {
+	const angle = ((rotation ?? 0) * Math.PI) / 180;
+	const cos = Math.cos(angle) * (scale ?? 1);
+	const sin = Math.sin(angle) * (scale ?? 1);
+	return new THREE.Matrix3().set(
+		cos,
+		-sin,
+		-0.5 * cos + 0.5 * sin + 0.5 + (x ?? 0),
+		sin,
+		cos,
+		-0.5 * sin - 0.5 * cos + 0.5 + (y ?? 0),
+		0,
+		0,
+		1
+	);
 }
 
 export type Uniforms = Record<string, THREE.IUniform>;
@@ -405,6 +434,41 @@ export function createCs2Material(
 	if (layout.blend !== null) defines.BLEND_ATTR = attributeName('color', layout.blend);
 	if (world.defines.FOG_CUBE && I.g_bFogEnabled !== 0) defines.FOG_CUBE = 1;
 	if (world.defines.FOG_GRADIENT && I.g_bFogEnabled !== 0) defines.FOG_GRADIENT = 1;
+
+	const paint = extras.paint;
+	if (paint) {
+		defines.SKIN_PAINT = paint.style;
+		const colorPattern = paint.style >= 6;
+		const texture = (
+			uniform: string,
+			path: string | undefined,
+			srgb: boolean,
+			fallback: THREE.Texture
+		) => {
+			uniforms[uniform] = { value: fallback };
+			if (path) request(path, srgb, uniforms[uniform]!);
+			return Boolean(path);
+		};
+		texture('uPattern', paint.textures.pattern, colorPattern, defaultTextures.white);
+		texture('uPaintWear', paint.textures.wear, false, defaultTextures.white);
+		texture('uPaintGrunge', paint.textures.grunge, true, defaultTextures.white);
+		texture('uPaintMasks', paint.textures.masks, false, defaultTextures.black);
+		if (texture('uPaintNormal', paint.textures.normal, false, defaultTextures.normal))
+			defines.SKIN_PAINT_NORMAL = 1;
+		uniforms.uPaintColors = {
+			value: [0, 1, 2, 3].map((i) =>
+				new THREE.Color().setRGB(
+					...((paint.colors[i] ?? [1, 1, 1]).slice(0, 3) as [number, number, number]),
+					THREE.SRGBColorSpace
+				)
+			)
+		};
+		uniforms.uPatternTransform = { value: paintTransform(paint.pattern) };
+		uniforms.uWearTransform = { value: paintTransform(paint.wearTransform) };
+		uniforms.uGrungeTransform = { value: paintTransform(paint.grunge) };
+		uniforms.uPaintWearAmount = { value: paint.wear };
+		uniforms.uPaintSurface = { value: new THREE.Vector3(paint.surface[0], paint.surface[1], 0) };
+	}
 
 	defines.ROUGHNESS =
 		shader === 'csgo_weapon' && defines.METAL_TEXTURE

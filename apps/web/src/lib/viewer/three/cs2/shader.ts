@@ -151,6 +151,20 @@ uniform sampler2D uDirectional;
 uniform sampler2D uShadows;
 #endif
 
+#ifdef SKIN_PAINT
+uniform sampler2D uPattern;
+uniform sampler2D uPaintWear;
+uniform sampler2D uPaintGrunge;
+uniform sampler2D uPaintMasks;
+uniform sampler2D uPaintNormal;
+uniform mat3 uPatternTransform;
+uniform mat3 uWearTransform;
+uniform mat3 uGrungeTransform;
+uniform vec3 uPaintColors[4];
+uniform vec3 uPaintSurface;
+uniform float uPaintWearAmount;
+#endif
+
 #ifdef PROBES
 uniform sampler2DArray uProbeIrradiance;
 uniform sampler2DArray uProbeShadows;
@@ -410,6 +424,12 @@ void main() {
 #else
 	vec4 normalTex = vec4(0.5, 0.5, 1.0, 1.0);
 #endif
+#ifdef SKIN_PAINT
+	vec2 patternUv = (uPatternTransform * vec3(vUv, 1.0)).xy;
+	#ifdef SKIN_PAINT_NORMAL
+	normalTex.rg = texture(uPaintNormal, patternUv).rg;
+	#endif
+#endif
 
 #ifdef LAYERS
 	vec2 uvB = uv * uLayer2Scale;
@@ -504,6 +524,32 @@ void main() {
 #endif
 #ifdef VERTEX_AO
 	ao *= mix(1.0, clamp(vPaint.w, 0.001, 1.0), uVertexAo);
+#endif
+
+#ifdef SKIN_PAINT
+	vec4 pattern = texture(uPattern, patternUv);
+	vec4 paintMasks = texture(uPaintMasks, vUv);
+	float wearTexel = texture(uPaintWear, (uWearTransform * vec3(vUv, 1.0)).xy).r;
+	vec3 grunge = texture(uPaintGrunge, (uGrungeTransform * vec3(vUv, 1.0)).xy).rgb;
+	vec3 paint;
+	#if SKIN_PAINT == 6 || SKIN_PAINT == 7 || SKIN_PAINT == 8 || SKIN_PAINT == 9
+	paint = pattern.rgb;
+	#elif SKIN_PAINT == 1 || SKIN_PAINT == 4
+	paint = uPaintColors[0];
+	paint = mix(paint, uPaintColors[1], paintMasks.r);
+	paint = mix(paint, uPaintColors[2], paintMasks.g);
+	paint = mix(paint, uPaintColors[3], paintMasks.b);
+	#else
+	paint = uPaintColors[0];
+	paint = mix(paint, uPaintColors[1], pattern.r);
+	paint = mix(paint, uPaintColors[2], pattern.g);
+	paint = mix(paint, uPaintColors[3], pattern.b);
+	#endif
+	float worn = 1.0 - smoothstep(uPaintWearAmount - 0.04, uPaintWearAmount + 0.04, wearTexel);
+	albedo = mix(paint, albedo, worn);
+	albedo *= mix(vec3(1.0), grunge, saturate1(uPaintWearAmount * 1.4 + 0.1));
+	metalness = mix(uPaintSurface.x, metalness, worn);
+	roughness = mix(uPaintSurface.y, roughness, worn);
 #endif
 
 	vec3 diffuseColor = albedo * (1.0 - metalness);
