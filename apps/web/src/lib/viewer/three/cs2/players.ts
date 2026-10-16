@@ -13,7 +13,7 @@ import {
 	type RoundReplay,
 	type Side
 } from '@cs-demo-cloud/replay';
-import type { PlayerState } from '../../frame.ts';
+import { playerMotion, type PlayerState } from '../../frame.ts';
 import { createCs2Material, type MaterialExtras, type WorldShading } from './material.ts';
 import {
 	createTexture,
@@ -60,13 +60,6 @@ const ADDITIVE_SKIP = new Set(['root_motion', 'pelvis', 'wpnPivot', 'wpn']);
 
 type LocomotionClass = 'rifle' | 'pistol' | 'knife';
 
-interface Motion {
-	speed: number;
-	direction: number;
-	vertical: number;
-	distance: number;
-}
-
 interface TextureJob {
 	file: string;
 	srgb: boolean;
@@ -82,52 +75,6 @@ interface LoadedWeapon {
 interface Template {
 	scene: THREE.Object3D;
 	materials: Map<THREE.Mesh, MaterialExtras>;
-}
-
-const motionCache = new WeakMap<RoundReplay, Float32Array>();
-
-function distances(replay: RoundReplay): Float32Array {
-	let cached = motionCache.get(replay);
-	if (cached) return cached;
-	const { meta, columns } = replay;
-	const n = meta.frameCount;
-	cached = new Float32Array(meta.players.length * n);
-	for (let p = 0; p < meta.players.length; p++) {
-		let total = 0;
-		for (let i = 1; i < n; i++) {
-			const a = p * n + i - 1;
-			const b = a + 1;
-			const step = Math.hypot(columns.x[b]! - columns.x[a]!, columns.y[b]! - columns.y[a]!);
-			if (step < 200) total += step;
-			cached[b] = total;
-		}
-	}
-	motionCache.set(replay, cached);
-	return cached;
-}
-
-export function playerMotion(replay: RoundReplay, index: number, tick: number): Motion {
-	const { meta, columns } = replay;
-	const n = meta.frameCount;
-	const position = Math.max(0, Math.min(n - 1, (tick - meta.startTick) / meta.tickStep));
-	const i0 = Math.max(0, Math.min(n - 2, Math.floor(position)));
-	const t = Math.min(1, position - i0);
-	const a = index * n + Math.max(0, i0 - 1);
-	const b = index * n + Math.min(n - 1, i0 + 2);
-	const span = ((Math.min(n - 1, i0 + 2) - Math.max(0, i0 - 1)) * meta.tickStep) / meta.tickRate;
-	const dx = span > 0 ? (columns.x[b]! - columns.x[a]!) / span : 0;
-	const dy = span > 0 ? (columns.y[b]! - columns.y[a]!) / span : 0;
-	const dz = span > 0 ? (columns.z[b]! - columns.z[a]!) / span : 0;
-	const dist = distances(replay);
-	const d0 = dist[index * n + i0]!;
-	const d1 = dist[index * n + i0 + 1]!;
-	const speed = Math.hypot(dx, dy);
-	return {
-		speed: speed > 600 ? 0 : speed,
-		direction: Math.atan2(dy, dx),
-		vertical: Math.abs(dz) > 1200 ? 0 : dz,
-		distance: d0 + (d1 - d0) * t
-	};
 }
 
 function boneOf(track: THREE.KeyframeTrack): string {
