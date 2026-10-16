@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const { demo, duplicate } = await registerDemo(db, storage, incoming, {
 			fileName,
 			fileModifiedAt: Number.isFinite(modified) && modified > 0 ? new Date(modified) : null,
-			source: 'upload',
+			source: locals.apiToken ? 'extension' : 'upload',
 			uploadedBy: locals.user?.id ?? null
 		});
 		return json({ id: demo.id, duplicate }, { status: duplicate ? 200 : 201 });

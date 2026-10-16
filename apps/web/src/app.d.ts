@@ -4,6 +4,7 @@ declare global {
 	namespace App {
 		interface Locals {
 			user: SessionUser | null;
+			apiToken: boolean;
 		}
 	}
 }

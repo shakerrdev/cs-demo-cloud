@@ -2,10 +2,13 @@ import { error, fail } from '@sveltejs/kit';
 import {
 	AuthError,
 	changePassword,
+	createApiToken,
 	createInvite,
 	deleteUser,
+	listApiTokens,
 	listOpenInvites,
 	listUsers,
+	revokeApiToken,
 	revokeInvite,
 	roles,
 	type Role,
@@ -27,6 +30,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		users: admin ? listUsers(db) : [],
 		invites: admin ? listOpenInvites(db) : [],
+		tokens: listApiTokens(db, locals.user!.id),
 		mapPacks: await listMapPacks(storage)
 	};
 };
@@ -57,6 +61,22 @@ export const actions: Actions = {
 			ok: true,
 			message: 'Password changed. Other devices were signed out.'
 		};
+	},
+
+	token: async ({ request, locals }) => {
+		const name = String((await request.formData()).get('name') ?? '');
+		try {
+			const { token } = createApiToken(db, locals.user!.id, name);
+			return { action: 'token', token };
+		} catch (cause) {
+			if (cause instanceof AuthError) return fail(400, { action: 'token', message: cause.message });
+			throw cause;
+		}
+	},
+
+	revokeToken: async ({ request, locals }) => {
+		revokeApiToken(db, locals.user!.id, String((await request.formData()).get('id')));
+		return { action: 'revokeToken' };
 	},
 
 	invite: async ({ request, locals, url }) => {

@@ -5,6 +5,7 @@ import {
 	countUsers,
 	createInvite,
 	deleteExpiredSessions,
+	getApiTokenUser,
 	getSession,
 	removeBootstrapInvites
 } from '@cs-demo-cloud/db';
@@ -31,16 +32,39 @@ export const init: ServerInit = () => {
 	);
 };
 
+const CORS_HEADERS = {
+	'access-control-allow-origin': '*',
+	'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+	'access-control-allow-headers': 'authorization, content-type, x-file-name, x-file-modified',
+	'access-control-max-age': '86400'
+};
+
 export const handle: Handle = async ({ event, resolve }) => {
+	const path = event.url.pathname;
+	if (event.request.method === 'OPTIONS' && path.startsWith('/api/'))
+		return new Response(null, { status: 204, headers: CORS_HEADERS });
+
 	const token = event.cookies.get(SESSION_COOKIE);
 	const session = token ? getSession(db, token) : null;
 	event.locals.user = session?.user ?? null;
+	event.locals.apiToken = false;
+
+	const bearer = /^Bearer\s+(\S+)$/i.exec(event.request.headers.get('authorization') ?? '')?.[1];
+	if (bearer && path.startsWith('/api/')) {
+		const user = getApiTokenUser(db, bearer);
+		if (!user)
+			return json({ message: 'Unknown API token' }, { status: 401, headers: CORS_HEADERS });
+		event.locals.user = user;
+		event.locals.apiToken = true;
+		const response = await resolve(event);
+		for (const [name, value] of Object.entries(CORS_HEADERS)) response.headers.set(name, value);
+		return response;
+	}
 
 	if (token && !session) clearSessionCookie(event.cookies, event.url);
 	if (token && session?.refreshed)
 		setSessionCookie(event.cookies, event.url, token, session.expiresAt);
 
-	const path = event.url.pathname;
 	if (!event.locals.user && !publicPaths.some((pattern) => pattern.test(path))) {
 		if (path.startsWith('/api/') || path.startsWith('/maps/')) {
 			return json({ message: 'Sign in first' }, { status: 401 });

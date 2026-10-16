@@ -91,6 +91,63 @@
 	</form>
 </section>
 
+<section class="panel">
+	<h2>API tokens</h2>
+	<p class="hint">
+		Let scripts and browser extensions upload demos as you, for example from FACEIT. Send the token
+		as <code>Authorization: Bearer …</code> (see the README).
+	</p>
+	<form method="POST" action="?/token" class="row">
+		<input
+			name="name"
+			placeholder="What is it for?"
+			maxlength="48"
+			required
+			aria-label="Token name"
+		/>
+		<button type="submit" class="primary">Create token</button>
+	</form>
+	{#if form?.action === 'token' && form.token}
+		<div class="link">
+			<input
+				readonly
+				value={form.token}
+				aria-label="New API token"
+				onfocus={(e) => e.currentTarget.select()}
+			/>
+			<button type="button" onclick={() => copy(form.token!)}>{copied ? 'Copied' : 'Copy'}</button>
+		</div>
+		<p class="hint">Copy it now. It isn’t shown again.</p>
+	{:else if form?.action === 'token' && form.message}
+		<p class="form-error">{form.message}</p>
+	{/if}
+	{#if data.tokens.length}
+		<ul class="list">
+			{#each data.tokens as token (token.id)}
+				<li>
+					<span>{token.name} <span class="muted">…{token.hint}</span></span>
+					<span class="muted"
+						>created {formatDate(token.createdAt)} · {token.lastUsedAt
+							? `last used ${formatDate(token.lastUsedAt)}`
+							: 'never used'}</span
+					>
+					<form
+						method="POST"
+						action="?/revokeToken"
+						onsubmit={(e) => {
+							if (!confirm(`Revoke ${token.name}? Anything using it stops working.`))
+								e.preventDefault();
+						}}
+					>
+						<input type="hidden" name="id" value={token.id} />
+						<button type="submit" class="small danger">Revoke</button>
+					</form>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</section>
+
 {#if admin}
 	<section class="panel">
 		<h2>Invite someone</h2>
@@ -175,7 +232,7 @@
 			<ul class="list">
 				{#each data.mapPacks as pack (pack.map)}
 					<li>
-						<span>{pack.map === 'players' ? 'Player models' : pack.map}</span>
+						<span>{pack.map === 'players' ? 'Player models and sounds' : pack.map}</span>
 						<span class="muted"
 							>{formatBytes(pack.bytes)} · game {pack.build ?? 'unknown'} · exported {formatDate(
 								new Date(pack.exportedAt)
