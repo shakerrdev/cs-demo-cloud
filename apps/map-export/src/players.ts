@@ -7,6 +7,7 @@ import {
 	PLAYER_PACK_VERSION,
 	playerClipNames,
 	type PlayerPackManifest,
+	type PlayerPackSound,
 	type PlayerPackWeapon,
 	type Side
 } from '@cs-demo-cloud/replay';
@@ -14,7 +15,8 @@ import { EXPORTER_VERSION, forEachLimit, PackBuilder } from './export.ts';
 import { processModelGltf, type Gltf, type ModelGltfOptions, type ModelResult } from './gltf.ts';
 import { gameBuild } from './steam.ts';
 import type { Tools } from './tools.ts';
-import { run } from './vrf.ts';
+import { collectSoundEvents, monoWav, resolveSoundEvent, type SoundEvent } from './sounds.ts';
+import { run, Vrf } from './vrf.ts';
 import { Vpk } from './vpk.ts';
 
 export interface PlayerExportOptions {
@@ -103,6 +105,83 @@ const WEAPON_MODELS: Record<string, string> = {
 	knife_ursus: 'knife/knife_ursus/weapon_knife_ursus'
 };
 
+const WEAPON_SOUNDS: Record<string, [string, string | null]> = {
+	ak47: ['Weapon_AK47.Single', 'Weapon_AK47.SingleDistant'],
+	aug: ['Weapon_AUG.Single', 'Weapon_AUG.SingleDistant'],
+	awp: ['Weapon_AWP.Single', 'Weapon_AWP.SingleDistant'],
+	bizon: ['Weapon_bizon.Single', 'Weapon_bizon.SingleDistant'],
+	cz75a: ['Weapon_CZ75A.Single', 'Weapon_CZ75A.SingleDistant'],
+	deagle: ['Weapon_DEagle.Single', 'Weapon_DEagle.SingleDistant'],
+	elite: ['Weapon_ELITE.Single', 'Weapon_ELITE.SingleDistant'],
+	famas: ['Weapon_FAMAS.Single', 'Weapon_FAMAS.SingleDistant'],
+	fiveseven: ['Weapon_FiveSeven.Single', 'Weapon_FiveSeven.SingleDistant'],
+	g3sg1: ['Weapon_G3SG1.Single', 'Weapon_G3SG1.SingleDistant'],
+	galilar: ['Weapon_GalilAR.Single', 'Weapon_GalilAR.SingleDistant'],
+	glock: ['Weapon_Glock.Single', 'Weapon_Glock.SingleDistant'],
+	hkp2000: ['Weapon_hkp2000.Single', 'Weapon_hkp2000.SingleDistant'],
+	m249: ['Weapon_M249.Single', 'Weapon_M249.SingleDistant'],
+	m4a1_silencer: ['Weapon_M4A1.Silenced', 'Weapon_M4A1.SingleDistant'],
+	m4a4: ['Weapon_M4A4.Single', 'Weapon_M4A4.SingleDistant'],
+	mac10: ['Weapon_MAC10.Single', 'Weapon_MAC10.SingleDistant'],
+	mag7: ['Weapon_Mag7.Single', 'Weapon_Mag7.SingleDistant'],
+	mp5sd: ['Weapon_MP5.Single', null],
+	mp7: ['Weapon_MP7.Single', 'Weapon_MP7.SingleDistant'],
+	mp9: ['Weapon_MP9.Single', 'Weapon_MP9.SingleDistant'],
+	negev: ['Weapon_Negev.Single', 'Weapon_Negev.SingleDistant'],
+	nova: ['Weapon_Nova.Single', 'Weapon_Nova.SingleDistant'],
+	p250: ['Weapon_P250.Single', 'Weapon_P250.SingleDistant'],
+	p90: ['Weapon_P90.Single', 'Weapon_P90.SingleDistant'],
+	revolver: ['Weapon_Revolver.Single', 'Weapon_Revolver.SingleDistant'],
+	sawedoff: ['Weapon_Sawedoff.Single', 'Weapon_Sawedoff.SingleDistant'],
+	scar20: ['Weapon_SCAR20.Single', 'Weapon_SCAR20.SingleDistant'],
+	sg556: ['Weapon_sg556.Single', 'Weapon_sg556.SingleDistant'],
+	ssg08: ['Weapon_SSG08.Single', 'Weapon_SSG08.SingleDistant'],
+	taser: ['Weapon_Taser.Single', null],
+	tec9: ['Weapon_tec9.Single', 'Weapon_tec9.SingleDistant'],
+	ump45: ['Weapon_UMP45.Single', 'Weapon_UMP45.SingleDistant'],
+	usp_silencer: ['Weapon_USP.SilencedShot', null],
+	xm1014: ['Weapon_XM1014.Single', 'Weapon_XM1014.SingleDistant']
+};
+
+const SOUNDS: Record<string, { event?: string; files?: string[]; loop?: boolean }> = {
+	'step:CT': { event: 'CT_Concrete.StepLeft' },
+	'step:T': { event: 'T_Concrete.StepLeft' },
+	land: { event: 'Land_Concrete.StepLeft' },
+	death: { event: 'Player.Death' },
+	'kill:head': { event: 'Player.DeathHeadShot.Onlooker' },
+	'kill:body': { event: 'Player.DeathBody.Onlooker' },
+	flash: { event: 'Flashbang.Explode' },
+	'flash:far': { event: 'Flashbang.ExplodeDistant' },
+	he: { event: 'BaseGrenade.Explode' },
+	'he:far': { event: 'BaseGrenade.ExplodeDistant' },
+	smoke: { files: ['sounds/weapons/smokegrenade/smoke_emit.vsnd'] },
+	molotov: {
+		files: [1, 2, 3].map((n) => `sounds/weapons/molotov/molotov_detonate_${n}.vsnd`)
+	},
+	incendiary: {
+		files: [1, 2, 3].map((n) => `sounds/weapons/incgrenade/inc_grenade_detonate_${n}.vsnd`)
+	},
+	fire: { files: ['sounds/weapons/molotov/fire_loop_1.vsnd'], loop: true },
+	'bounce:he': { event: 'HEGrenade.Bounce' },
+	'bounce:flash': { event: 'Flashbang.Bounce' },
+	'bounce:smoke': { event: 'SmokeGrenade.Bounce' },
+	'bounce:molotov': { event: 'Molotov.Bounce' },
+	'bounce:decoy': { event: 'HEGrenade.Bounce' },
+	'bomb:beep': { event: 'C4.PlantSound' },
+	'bomb:plant': { event: 'c4.plant' },
+	'bomb:defuse_start': { files: ['sounds/weapons/c4/c4_disarmstart.vsnd'] },
+	'bomb:defused': { files: ['sounds/weapons/c4/c4_disarmfinish.vsnd'] },
+	'bomb:explode': { event: 'c4.explode' }
+};
+
+const SOUND_SCRIPTS = [
+	'soundevents/game_sounds_weapons.vsndevts_c',
+	'soundevents/game_sounds_player.vsndevts_c',
+	'soundevents/game_sounds_footsteps.vsndevts_c'
+];
+
+const DEFAULT_CURVE = [0, 1, 400, 0.6, 1500, 0.15, 3000, 0];
+
 const TEXTURE_PARAMS = new Set([
 	'g_tColor',
 	'g_tNormal',
@@ -177,6 +256,89 @@ async function exportModel(
 		if (entry !== 'model.glb' && entry !== 'result.json')
 			await rm(join(workDir, entry), { recursive: true, force: true });
 	return { glb: await readFile(glb), ...result };
+}
+
+async function exportSounds(
+	vrf: Vrf,
+	tools: Tools,
+	vpkPath: string,
+	workDir: string,
+	pack: PackBuilder,
+	log: (message: string) => void
+): Promise<Record<string, PlayerPackSound>> {
+	const scripts = [];
+	for (const script of SOUND_SCRIPTS) {
+		try {
+			scripts.push(await vrf.dataBlock(vpkPath, script));
+		} catch (error) {
+			log(`  ${script} unreadable: ${(error as Error).message.split('\n')[0]}`);
+		}
+	}
+	const events = collectSoundEvents(scripts);
+	const wanted: Record<string, { event?: string; files?: string[]; loop?: boolean }> = {
+		...SOUNDS
+	};
+	for (const [weapon, [near, far]] of Object.entries(WEAPON_SOUNDS)) {
+		wanted[`shot:${weapon}`] = { event: near };
+		if (far) wanted[`far:${weapon}`] = { event: far };
+	}
+
+	const resolved: Record<string, SoundEvent & { loop?: boolean }> = {};
+	for (const [key, spec] of Object.entries(wanted)) {
+		const event = spec.event ? resolveSoundEvent(events, spec.event) : null;
+		const files = event?.files ?? spec.files;
+		if (!files?.length) {
+			log(`  no sound for ${key}`);
+			continue;
+		}
+		resolved[key] = {
+			files,
+			volume: event?.volume ?? 1,
+			pitch: event?.pitch ?? 1,
+			curve: event?.curve.length ? event.curve : DEFAULT_CURVE,
+			loop: spec.loop
+		};
+	}
+
+	const files = [...new Set(Object.values(resolved).flatMap((sound) => sound.files))];
+	const outDir = join(workDir, 'sounds');
+	await mkdir(outDir, { recursive: true });
+	for (let i = 0; i < files.length; i += 40) {
+		const batch = files
+			.slice(i, i + 40)
+			.filter((file) => !existsSync(join(outDir, file.replace(/\.vsnd$/, '.wav'))));
+		if (batch.length)
+			await run(tools.vrf, [
+				'-i',
+				vpkPath,
+				'-f',
+				batch.map((file) => `${file}_c`).join(','),
+				'-d',
+				'-o',
+				outDir + sep
+			]);
+	}
+
+	const entries = new Map<string, string>();
+	await forEachLimit(files, 4, async (file) => {
+		const wav = join(outDir, file.replace(/\.vsnd$/, '.wav'));
+		if (!existsSync(wav)) return;
+		const name = file
+			.replace(/^sounds\//, '')
+			.replace(/\.vsnd$/, '')
+			.replaceAll('/', '_');
+		entries.set(file, await pack.addFile(`sounds/${name}.wav`, monoWav(await readFile(wav)), true));
+	});
+
+	const sounds: Record<string, PlayerPackSound> = {};
+	for (const [key, sound] of Object.entries(resolved)) {
+		const packed = sound.files.flatMap((file) => entries.get(file) ?? []);
+		if (!packed.length) continue;
+		sounds[key] = { ...sound, files: packed };
+		if (!sound.loop) delete sounds[key]!.loop;
+	}
+	log(`players: ${Object.keys(sounds).length} sounds from ${entries.size} files`);
+	return sounds;
 }
 
 export async function exportPlayers(
@@ -290,6 +452,16 @@ export async function exportPlayers(
 			};
 		});
 
+		log('players: exporting sounds');
+		const sounds = await exportSounds(
+			new Vrf(tools.vrf, gameinfo),
+			tools,
+			vpkPath,
+			options.workDir,
+			pack,
+			log
+		);
+
 		const weaponOnly = [...weaponTextures].filter((texture) => !textures.has(texture)).sort();
 		log(`players: packing ${textures.size + weaponOnly.length} textures`);
 		await forEachLimit([...textures].sort(), 4, (texture) => pack.addTexture(texture, [vpk]));
@@ -311,6 +483,7 @@ export async function exportPlayers(
 			animations: animationFile,
 			clips: animations.clips.sort(),
 			weapons: Object.fromEntries(Object.entries(weapons).sort(([a], [b]) => a.localeCompare(b))),
+			sounds,
 			textures: pack.textures
 		};
 		await pack.addFile(
