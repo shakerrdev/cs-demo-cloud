@@ -255,7 +255,18 @@ async function exportModel(
 	const result = processModelGltf(gltf, options);
 	const processed = join(dirname(gltfPath), 'processed.gltf');
 	await writeFile(processed, JSON.stringify(gltf));
-	await run(tools.gltfpack, ['-i', processed, '-o', glb, '-cc', '-kv', '-kn', '-km', '-ke']);
+	await run(tools.gltfpack, [
+		'-i',
+		processed,
+		'-o',
+		glb,
+		'-cc',
+		'-kv',
+		'-kn',
+		'-km',
+		'-ke',
+		'-vtf'
+	]);
 	await writeFile(
 		resultPath,
 		JSON.stringify({ textures: [...result.textures], clips: result.clips, nodes: result.nodes })
