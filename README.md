@@ -71,6 +71,8 @@ With a player pack installed as well, players in game-look maps are CS2's agents
 - the viewer blends the clips from each player's speed, direction and stance, with the walk and run cycles following the distance covered so feet don't slide; weapon poses and recoil are layered on top, the upper body turns to the aim pitch, and the dead fall over where they died
 - players behind walls still show through faintly in their team colour
 
+On game-look maps the effects are drawn to match: smokes are lit, noisy volumes that bloom over about a second and thin out at the end, molotovs burn as flickering flames with a glow on the ground, flashes and HEs burst brightly into the map's bloom, guns show muzzle flashes and tracers, and grenades and the bomb are their game models. Without a map pack the simple shapes stay.
+
 The pack also carries the game's sounds (about 20 MB): every gun near and far, footsteps, landings, kills and headshots, flash, HE, smoke and molotov detonations with the fire loop, grenade bounces, and the bomb's plant, beeps, defuse and explosion. They play in both views with CS2's own volume-by-distance curves, positioned around you: in 3D from the followed player's head or near where the camera looks, in 2D from the selected player. **Sound on/off** (or **M**) toggles them; at 4× and faster footsteps and bounces are left out. Footsteps always use the concrete set, since replays don't know the surface.
 
 Death animations and the AUG can't be read by Source 2 Viewer 20.0 yet, so deaths are a simple fall and the AUG isn't drawn.
