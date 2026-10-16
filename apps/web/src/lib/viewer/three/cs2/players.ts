@@ -82,6 +82,11 @@ interface TextureJob {
 	texture?: THREE.Texture;
 }
 
+export interface ViewmodelAnimations {
+	clips: Map<string, THREE.AnimationClip>;
+	rigs: Map<string, THREE.Object3D>;
+}
+
 export interface LoadedWeapon {
 	scene: THREE.Object3D;
 	offset: THREE.Matrix4;
@@ -122,7 +127,7 @@ export class PlayerPack {
 	private abort = new AbortController();
 	private materials = new Map<string, THREE.ShaderMaterial>();
 	private shading: WorldShading | null = null;
-	private viewmodelClips: Promise<Map<string, THREE.AnimationClip>> | null = null;
+	private viewmodelClips: Promise<ViewmodelAnimations> | null = null;
 	private skins: SkinsPackManifest | null;
 	private uploader: TextureUploader;
 	private skinsVersion: string | null;
@@ -313,7 +318,7 @@ export class PlayerPack {
 		return Boolean(this.manifest.viewmodel?.animations.length);
 	}
 
-	loadViewmodel(): Promise<Map<string, THREE.AnimationClip>> {
+	loadViewmodel(): Promise<ViewmodelAnimations> {
 		if (!this.viewmodelClips) {
 			const files = this.manifest.viewmodel?.animations ?? [];
 			this.viewmodelClips = Promise.all(
@@ -321,28 +326,40 @@ export class PlayerPack {
 					const response = await fetch(`${BASE}/${file}?v=${this.version}`, {
 						signal: this.abort.signal
 					});
-					if (!response.ok) return [];
+					if (!response.ok) return null;
 					const loader = new GLTFLoader();
 					loader.setMeshoptDecoder(MeshoptDecoder);
 					const gltf = await loader.parseAsync(await response.arrayBuffer(), '');
-					return gltf.animations;
+					return gltf;
 				})
 			)
-				.then((sets) => {
+				.then((files) => {
 					const nodes = this.nodeNames('CT');
 					const clips = new Map<string, THREE.AnimationClip>();
-					for (const clip of sets.flat())
-						clips.set(
-							clip.name,
-							new THREE.AnimationClip(
+					const rigs = new Map<string, THREE.Object3D>();
+					for (const gltf of files) {
+						if (!gltf) continue;
+						for (const clip of gltf.animations)
+							clips.set(
 								clip.name,
-								clip.duration,
-								clip.tracks.filter((track) => nodes.has(boneOf(track)))
-							)
-						);
-					return clips;
+								new THREE.AnimationClip(
+									clip.name,
+									clip.duration,
+									clip.tracks.filter(
+										(track) => nodes.has(boneOf(track)) || boneOf(track).includes('@')
+									)
+								)
+							);
+						gltf.scene.traverse((object) => {
+							if (!object.name.startsWith('rig@')) return;
+							const name = object.name.slice(4);
+							const root = object.getObjectByName(`${name}@weapon`);
+							if (root && !rigs.has(name)) rigs.set(name, root);
+						});
+					}
+					return { clips, rigs };
 				})
-				.catch(() => new Map());
+				.catch(() => ({ clips: new Map(), rigs: new Map() }));
 		}
 		return this.viewmodelClips;
 	}
@@ -401,7 +418,7 @@ export class PlayerPack {
 					}).catch(() => null)
 				: await this.plainWeapon(key);
 		if (!loaded) return this.plainWeapon(key);
-		const scene = loaded.scene.clone();
+		const scene = cloneSkinned(loaded.scene);
 		const extras = paintExtras(skin, paint, base);
 		scene.traverse((object) => {
 			const mesh = object as THREE.Mesh;
@@ -660,7 +677,7 @@ class PlayerModel {
 			if (this.weaponLoading !== id) return;
 			this.weaponLoading = null;
 			if (!template || this.weaponKey !== id) return;
-			const weapon = template.scene.clone();
+			const weapon = cloneSkinned(template.scene);
 			weapon.traverse((object) => {
 				if ((object as THREE.Mesh).isMesh) this.applyMaterial(object as THREE.Mesh);
 			});
@@ -990,7 +1007,7 @@ export class PlayerModels {
 			const target = prop;
 			void this.pack.weapon(key).then((loaded) => {
 				if (!loaded || target.key !== key) return;
-				const model = loaded.scene.clone();
+				const model = cloneSkinned(loaded.scene);
 				model.traverse((object) => {
 					const mesh = object as THREE.Mesh;
 					if (!mesh.isMesh) return;

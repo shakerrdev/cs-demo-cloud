@@ -9,7 +9,14 @@ import {
 } from '@cs-demo-cloud/replay';
 import type { PlayerState } from '../../frame.ts';
 import type { MaterialExtras } from './material.ts';
-import { GLTF_TO_SOURCE, isFirstPerson, skinAt, type PlayerPack } from './players.ts';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import {
+	GLTF_TO_SOURCE,
+	isFirstPerson,
+	skinAt,
+	type PlayerPack,
+	type ViewmodelAnimations
+} from './players.ts';
 
 const DEG = Math.PI / 180;
 const FOV = 54;
@@ -21,6 +28,9 @@ interface Arms {
 	meshes: THREE.Mesh[];
 	mixer: THREE.AnimationMixer;
 	slot: THREE.Group;
+	hand: THREE.Object3D;
+	rigs: Map<string, THREE.Object3D>;
+	borrowed: THREE.Object3D[];
 	weapon: string | null;
 	loading: string | null;
 	action: THREE.AnimationAction | null;
@@ -39,6 +49,7 @@ export class Viewmodel {
 	private pack: PlayerPack;
 	private arms = new Map<string, Arms>();
 	private clips: Map<string, THREE.AnimationClip> | null = null;
+	private rigs = new Map<string, THREE.Object3D>();
 	private actions = new Map<string, THREE.AnimationAction>();
 	onChange: (() => void) | null = null;
 
@@ -46,8 +57,9 @@ export class Viewmodel {
 		this.pack = pack;
 		this.scene.add(this.root);
 		this.root.rotation.order = 'ZYX';
-		void pack.loadViewmodel().then((clips) => {
-			this.clips = clips;
+		void pack.loadViewmodel().then((animations: ViewmodelAnimations) => {
+			this.clips = animations.clips;
+			this.rigs = animations.rigs;
 			this.onChange?.();
 		});
 	}
@@ -86,7 +98,13 @@ export class Viewmodel {
 		const armsKey = `${player.side}|${ready ? agent : ''}`;
 		const arms = this.armsFor(armsKey, player.side, ready ? agent : undefined);
 		for (const [id, other] of this.arms) other.model.visible = id === armsKey;
-		this.setWeapon(arms, weaponModelKey(key, player.side), skinAt(replay, player.index, tick, key));
+		const rig = this.rig(arms, clip);
+		this.setWeapon(
+			arms,
+			weaponModelKey(key, player.side),
+			skinAt(replay, player.index, tick, key),
+			rig
+		);
 
 		const action = this.action(arms, clip);
 		if (arms.action !== action) {
@@ -189,13 +207,17 @@ export class Viewmodel {
 		root.matrix.copy(GLTF_TO_SOURCE);
 		const slot = new THREE.Group();
 		slot.matrixAutoUpdate = false;
-		(root.getObjectByName('wpn') ?? root.getObjectByName('hand_R') ?? root).add(slot);
+		const hand = root.getObjectByName('wpn') ?? root.getObjectByName('hand_R') ?? root;
+		hand.add(slot);
 		this.root.add(root);
 		arms = {
 			model: root,
 			meshes,
 			mixer: new THREE.AnimationMixer(root),
 			slot,
+			hand,
+			rigs: new Map(),
+			borrowed: [],
 			weapon: null,
 			loading: null,
 			action: null
@@ -217,24 +239,71 @@ export class Viewmodel {
 		return action;
 	}
 
-	private setWeapon(arms: Arms, key: string | null, skin: ReplaySkin | null) {
-		const id = key && skin ? `${key}|${skin.paint}|${skin.wear}` : key;
+	private rig(arms: Arms, clip: THREE.AnimationClip): string | null {
+		const track = clip.tracks.find((t) => t.name.includes('@'));
+		if (!track) return null;
+		const name = track.name.slice(0, track.name.indexOf('@'));
+		if (arms.rigs.has(name)) return name;
+		const template = this.rigs.get(name);
+		if (!template) return null;
+		const rig = template.clone();
+		rig.position.set(0, 0, 0);
+		rig.quaternion.identity();
+		rig.scale.set(1, 1, 1);
+		arms.hand.add(rig);
+		arms.rigs.set(name, rig);
+		return name;
+	}
+
+	private setWeapon(arms: Arms, key: string | null, skin: ReplaySkin | null, rig: string | null) {
+		const base = key && skin ? `${key}|${skin.paint}|${skin.wear}` : key;
+		const id = base && `${base}|${rig ?? ''}`;
 		if (id === arms.weapon) return;
 		arms.weapon = id;
 		arms.slot.clear();
+		for (const object of arms.borrowed) object.removeFromParent();
+		arms.borrowed = [];
 		if (!key || !id) return;
 		arms.loading = id;
 		void this.pack.weapon(key, skin).then((template) => {
 			if (arms.loading !== id || arms.weapon !== id || !template) return;
 			arms.loading = null;
-			const weapon = template.scene.clone();
+			const weapon = cloneSkinned(template.scene);
 			weapon.traverse((object) => {
 				if ((object as THREE.Mesh).isMesh) this.applyMaterial(object as THREE.Mesh);
 			});
 			arms.slot.matrix.copy(template.offset);
 			arms.slot.add(weapon);
+			const root = rig ? arms.rigs.get(rig) : undefined;
+			if (rig && root) this.bindToRig(arms, weapon, rig, root);
 			this.onChange?.();
 		});
+	}
+
+	private bindToRig(arms: Arms, weapon: THREE.Object3D, rig: string, root: THREE.Object3D) {
+		const mapped = new Map<THREE.Object3D, THREE.Object3D>();
+		const map = (bone: THREE.Object3D): THREE.Object3D => {
+			const known = mapped.get(bone);
+			if (known) return known;
+			let target =
+				root.name === `${rig}@${bone.name}` ? root : root.getObjectByName(`${rig}@${bone.name}`);
+			if (!target) {
+				const parent = bone.parent && (bone.parent as THREE.Bone).isBone ? map(bone.parent) : root;
+				parent.add(bone);
+				arms.borrowed.push(bone);
+				target = bone;
+			}
+			mapped.set(bone, target);
+			return target;
+		};
+		const meshes: THREE.SkinnedMesh[] = [];
+		weapon.traverse((object) => {
+			if ((object as THREE.SkinnedMesh).isSkinnedMesh) meshes.push(object as THREE.SkinnedMesh);
+		});
+		for (const mesh of meshes) {
+			const bones = mesh.skeleton.bones.map((bone) => map(bone) as THREE.Bone);
+			mesh.bind(new THREE.Skeleton(bones, mesh.skeleton.boneInverses), mesh.bindMatrix);
+		}
 	}
 
 	private applyMaterial(mesh: THREE.Mesh) {
