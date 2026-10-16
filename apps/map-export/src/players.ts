@@ -517,7 +517,7 @@ export async function exportPlayers(
 				gameinfo,
 				model,
 				join(options.workDir, 'weapon-models', key),
-				[],
+				['--gltf_export_animations'],
 				{
 					meshes: (name) => !/\.(body_legacy|body_hidden)$/.test(name),
 					textureParams: TEXTURE_PARAMS

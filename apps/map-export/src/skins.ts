@@ -501,7 +501,7 @@ export async function exportSkins(
 				gameinfo,
 				model,
 				join(options.workDir, 'weapon-models', skinWeaponKey(key, legacy).replace(':', '-')),
-				[],
+				['--gltf_export_animations'],
 				{
 					meshes: legacy
 						? (name) => name.endsWith('.body_legacy')
