@@ -79,7 +79,8 @@ const COMPOSITE_TEXTURES = new Set([
 	'g_tColor',
 	'g_tMetalness',
 	'g_tRoughness',
-	'g_tSurface'
+	'g_tSurface',
+	'g_tPosition'
 ]);
 const SKIPPED_VARIABLES = new Set(['g_nRandomSeed', 'g_flWearAmount']);
 const PATTERN_SIZE = 1024;
@@ -309,10 +310,14 @@ const KEPT_INTS = new Set([
 	'F_OVERRIDE_NORMAL',
 	'g_bUseNormalMap',
 	'g_bOverrideDefaultMasks',
-	'g_bIgnoreWeaponSizeScale'
+	'g_bIgnoreWeaponSizeScale',
+	'g_bRoughnessPerColor',
+	'g_nColorAdjustmentMode'
 ]);
-const KEPT_FLOATS = /^g_fl(Pattern|Wear|Grunge)TexCoord(Scale|Rotation)$|^g_flColorBrightness$/;
-const KEPT_VECTORS = /^g_v(Pattern|Wear|Grunge)TexCoordOffset$|^g_vColor[0-3]$/;
+const KEPT_FLOATS =
+	/^g_fl(Pattern|Wear|Grunge)TexCoord(Scale|Rotation)$|^g_fl(ColorBrightness|PaintRoughness|PaintMetalness)$|^g_fWearSoftness$/;
+const KEPT_VECTORS =
+	/^g_v(Pattern|Wear|Grunge)TexCoordOffset$|^g_vColor[0-3]$|^g_vPaint(Durability|Roughness|Metalness|AlbedoLevels)$|^g_vMetallicPaintAlbedoLevels$|^g_vSprayBiasBlend$/;
 
 export function trimParams(params: MaterialParams) {
 	return {
@@ -581,7 +586,8 @@ export async function exportSkins(
 				want(texture, name === 'g_tPattern' || name === 'g_tNormal' ? patternSize : DETAIL_SIZE);
 			paints[paint] = {
 				name: kit.name,
-				style: kit.style || (params.ints.F_PAINT_STYLE ?? 6) + 1,
+				style:
+					params.ints.F_PAINT_STYLE !== undefined ? params.ints.F_PAINT_STYLE + 1 : kit.style || 7,
 				legacy: kit.legacy,
 				wear: kit.wear,
 				...trimParams(params),

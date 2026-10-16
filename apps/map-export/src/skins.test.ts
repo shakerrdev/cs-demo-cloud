@@ -136,14 +136,14 @@ test('finds every weapon and paint kit pair from the generated icons', () => {
 		trimParams({
 			shader: '',
 			ints: { F_PAINT_STYLE: 1, g_bEnableSticker0: 0 },
-			floats: { g_flPatternTexCoordScale: 2, g_fGlitterScale: 25 },
+			floats: { g_flPatternTexCoordScale: 2, g_fGlitterScale: 25, g_fWearSoftness: 0.1 },
 			vectors: { g_vColor0: [1, 1, 1, 1], g_vSticker0Offset: [0, 0, 0, 0] },
 			textures: {},
 			strings: {}
 		}),
 		{
 			ints: { F_PAINT_STYLE: 1 },
-			floats: { g_flPatternTexCoordScale: 2 },
+			floats: { g_flPatternTexCoordScale: 2, g_fWearSoftness: 0.1 },
 			vectors: { g_vColor0: [1, 1, 1, 1] }
 		}
 	);
