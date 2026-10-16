@@ -67,9 +67,10 @@ The browser needs S3TC and BPTC texture compression (any desktop GPU); phones wi
 With a player pack installed as well, players in game-look maps are CS2's agents (SAS for CT, Phoenix for T) instead of capsules, holding the weapon they have out:
 
 - `node apps/map-export/src/index.ts --players` writes `map-packs/players.zip` (about 130 MB), uploaded in **Settings → 3D maps** like a map
-- it holds both agents, the world-model animations (idle, walk, run and crouch in eight directions for rifles, pistols and knives, jumps, defusing, planting, weapon poses and shooting) and every weapon model, with textures capped at 1024 px (weapons 512 px)
+- it holds both agents with their first-person arms, the world-model animations (idle, walk, run and crouch in eight directions for rifles, pistols and knives, jumps, defusing, planting, weapon poses and shooting) and every weapon model, with textures capped at 1024 px (weapons 512 px)
 - the viewer blends the clips from each player's speed, direction and stance, with the walk and run cycles following the distance covered so feet don't slide; weapon poses and recoil are layered on top, the upper body turns to the aim pitch, and the dead fall over where they died
 - players behind walls still show through faintly in their team colour
+- in **POV** you see the player's own arms and weapon with the game's first-person animations: drawing after a switch, idle, shooting, reloading, knife swings, grenade throws and planting
 
 On game-look maps the effects are drawn to match: smokes are lit, noisy volumes that bloom over about a second and thin out at the end, molotovs burn as flickering flames with a glow on the ground, flashes and HEs burst brightly into the map's bloom, guns show muzzle flashes and tracers, and grenades and the bomb are their game models. Without a map pack the simple shapes stay.
 
