@@ -342,6 +342,7 @@ export class ReplayScene {
 		this.actors.setCapsules(!models);
 		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
 		this.models?.update(replay, tick, this.players, this.pov, true);
+		if (this.effects) this.models?.updateProps(replay, tick);
 		this.effects?.update(
 			replay,
 			tick,

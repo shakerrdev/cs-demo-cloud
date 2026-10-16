@@ -9,11 +9,12 @@ import {
 	weaponModelKey,
 	weaponPoseName,
 	weaponShootName,
+	type GrenadeType,
 	type PlayerPackManifest,
 	type RoundReplay,
 	type Side
 } from '@cs-demo-cloud/replay';
-import { playerMotion, type PlayerState } from '../../frame.ts';
+import { bombState, grenadePosition, playerMotion, type PlayerState } from '../../frame.ts';
 import { createCs2Material, type MaterialExtras, type WorldShading } from './material.ts';
 import {
 	createTexture,
@@ -701,6 +702,7 @@ export class PlayerModels {
 	readonly root = new THREE.Group();
 	private pack: PlayerPack;
 	private models: PlayerModel[] = [];
+	private props: { root: THREE.Group; slot: THREE.Group; key: string | null }[] = [];
 	private shading: WorldShading | null = null;
 
 	constructor(pack: PlayerPack) {
@@ -748,8 +750,69 @@ export class PlayerModels {
 		return this.active ? (this.models[player.index]?.muzzle(player, target) ?? null) : null;
 	}
 
+	updateProps(replay: RoundReplay, tick: number) {
+		if (!this.active) return;
+		const seconds = tick / replay.meta.tickRate;
+		let used = 0;
+		for (const grenade of replay.meta.grenades) {
+			const position = grenadePosition(grenade.path, tick);
+			if (!position) continue;
+			const prop = this.prop(used++, GRENADE_MODELS[grenade.type]);
+			if (!prop) continue;
+			prop.position.set(position.x, position.y, position.z);
+			prop.rotation.set(seconds * 9, seconds * 5, seconds * 3);
+		}
+		const bomb = bombState(replay, tick);
+		if (bomb && bomb.kind !== 'exploded') {
+			const prop = this.prop(used++, 'c4');
+			if (prop) {
+				prop.position.set(bomb.x, bomb.y, bomb.z + 1);
+				prop.rotation.set(0, Math.PI / 2, (bomb.tick % 360) * DEG);
+			}
+		}
+		for (let i = used; i < this.props.length; i++) this.props[i]!.root.visible = false;
+	}
+
+	private prop(index: number, key: string): THREE.Group | null {
+		let prop = this.props[index];
+		if (!prop) {
+			prop = { root: new THREE.Group(), slot: new THREE.Group(), key: null };
+			prop.slot.matrixAutoUpdate = false;
+			prop.slot.matrix.copy(GLTF_TO_SOURCE);
+			prop.root.add(prop.slot);
+			this.root.add(prop.root);
+			this.props.push(prop);
+		}
+		prop.root.visible = true;
+		if (prop.key !== key) {
+			prop.key = key;
+			prop.slot.clear();
+			const target = prop;
+			void this.pack.weapon(key).then((loaded) => {
+				if (!loaded || target.key !== key) return;
+				const model = loaded.scene.clone();
+				model.traverse((object) => {
+					const mesh = object as THREE.Mesh;
+					if (!mesh.isMesh) return;
+					const material = this.pack.material((mesh.userData.extras ?? {}) as MaterialExtras);
+					if (material) mesh.material = material;
+				});
+				target.slot.add(model);
+			});
+		}
+		return prop.root;
+	}
+
 	dispose() {
 		for (const model of this.models) model.dispose();
 		this.pack.dispose();
 	}
 }
+
+const GRENADE_MODELS: Record<GrenadeType, string> = {
+	smoke: 'smokegrenade',
+	flash: 'flashbang',
+	he: 'hegrenade',
+	molotov: 'molotov',
+	decoy: 'decoy'
+};

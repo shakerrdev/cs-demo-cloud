@@ -349,6 +349,8 @@ export class Actors {
 		this.updateGrenades(replay, tick);
 		this.updateEffects(replay, tick);
 		this.updateBomb(replay, tick);
+		this.grenadeHeads.visible = this.simpleEffects;
+		if (!this.simpleEffects) this.bomb.visible = false;
 		this.updateShots(replay, tick, players, pov);
 	}
 
