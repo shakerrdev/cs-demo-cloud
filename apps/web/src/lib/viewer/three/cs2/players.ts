@@ -39,7 +39,6 @@ import { Viewmodel } from './viewmodel.ts';
 
 const BASE = '/maps/3d/players';
 const SKINS_BASE = '/maps/3d/skins';
-const ANODIZED = new Set([4, 5, 6]);
 const CONCURRENT_DOWNLOADS = 4;
 const DEG = Math.PI / 180;
 
@@ -1040,7 +1039,8 @@ function paintExtras(
 	const sizeScale = ints.g_bIgnoreWeaponSizeScale === 1 ? 1 : base.uvScale;
 	const customNormal = ints.F_OVERRIDE_NORMAL === 1 || ints.g_bUseNormalMap === 1;
 	const ownMasks = ints.g_bOverrideDefaultMasks === 1 ? textures.g_tPaintByNumberMasks : undefined;
-	const anodized = ANODIZED.has(paint.style);
+	const vector = (name: string, fallback: number[]) => vectors[name] ?? fallback;
+	const spray = vector('g_vSprayBiasBlend', [0, 0, 0]);
 	return {
 		style: paint.style,
 		textures: {
@@ -1048,9 +1048,18 @@ function paintExtras(
 			normal: customNormal ? textures.g_tNormal : undefined,
 			wear: textures.g_tWear,
 			grunge: textures.g_tGrunge,
-			masks: ownMasks ?? base.textures.g_tMasks
+			masks: ownMasks ?? base.textures.g_tMasks,
+			ao: base.textures.g_tAmbientOcclusion,
+			position: base.textures.g_tPosition,
+			surface: base.textures.g_tSurface
 		},
 		colors: [0, 1, 2, 3].map((i) => vectors[`g_vColor${i}`]?.slice(0, 3) ?? [1, 1, 1]),
+		durability: vector('g_vPaintDurability', [1, 1, 1, 1]),
+		roughnessColors: vector('g_vPaintRoughness', [0.6, 0.6, 0.6, 0.6]),
+		metalnessColors: vector('g_vPaintMetalness', [0, 0, 0, 0]),
+		albedoLevels: vector('g_vPaintAlbedoLevels', [0, 0, 0, 0]),
+		metallicAlbedoLevels: vector('g_vMetallicPaintAlbedoLevels', [0, 0, 0, 0]),
+		sprayBias: [spray[1] ?? 0, spray[2] ?? 0],
 		pattern: [
 			(floats.g_flPatternTexCoordScale ?? 1) * sizeScale,
 			floats.g_flPatternTexCoordRotation ?? 0,
@@ -1067,7 +1076,12 @@ function paintExtras(
 			...offset('g_vGrungeTexCoordOffset')
 		] as PaintExtras['grunge'],
 		wear: Math.max(0, Math.min(1, skin.wear)),
-		surface: anodized ? [1, 0.3] : [0, 0.55]
+		softness: floats.g_fWearSoftness ?? 0,
+		brightness: floats.g_flColorBrightness ?? 1,
+		roughness: floats.g_flPaintRoughness ?? 0.6,
+		metalness: floats.g_flPaintMetalness ?? 0,
+		roughnessPerColor: ints.g_bRoughnessPerColor === 1,
+		colorAdjustment: ints.g_nColorAdjustmentMode ?? 0
 	};
 }
 

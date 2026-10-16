@@ -26,13 +26,33 @@ export interface MaterialExtras {
 
 export interface PaintExtras {
 	style: number;
-	textures: { pattern?: string; normal?: string; wear?: string; grunge?: string; masks?: string };
+	textures: {
+		pattern?: string;
+		normal?: string;
+		wear?: string;
+		grunge?: string;
+		masks?: string;
+		ao?: string;
+		position?: string;
+		surface?: string;
+	};
 	colors: number[][];
+	durability: number[];
+	roughnessColors: number[];
+	metalnessColors: number[];
+	albedoLevels: number[];
+	metallicAlbedoLevels: number[];
+	sprayBias: [y: number, z: number];
 	pattern: [scale: number, rotation: number, x: number, y: number];
 	wearTransform: [scale: number, rotation: number, x: number, y: number];
 	grunge: [scale: number, rotation: number, x: number, y: number];
 	wear: number;
-	surface: [metalness: number, roughness: number];
+	softness: number;
+	brightness: number;
+	roughness: number;
+	metalness: number;
+	roughnessPerColor: boolean;
+	colorAdjustment: number;
 }
 
 export function paintTransform([scale, rotation, x, y]: number[]): THREE.Matrix3 {
@@ -437,8 +457,9 @@ export function createCs2Material(
 
 	const paint = extras.paint;
 	if (paint) {
-		defines.SKIN_PAINT = paint.style;
-		const colorPattern = paint.style >= 7;
+		const style = paint.style >= 1 && paint.style <= 9 ? paint.style - 1 : 6;
+		defines.SKIN_PAINT = style;
+		const colorPattern = style >= 6;
 		const texture = (
 			uniform: string,
 			path: string | undefined,
@@ -453,6 +474,9 @@ export function createCs2Material(
 		texture('uPaintWear', paint.textures.wear, false, defaultTextures.white);
 		texture('uPaintGrunge', paint.textures.grunge, true, defaultTextures.white);
 		texture('uPaintMasks', paint.textures.masks, false, defaultTextures.black);
+		texture('uPaintAo', paint.textures.ao, false, defaultTextures.white);
+		texture('uPaintPosition', paint.textures.position, false, defaultTextures.black);
+		texture('uPaintSurface', paint.textures.surface, false, defaultTextures.normal);
 		if (texture('uPaintNormal', paint.textures.normal, false, defaultTextures.normal))
 			defines.SKIN_PAINT_NORMAL = 1;
 		uniforms.uPaintColors = {
@@ -463,11 +487,28 @@ export function createCs2Material(
 				)
 			)
 		};
+		const vec4 = (v: number[]) => new THREE.Vector4(v[0] ?? 0, v[1] ?? 0, v[2] ?? 0, v[3] ?? 0);
+		const vec3 = (v: number[]) => new THREE.Vector3(v[0] ?? 0, v[1] ?? 0, v[2] ?? 0);
 		uniforms.uPatternTransform = { value: paintTransform(paint.pattern) };
 		uniforms.uWearTransform = { value: paintTransform(paint.wearTransform) };
 		uniforms.uGrungeTransform = { value: paintTransform(paint.grunge) };
-		uniforms.uPaintWearAmount = { value: paint.wear };
-		uniforms.uPaintSurface = { value: new THREE.Vector3(paint.surface[0], paint.surface[1], 0) };
+		uniforms.uPaintDurability = { value: vec4(paint.durability) };
+		uniforms.uPaintRoughnessColors = { value: vec4(paint.roughnessColors) };
+		uniforms.uPaintMetalnessColors = { value: vec4(paint.metalnessColors) };
+		uniforms.uPaintAlbedoLevels = { value: vec3(paint.albedoLevels) };
+		uniforms.uMetallicPaintAlbedoLevels = { value: vec3(paint.metallicAlbedoLevels) };
+		uniforms.uPaintParams = {
+			value: new THREE.Vector4(paint.wear, paint.softness, paint.brightness, paint.roughness)
+		};
+		uniforms.uPaintParams2 = {
+			value: new THREE.Vector4(
+				paint.metalness,
+				paint.roughnessPerColor ? 1 : 0,
+				paint.colorAdjustment,
+				0
+			)
+		};
+		uniforms.uSprayBias = { value: new THREE.Vector2(...paint.sprayBias) };
 	}
 
 	defines.ROUGHNESS =

@@ -1,3 +1,5 @@
+import { skinPaintGlsl } from './skin-paint';
+
 export const MAX_PROBE_VOLUMES = 128;
 export const MAX_ENV_VOLUMES = 128;
 export const ENV_VOLUME_TEXELS = 7;
@@ -152,17 +154,7 @@ uniform sampler2D uShadows;
 #endif
 
 #ifdef SKIN_PAINT
-uniform sampler2D uPattern;
-uniform sampler2D uPaintWear;
-uniform sampler2D uPaintGrunge;
-uniform sampler2D uPaintMasks;
-uniform sampler2D uPaintNormal;
-uniform mat3 uPatternTransform;
-uniform mat3 uWearTransform;
-uniform mat3 uGrungeTransform;
-uniform vec3 uPaintColors[4];
-uniform vec3 uPaintSurface;
-uniform float uPaintWearAmount;
+${skinPaintGlsl}
 #endif
 
 #ifdef PROBES
@@ -527,24 +519,8 @@ void main() {
 #endif
 
 #ifdef SKIN_PAINT
-	vec4 pattern = texture(uPattern, patternUv);
-	vec4 paintMasks = texture(uPaintMasks, vUv);
-	float wearTexel = texture(uPaintWear, (uWearTransform * vec3(vUv, 1.0)).xy).r;
-	vec3 grunge = texture(uPaintGrunge, (uGrungeTransform * vec3(vUv, 1.0)).xy).rgb;
-	vec3 paint;
-	#if SKIN_PAINT >= 7
-	paint = pattern.rgb;
-	#elif SKIN_PAINT == 1 || SKIN_PAINT == 4
-	paint = uPaintColors[0];
-	paint = mix(paint, uPaintColors[1], paintMasks.r);
-	paint = mix(paint, uPaintColors[2], paintMasks.g);
-	paint = mix(paint, uPaintColors[3], paintMasks.b);
-	#else
-	paint = uPaintColors[0];
-	paint = mix(paint, uPaintColors[1], pattern.r);
-	paint = mix(paint, uPaintColors[2], pattern.g);
-	paint = mix(paint, uPaintColors[3], pattern.b);
-	#endif
+	skinPaint(vUv, patternUv, albedo, roughness, metalness);
+#endif
 	float worn = 1.0 - smoothstep(uPaintWearAmount - 0.04, uPaintWearAmount + 0.04, wearTexel);
 	albedo = mix(paint, albedo, worn);
 	albedo *= mix(vec3(1.0), grunge, saturate1(uPaintWearAmount * 1.4 + 0.1));
