@@ -507,6 +507,7 @@ export interface ModelGltfOptions {
 	animations?: (name: string) => boolean;
 	keepMeshes?: boolean;
 	skeletonRoot?: string;
+	weaponRigs?: boolean;
 	dropSkins?: boolean;
 	part?: (mesh: string) => string | null;
 	textureParams: Set<string>;
@@ -518,6 +519,8 @@ export interface ModelResult {
 	clips: string[];
 	nodes: Record<string, { translation?: number[]; rotation?: number[] }>;
 }
+
+const WEAPON_RIG = /^animation\/skeletons\/weapons\/(.+)\.vnmskel$/;
 
 const MODEL_ATTRIBUTES = ['POSITION', 'NORMAL', 'TANGENT', 'TEXCOORD_0', 'JOINTS_0', 'WEIGHTS_0'];
 
@@ -610,10 +613,31 @@ export function processModelGltf(gltf: Gltf, options: ModelGltfOptions): ModelRe
 	if (rootIndex >= 0) walk(rootIndex);
 
 	const scenes = (gltf.scenes as { nodes?: number[] }[] | undefined) ?? [];
+	const rigRoots = new Set<number>();
+	const rigBones = new Set<number>();
+	if (options.weaponRigs)
+		for (const scene of scenes)
+			for (const index of scene.nodes ?? []) {
+				const rig = String(nodes[index]?.name ?? '').match(WEAPON_RIG)?.[1];
+				if (!rig) continue;
+				rigRoots.add(index);
+				nodes[index]!.name = `rig@${rig}`;
+				const rename = (child: number, top: boolean) => {
+					const node = nodes[child]!;
+					node.name = `${rig}@${node.name ?? child}`;
+					if (!top) rigBones.add(child);
+					for (const next of (node.children as number[] | undefined) ?? []) rename(next, false);
+				};
+				for (const child of (nodes[index]!.children as number[] | undefined) ?? [])
+					rename(child, true);
+			}
 	if (rootIndex >= 0)
 		for (const scene of scenes)
 			scene.nodes = scene.nodes?.filter(
-				(index) => nodes[index]?.mesh !== undefined || containsNode(nodes, index, rootIndex)
+				(index) =>
+					nodes[index]?.mesh !== undefined ||
+					rigRoots.has(index) ||
+					containsNode(nodes, index, rootIndex)
 			);
 
 	const animations =
@@ -627,7 +651,9 @@ export function processModelGltf(gltf: Gltf, options: ModelGltfOptions): ModelRe
 	if (rootIndex >= 0)
 		for (const animation of kept) {
 			const channels = animation.channels.filter(
-				(channel) => channel.target.node !== undefined && skeleton.has(channel.target.node)
+				(channel) =>
+					channel.target.node !== undefined &&
+					(skeleton.has(channel.target.node) || rigBones.has(channel.target.node))
 			) as { sampler: number; target: { node?: number } }[];
 			const samplers: unknown[] = [];
 			const remap = new Map<number, number>();

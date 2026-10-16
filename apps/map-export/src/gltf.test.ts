@@ -133,6 +133,47 @@ test('keeps the player skeleton, chosen meshes and world clips of a model', () =
 	assert.deepEqual(animation!.channels, [{ sampler: 0, target: { node: 2, path: 'rotation' } }]);
 });
 
+test('keeps weapon rigs below their own root with prefixed bone names', () => {
+	const gltf: Gltf = {
+		accessors: [],
+		bufferViews: [],
+		nodes: [
+			{ name: 'model', children: [1] },
+			{ name: 'root_motion' },
+			{ name: 'animation/skeletons/weapons/knife_bowie.vnmskel', children: [3] },
+			{ name: 'weapon', children: [4] },
+			{ name: 'weapon_offset' }
+		],
+		meshes: [],
+		materials: [],
+		scenes: [{ nodes: [0, 2] }],
+		animations: [
+			{
+				name: 'animation/anims/viewmodel/knife/knife_bowie/idle1_bowie',
+				channels: [
+					{ sampler: 0, target: { node: 1, path: 'rotation' } },
+					{ sampler: 1, target: { node: 3, path: 'rotation' } },
+					{ sampler: 2, target: { node: 4, path: 'rotation' } }
+				],
+				samplers: ['root', 'weapon', 'offset']
+			}
+		]
+	};
+	processModelGltf(gltf, {
+		skeletonRoot: 'root_motion',
+		weaponRigs: true,
+		animations: () => true,
+		textureParams: new Set()
+	});
+	assert.deepEqual(gltf.scenes, [{ nodes: [0, 2] }]);
+	assert.deepEqual(
+		gltf.nodes!.slice(2).map((node) => node.name),
+		['rig@knife_bowie', 'knife_bowie@weapon', 'knife_bowie@weapon_offset']
+	);
+	const [animation] = gltf.animations as { samplers: unknown[] }[];
+	assert.deepEqual(animation!.samplers, ['root', 'offset']);
+});
+
 test('falls back to every mesh and can drop skins', () => {
 	const gltf: Gltf = {
 		accessors: [],

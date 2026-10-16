@@ -500,13 +500,12 @@ export async function exportSkins(
 				vpkPath,
 				gameinfo,
 				model,
-				join(options.workDir, 'weapons', skinWeaponKey(key, legacy).replace(':', '-')),
-				['--gltf_export_animations'],
+				join(options.workDir, 'weapon-models', skinWeaponKey(key, legacy).replace(':', '-')),
+				[],
 				{
 					meshes: legacy
 						? (name) => name.endsWith('.body_legacy')
 						: (name) => !/\.(body_legacy|body_hidden)$/.test(name),
-					dropSkins: true,
 					textureParams: TEXTURE_PARAMS
 				},
 				options.reuseWork

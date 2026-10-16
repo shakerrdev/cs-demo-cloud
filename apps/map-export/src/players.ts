@@ -233,13 +233,18 @@ export async function exportModel(
 ) {
 	const glb = join(workDir, 'model.glb');
 	const resultPath = join(workDir, 'result.json');
-	if (reuse && existsSync(glb) && existsSync(resultPath)) {
-		const saved = JSON.parse(await readFile(resultPath, 'utf8')) as {
-			textures: string[];
-			materials?: string[];
-			clips: string[];
-			nodes: ModelResult['nodes'];
-		};
+	const saved =
+		reuse && existsSync(glb) && existsSync(resultPath)
+			? (JSON.parse(await readFile(resultPath, 'utf8')) as {
+					key?: string;
+					textures: string[];
+					materials?: string[];
+					clips: string[];
+					nodes: ModelResult['nodes'];
+				})
+			: null;
+	const key = JSON.stringify([extra, options.dropSkins ?? false, options.weaponRigs ?? false]);
+	if (saved && (saved.key ?? JSON.stringify([extra, false, false])) === key) {
 		return {
 			glb: await readFile(glb),
 			textures: new Set(saved.textures),
@@ -272,6 +277,7 @@ export async function exportModel(
 	await writeFile(
 		resultPath,
 		JSON.stringify({
+			key,
 			textures: [...result.textures],
 			materials: result.materials,
 			clips: result.clips,
@@ -319,6 +325,7 @@ async function exportViewmodel(
 			{
 				keepMeshes: false,
 				skeletonRoot: SKELETON_ROOT,
+				weaponRigs: true,
 				animations: (name) => name.startsWith('animation/anims/viewmodel/'),
 				textureParams: new Set()
 			},
@@ -509,11 +516,10 @@ export async function exportPlayers(
 				vpkPath,
 				gameinfo,
 				model,
-				join(options.workDir, 'weapons', key),
-				['--gltf_export_animations'],
+				join(options.workDir, 'weapon-models', key),
+				[],
 				{
 					meshes: (name) => !/\.(body_legacy|body_hidden)$/.test(name),
-					dropSkins: true,
 					textureParams: TEXTURE_PARAMS
 				},
 				options.reuseWork
