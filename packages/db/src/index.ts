@@ -5,4 +5,5 @@ export * from './ingest.ts';
 export * from './matches.ts';
 export * from './migrations.ts';
 export * from './schema.ts';
+export * from './tokens.ts';
 export * from './valve.ts';

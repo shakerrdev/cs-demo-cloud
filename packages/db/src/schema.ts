@@ -49,6 +49,21 @@ export const sessions = sqliteTable(
 	(table) => [index('sessions_user_idx').on(table.userId)]
 );
 
+export const apiTokens = sqliteTable(
+	'api_tokens',
+	{
+		id: text('id').primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		hint: text('hint').notNull(),
+		lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+		createdAt: createdAt()
+	},
+	(table) => [index('api_tokens_user_idx').on(table.userId)]
+);
+
 export const invites = sqliteTable('invites', {
 	id: text('id').primaryKey(),
 	role: text('role', { enum: roles }).notNull(),
@@ -227,6 +242,7 @@ export type Platform = (typeof platforms)[number];
 export type Role = (typeof roles)[number];
 export type User = typeof users.$inferSelect;
 export type Invite = typeof invites.$inferSelect;
+export type ApiToken = typeof apiTokens.$inferSelect;
 export type SteamLink = typeof steamLinks.$inferSelect;
 export type ValveMatch = typeof valveMatches.$inferSelect;
 export type ValveMatchStatus = (typeof valveMatchStatuses)[number];

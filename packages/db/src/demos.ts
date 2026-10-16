@@ -82,3 +82,7 @@ export function requeueStaleDemos(db: Db, staleAfterMs: number): number {
 		)
 		.run().changes;
 }
+
+export function deleteDemo(db: Db, id: string): Demo | undefined {
+	return db.delete(demos).where(eq(demos.id, id)).returning().get();
+}
