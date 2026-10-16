@@ -521,12 +521,6 @@ void main() {
 #ifdef SKIN_PAINT
 	skinPaint(vUv, patternUv, albedo, roughness, metalness);
 #endif
-	float worn = 1.0 - smoothstep(uPaintWearAmount - 0.04, uPaintWearAmount + 0.04, wearTexel);
-	albedo = mix(paint, albedo, worn);
-	albedo *= mix(vec3(1.0), grunge, saturate1(uPaintWearAmount * 1.4 + 0.1));
-	metalness = mix(uPaintSurface.x, metalness, worn);
-	roughness = mix(uPaintSurface.y, roughness, worn);
-#endif
 
 	vec3 diffuseColor = albedo * (1.0 - metalness);
 	vec3 specularColor = mix(vec3(0.04), albedo, metalness);
