@@ -28,6 +28,8 @@ import {
 import {
 	createTexture,
 	fetchPackTexture,
+	textureUploader,
+	type TextureUploader,
 	supportsFormat,
 	textureSupport,
 	type TextureSupport
@@ -123,6 +125,7 @@ export class PlayerPack {
 	private shading: WorldShading | null = null;
 	private viewmodelClips: Promise<Map<string, THREE.AnimationClip>> | null = null;
 	private skins: SkinsPackManifest | null;
+	private uploader: TextureUploader;
 	private skinsVersion: string | null;
 	private agents = new Map<string, Promise<Template | null>>();
 	private loadedAgents = new Map<string, Template>();
@@ -136,8 +139,10 @@ export class PlayerPack {
 		templates: Record<Side, Template>,
 		clips: THREE.AnimationClip[],
 		skins: SkinsPackManifest | null,
-		skinsVersion: string | null
+		skinsVersion: string | null,
+		uploader: TextureUploader
 	) {
+		this.uploader = uploader;
 		this.manifest = manifest;
 		this.skins = skins;
 		this.skinsVersion = skinsVersion;
@@ -183,7 +188,8 @@ export class PlayerPack {
 			{ CT: makeTemplate(ct.scene), T: makeTemplate(t.scene) },
 			animations.animations,
 			skins,
-			skins ? skinsVersion : null
+			skins ? skinsVersion : null,
+			textureUploader(renderer)
 		);
 	}
 
@@ -468,13 +474,20 @@ export class PlayerPack {
 			fetchPackTexture(job.file, this.abort.signal)
 				.then((packed) => {
 					if (this.abort.signal.aborted) return;
-					job.texture = createTexture(packed, {
+					const texture = createTexture(packed, {
 						srgb: job.srgb,
 						anisotropy: Math.min(8, this.support.anisotropy),
 						maxSize: this.quality === 'medium' ? 512 : undefined
 					});
-					for (const target of job.targets) target.value = job.texture;
-					this.onChange?.();
+					this.uploader.add(
+						texture,
+						() => {
+							job.texture = texture;
+							for (const target of job.targets) target.value = texture;
+							this.onChange?.();
+						},
+						() => this.abort.signal.aborted
+					);
 				})
 				.catch((error: Error) => {
 					if (!this.abort.signal.aborted)

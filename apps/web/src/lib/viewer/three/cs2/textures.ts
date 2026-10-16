@@ -231,3 +231,60 @@ export async function fetchPackTexture(url: string, signal?: AbortSignal): Promi
 	if (!response.ok) throw new Error(`${url} answered ${response.status}`);
 	return decodePackTexture(await response.arrayBuffer());
 }
+
+const UPLOAD_BUDGET_MS = 6;
+
+interface Upload {
+	texture: THREE.Texture;
+	apply: (texture: THREE.Texture) => void;
+	cancelled: () => boolean;
+}
+
+export class TextureUploader {
+	private renderer: THREE.WebGLRenderer;
+	private queue: Upload[] = [];
+	private frame = 0;
+
+	constructor(renderer: THREE.WebGLRenderer) {
+		this.renderer = renderer;
+	}
+
+	add(texture: THREE.Texture, apply: (texture: THREE.Texture) => void, cancelled = () => false) {
+		this.queue.push({ texture, apply, cancelled });
+		if (!this.frame) this.frame = requestAnimationFrame(this.run);
+	}
+
+	private run = () => {
+		this.frame = 0;
+		const started = performance.now();
+		while (this.queue.length) {
+			const upload = this.queue.shift()!;
+			if (upload.cancelled()) {
+				upload.texture.dispose();
+				continue;
+			}
+			this.renderer.initTexture(upload.texture);
+			upload.apply(upload.texture);
+			if (performance.now() - started > UPLOAD_BUDGET_MS) break;
+		}
+		if (this.queue.length) this.frame = requestAnimationFrame(this.run);
+	};
+
+	dispose() {
+		if (this.frame) cancelAnimationFrame(this.frame);
+		this.frame = 0;
+		for (const upload of this.queue) upload.texture.dispose();
+		this.queue = [];
+	}
+}
+
+const uploaders = new WeakMap<THREE.WebGLRenderer, TextureUploader>();
+
+export function textureUploader(renderer: THREE.WebGLRenderer): TextureUploader {
+	let uploader = uploaders.get(renderer);
+	if (!uploader) {
+		uploader = new TextureUploader(renderer);
+		uploaders.set(renderer, uploader);
+	}
+	return uploader;
+}

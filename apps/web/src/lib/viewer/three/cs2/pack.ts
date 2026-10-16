@@ -7,6 +7,8 @@ import { PostProcess, createSkyMesh } from './post.ts';
 import {
 	createTexture,
 	fetchPackTexture,
+	textureUploader,
+	type TextureUploader,
 	supportsFormat,
 	textureSupport,
 	type TextureOptions,
@@ -113,6 +115,7 @@ export class MapPack {
 	private active = 0;
 	private previewPending = 0;
 	private textures = new Set<THREE.Texture>();
+	private uploader: TextureUploader;
 	private materials = new Set<THREE.Material>();
 	private abort = new AbortController();
 	private skyboxWorld: LoadedWorld | null = null;
@@ -123,8 +126,10 @@ export class MapPack {
 		version: string,
 		manifest: MapPackManifest,
 		support: TextureSupport,
-		quality: TextureQuality
+		quality: TextureQuality,
+		uploader: TextureUploader
 	) {
+		this.uploader = uploader;
 		this.quality = resolveQuality(quality, manifest);
 		this.base = base;
 		this.version = version;
@@ -165,7 +170,7 @@ export class MapPack {
 				`This browser or GPU can’t show game textures (${missing.join(', ')} not supported)`
 			);
 
-		const pack = new MapPack(base, version, manifest, support, quality);
+		const pack = new MapPack(base, version, manifest, support, quality, textureUploader(renderer));
 		await pack.build(onProgress);
 		return pack;
 	}
@@ -443,7 +448,14 @@ export class MapPack {
 			fetchPackTexture(this.url(job.file), this.abort.signal)
 				.then((packed) => {
 					if (this.abort.signal.aborted) return;
-					this.apply(job, createTexture(packed, job.options));
+					this.uploader.add(
+						createTexture(packed, job.options),
+						(texture) => {
+							this.apply(job, texture);
+							this.onChange?.();
+						},
+						() => this.abort.signal.aborted
+					);
 				})
 				.catch((error: Error) => {
 					if (!this.abort.signal.aborted)
