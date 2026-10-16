@@ -69,6 +69,7 @@
 		map={match.map}
 		mapPack={data.mapPack}
 		playerPack={data.playerPack}
+		skinsPack={data.skinsPack}
 		{rounds}
 		{teamNames}
 	/>

@@ -227,15 +227,19 @@ export class ReplayScene {
 			});
 	}
 
-	setPlayerPack(version: string | null, quality: TextureQuality = 'auto') {
-		const key = version ? `${version}@${quality}` : '';
+	setPlayerPack(
+		version: string | null,
+		quality: TextureQuality = 'auto',
+		skins: string | null = null
+	) {
+		const key = version ? `${version}@${quality}@${skins ?? ''}` : '';
 		if (key === this.modelsKey) return;
 		this.modelsKey = key;
 		this.clearModels();
 		if (!version) return;
 		import('./cs2/players.ts')
 			.then(async ({ PlayerModels, PlayerPack }) => {
-				const pack = await PlayerPack.load(this.renderer, version, quality);
+				const pack = await PlayerPack.load(this.renderer, version, quality, skins);
 				if (this.modelsKey !== key) {
 					pack.dispose();
 					return;
@@ -243,6 +247,7 @@ export class ReplayScene {
 				pack.onChange = this.markDirty;
 				const models = new PlayerModels(pack);
 				this.models = models;
+				models.onChange = this.markDirty;
 				if (models.viewmodel) models.viewmodel.onChange = this.markDirty;
 				models.setShading(this.pack?.characterShading ?? null);
 				this.scene.add(models.root);
@@ -310,10 +315,7 @@ export class ReplayScene {
 		if (replay.meta.round !== this.round) {
 			this.round = replay.meta.round;
 			this.actors.setPlayers(replay.meta.players);
-			this.models?.setPlayers(
-				replay.meta.players.map((player) => player.side),
-				sideColors
-			);
+			this.models?.setPlayers(replay.meta.players, sideColors);
 			this.updateHeightRange(replay);
 			this.dirty = true;
 		}

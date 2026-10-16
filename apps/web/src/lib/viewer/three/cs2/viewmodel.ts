@@ -3,12 +3,13 @@ import {
 	viewmodelClips,
 	weaponKey,
 	weaponModelKey,
+	type ReplaySkin,
 	type RoundReplay,
 	type Side
 } from '@cs-demo-cloud/replay';
 import type { PlayerState } from '../../frame.ts';
 import type { MaterialExtras } from './material.ts';
-import { GLTF_TO_SOURCE, isFirstPerson, type PlayerPack } from './players.ts';
+import { GLTF_TO_SOURCE, isFirstPerson, skinAt, type PlayerPack } from './players.ts';
 
 const DEG = Math.PI / 180;
 const FOV = 54;
@@ -36,7 +37,7 @@ export class Viewmodel {
 	readonly camera = new THREE.PerspectiveCamera(FOV, 1, 1, 400);
 	private root = new THREE.Group();
 	private pack: PlayerPack;
-	private arms = new Map<Side, Arms>();
+	private arms = new Map<string, Arms>();
 	private clips: Map<string, THREE.AnimationClip> | null = null;
 	private actions = new Map<string, THREE.AnimationAction>();
 	onChange: (() => void) | null = null;
@@ -75,9 +76,17 @@ export class Viewmodel {
 		const clip = this.clips.get(pose.clip) ?? this.clips.get(clips.idle);
 		if (!clip) return false;
 
-		const arms = this.armsFor(player.side);
-		for (const [side, other] of this.arms) other.model.visible = side === player.side;
-		this.setWeapon(arms, weaponModelKey(key, player.side));
+		const agent = replay.meta.players[player.index]?.agent;
+		const ready =
+			agent && this.pack.template(player.side, agent) !== this.pack.template(player.side);
+		if (agent && !ready && this.pack.hasAgent(agent))
+			void this.pack.loadAgent(agent).then((template) => {
+				if (template) this.onChange?.();
+			});
+		const armsKey = `${player.side}|${ready ? agent : ''}`;
+		const arms = this.armsFor(armsKey, player.side, ready ? agent : undefined);
+		for (const [id, other] of this.arms) other.model.visible = id === armsKey;
+		this.setWeapon(arms, weaponModelKey(key, player.side), skinAt(replay, player.index, tick, key));
 
 		const action = this.action(arms, clip);
 		if (arms.action !== action) {
@@ -165,10 +174,10 @@ export class Viewmodel {
 		return startTick + frame * tickStep;
 	}
 
-	private armsFor(side: Side): Arms {
-		let arms = this.arms.get(side);
+	private armsFor(id: string, side: Side, agent?: string): Arms {
+		let arms = this.arms.get(id);
 		if (arms) return arms;
-		const { root } = this.pack.createModel(side);
+		const { root } = this.pack.createModel(side, agent);
 		const meshes: THREE.Mesh[] = [];
 		root.traverse((object) => {
 			const mesh = object as THREE.Mesh;
@@ -192,7 +201,7 @@ export class Viewmodel {
 			action: null
 		};
 		for (const mesh of meshes) this.applyMaterial(mesh);
-		this.arms.set(side, arms);
+		this.arms.set(id, arms);
 		return arms;
 	}
 
@@ -208,14 +217,15 @@ export class Viewmodel {
 		return action;
 	}
 
-	private setWeapon(arms: Arms, key: string | null) {
-		if (key === arms.weapon) return;
-		arms.weapon = key;
+	private setWeapon(arms: Arms, key: string | null, skin: ReplaySkin | null) {
+		const id = key && skin ? `${key}|${skin.paint}|${skin.wear}` : key;
+		if (id === arms.weapon) return;
+		arms.weapon = id;
 		arms.slot.clear();
-		if (!key) return;
-		arms.loading = key;
-		void this.pack.weapon(key).then((template) => {
-			if (arms.loading !== key || arms.weapon !== key || !template) return;
+		if (!key || !id) return;
+		arms.loading = id;
+		void this.pack.weapon(key, skin).then((template) => {
+			if (arms.loading !== id || arms.weapon !== id || !template) return;
 			arms.loading = null;
 			const weapon = template.scene.clone();
 			weapon.traverse((object) => {

@@ -10,12 +10,21 @@ import {
 	weaponPoseName,
 	weaponShootName,
 	type GrenadeType,
+	itemWeaponKey,
+	skinWeaponKey,
 	type PlayerPackManifest,
+	type ReplaySkin,
 	type RoundReplay,
-	type Side
+	type Side,
+	type SkinsPackManifest
 } from '@cs-demo-cloud/replay';
 import { bombState, grenadePosition, playerMotion, type PlayerState } from '../../frame.ts';
-import { createCs2Material, type MaterialExtras, type WorldShading } from './material.ts';
+import {
+	createCs2Material,
+	type MaterialExtras,
+	type PaintExtras,
+	type WorldShading
+} from './material.ts';
 import {
 	createTexture,
 	fetchPackTexture,
@@ -27,6 +36,8 @@ import type { TextureQuality } from './pack.ts';
 import { Viewmodel } from './viewmodel.ts';
 
 const BASE = '/maps/3d/players';
+const SKINS_BASE = '/maps/3d/skins';
+const ANODIZED = new Set([4, 5, 6]);
 const CONCURRENT_DOWNLOADS = 4;
 const DEG = Math.PI / 180;
 
@@ -111,6 +122,10 @@ export class PlayerPack {
 	private materials = new Map<string, THREE.ShaderMaterial>();
 	private shading: WorldShading | null = null;
 	private viewmodelClips: Promise<Map<string, THREE.AnimationClip>> | null = null;
+	private skins: SkinsPackManifest | null;
+	private skinsVersion: string | null;
+	private agents = new Map<string, Promise<Template | null>>();
+	private loadedAgents = new Map<string, Template>();
 	onChange: (() => void) | null = null;
 
 	private constructor(
@@ -119,9 +134,13 @@ export class PlayerPack {
 		support: TextureSupport,
 		quality: TextureQuality,
 		templates: Record<Side, Template>,
-		clips: THREE.AnimationClip[]
+		clips: THREE.AnimationClip[],
+		skins: SkinsPackManifest | null,
+		skinsVersion: string | null
 	) {
 		this.manifest = manifest;
+		this.skins = skins;
+		this.skinsVersion = skinsVersion;
 		this.version = version;
 		this.support = support;
 		this.quality = quality === 'auto' ? 'high' : quality;
@@ -132,7 +151,8 @@ export class PlayerPack {
 	static async load(
 		renderer: THREE.WebGLRenderer,
 		version: string,
-		quality: TextureQuality = 'auto'
+		quality: TextureQuality = 'auto',
+		skinsVersion: string | null = null
 	): Promise<PlayerPack> {
 		const url = (file: string) => `${BASE}/${file}?v=${version}`;
 		const response = await fetch(url('players.json'));
@@ -145,30 +165,60 @@ export class PlayerPack {
 			if (!result.ok) throw new Error(`${file} answered ${result.status}`);
 			return loader.parseAsync(await result.arrayBuffer(), '');
 		};
+		const skins = skinsVersion
+			? await fetch(`${SKINS_BASE}/skins.json?v=${skinsVersion}`)
+					.then((result) => (result.ok ? (result.json() as Promise<SkinsPackManifest>) : null))
+					.catch(() => null)
+			: null;
 		const [animations, ct, t] = await Promise.all([
 			parse(manifest.animations),
 			parse(manifest.characters.CT),
 			parse(manifest.characters.T)
 		]);
-		const template = (scene: THREE.Object3D): Template => {
-			const materials = new Map<THREE.Mesh, MaterialExtras>();
-			scene.traverse((object) => {
-				const mesh = object as THREE.Mesh;
-				if (!mesh.isMesh) return;
-				const original = mesh.material as THREE.Material;
-				materials.set(mesh, original.userData as MaterialExtras);
-				mesh.frustumCulled = false;
-			});
-			return { scene, materials };
-		};
 		return new PlayerPack(
 			manifest,
 			version,
 			textureSupport(renderer),
 			quality,
-			{ CT: template(ct.scene), T: template(t.scene) },
-			animations.animations
+			{ CT: makeTemplate(ct.scene), T: makeTemplate(t.scene) },
+			animations.animations,
+			skins,
+			skins ? skinsVersion : null
 		);
+	}
+
+	template(side: Side, agent?: string): Template {
+		return (agent && this.loadedAgents.get(agent)) || this.templates[side];
+	}
+
+	hasAgent(agent: string): boolean {
+		return Boolean(this.skins?.agents[agent]);
+	}
+
+	loadAgent(agent: string): Promise<Template | null> {
+		let promise = this.agents.get(agent);
+		if (!promise) {
+			const file = this.skins?.agents[agent];
+			promise = file
+				? this.fetchGltf(`${SKINS_BASE}/${file}?v=${this.skinsVersion}`)
+						.then((gltf) => {
+							const template = makeTemplate(gltf.scene);
+							this.loadedAgents.set(agent, template);
+							return template;
+						})
+						.catch(() => null)
+				: Promise.resolve(null);
+			this.agents.set(agent, promise);
+		}
+		return promise;
+	}
+
+	private async fetchGltf(url: string) {
+		const response = await fetch(url, { signal: this.abort.signal });
+		if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+		const loader = new GLTFLoader();
+		loader.setMeshoptDecoder(MeshoptDecoder);
+		return loader.parseAsync(await response.arrayBuffer(), '');
 	}
 
 	clip(name: string, side: Side): THREE.AnimationClip | undefined {
@@ -237,7 +287,10 @@ export class PlayerPack {
 
 	material(extras: MaterialExtras): THREE.ShaderMaterial | null {
 		if (!this.shading) return null;
-		const key = JSON.stringify(extras.vmat?.Name ?? 'default') + JSON.stringify(extras.tint ?? []);
+		const key =
+			JSON.stringify(extras.vmat?.Name ?? 'default') +
+			JSON.stringify(extras.tint ?? []) +
+			(extras.paint ? JSON.stringify(extras.paint) : '');
 		let material = this.materials.get(key);
 		if (!material) {
 			material = createCs2Material(extras, this.shading, (path, srgb, target) =>
@@ -289,8 +342,8 @@ export class PlayerPack {
 		return this.viewmodelClips;
 	}
 
-	createModel(side: Side): { root: THREE.Object3D; meshes: THREE.SkinnedMesh[] } {
-		const template = this.templates[side];
+	createModel(side: Side, agent?: string): { root: THREE.Object3D; meshes: THREE.SkinnedMesh[] } {
+		const template = this.template(side, agent);
 		const root = cloneSkinned(template.scene);
 		const meshes: THREE.SkinnedMesh[] = [];
 		const sources: THREE.Mesh[] = [];
@@ -310,53 +363,92 @@ export class PlayerPack {
 		return { root, meshes };
 	}
 
-	weapon(key: string): Promise<LoadedWeapon | null> {
-		let promise = this.weapons.get(key);
+	weapon(key: string, skin?: ReplaySkin | null): Promise<LoadedWeapon | null> {
+		const paint = skin ? this.skins?.paints[skin.paint] : undefined;
+		const base = paint ? this.skins?.weapons[skinWeaponKey(key, paint.legacy)] : undefined;
+		const id = paint && base && skin ? `${key}|${skin.paint}|${skin.wear}` : key;
+		let promise = this.weapons.get(id);
 		if (!promise) {
-			const entry = this.manifest.weapons[key];
-			promise = entry
-				? (async () => {
-						const response = await fetch(`${BASE}/${entry.model}?v=${this.version}`, {
-							signal: this.abort.signal
-						});
-						if (!response.ok) return null;
-						const loader = new GLTFLoader();
-						loader.setMeshoptDecoder(MeshoptDecoder);
-						const gltf = await loader.parseAsync(await response.arrayBuffer(), '');
-						gltf.scene.traverse((object) => {
-							const mesh = object as THREE.Mesh;
-							if (!mesh.isMesh) return;
-							const extras = (mesh.material as THREE.Material).userData as MaterialExtras;
-							mesh.userData.extras = extras;
-							mesh.frustumCulled = false;
-							if (extras.vmat?.Name.includes('/sticker_gaps')) mesh.visible = false;
-						});
-						const offset = new THREE.Matrix4()
-							.compose(
-								new THREE.Vector3().fromArray(entry.translation),
-								new THREE.Quaternion().fromArray(entry.rotation),
-								new THREE.Vector3(1, 1, 1)
-							)
-							.invert();
-						return { scene: gltf.scene, offset };
-					})().catch(() => null)
-				: Promise.resolve(null);
-			this.weapons.set(key, promise);
+			promise =
+				paint && base && skin ? this.paintedWeapon(key, skin, paint, base) : this.plainWeapon(key);
+			this.weapons.set(id, promise);
 		}
 		return promise;
 	}
 
+	private async plainWeapon(key: string): Promise<LoadedWeapon | null> {
+		const entry = this.manifest.weapons[key];
+		if (!entry) return null;
+		return this.loadWeapon(`${BASE}/${entry.model}?v=${this.version}`, entry).catch(() => null);
+	}
+
+	private async paintedWeapon(
+		key: string,
+		skin: ReplaySkin,
+		paint: NonNullable<SkinsPackManifest['paints'][string]>,
+		base: NonNullable<SkinsPackManifest['weapons'][string]>
+	): Promise<LoadedWeapon | null> {
+		const loaded =
+			base.model && base.translation && base.rotation
+				? await this.loadWeapon(`${SKINS_BASE}/${base.model}?v=${this.skinsVersion}`, {
+						translation: base.translation,
+						rotation: base.rotation
+					}).catch(() => null)
+				: await this.plainWeapon(key);
+		if (!loaded) return this.plainWeapon(key);
+		const scene = loaded.scene.clone();
+		const extras = paintExtras(skin, paint, base);
+		scene.traverse((object) => {
+			const mesh = object as THREE.Mesh;
+			if (!mesh.isMesh) return;
+			const own = mesh.userData.extras as MaterialExtras | undefined;
+			if (own?.vmat && !own.vmat.Name.includes('sticker'))
+				mesh.userData.extras = { ...own, paint: extras };
+		});
+		return { scene, offset: loaded.offset };
+	}
+
+	private async loadWeapon(
+		url: string,
+		bone: { translation: number[]; rotation: number[] }
+	): Promise<LoadedWeapon> {
+		const gltf = await this.fetchGltf(url);
+		gltf.scene.traverse((object) => {
+			const mesh = object as THREE.Mesh;
+			if (!mesh.isMesh) return;
+			const extras = (mesh.material as THREE.Material).userData as MaterialExtras;
+			mesh.userData.extras = extras;
+			mesh.frustumCulled = false;
+			if (extras.vmat?.Name.includes('/sticker_gaps')) mesh.visible = false;
+		});
+		const offset = new THREE.Matrix4()
+			.compose(
+				new THREE.Vector3().fromArray(bone.translation),
+				new THREE.Quaternion().fromArray(bone.rotation),
+				new THREE.Vector3(1, 1, 1)
+			)
+			.invert();
+		return { scene: gltf.scene, offset };
+	}
+
 	promote(extras: MaterialExtras) {
-		const paths = new Set(Object.values(extras.vmat?.TextureParams ?? {}));
+		const paths = new Set([
+			...Object.values(extras.vmat?.TextureParams ?? {}),
+			...Object.values(extras.paint?.textures ?? {})
+		]);
 		const urgent = this.queue.filter((job) => paths.has(job.path));
 		if (!urgent.length) return;
 		this.queue = [...urgent, ...this.queue.filter((job) => !paths.has(job.path))];
 	}
 
 	private requestTexture(path: string, srgb: boolean, target: THREE.IUniform) {
-		const ref = this.manifest.textures[path];
+		const own = this.manifest.textures[path];
+		const ref = own ?? this.skins?.textures[path];
 		if (!ref || !supportsFormat(this.support, ref.format)) return;
-		const file = this.quality === 'low' && ref.low ? ref.low.file : ref.file;
+		const name = this.quality === 'low' && ref.low ? ref.low.file : ref.file;
+		const file = own
+			? `${BASE}/${name}?v=${this.version}`
+			: `${SKINS_BASE}/${name}?v=${this.skinsVersion}`;
 		const key = `${file}|${srgb}`;
 		let job = this.jobs.get(key);
 		if (!job) {
@@ -373,7 +465,7 @@ export class PlayerPack {
 		while (this.active < CONCURRENT_DOWNLOADS && this.queue.length) {
 			const job = this.queue.shift()!;
 			this.active++;
-			fetchPackTexture(`${BASE}/${job.file}?v=${this.version}`, this.abort.signal)
+			fetchPackTexture(job.file, this.abort.signal)
 				.then((packed) => {
 					if (this.abort.signal.aborted) return;
 					job.texture = createTexture(packed, {
@@ -434,10 +526,10 @@ class PlayerModel {
 	private rotation = new THREE.Quaternion();
 	private axis = new THREE.Vector3();
 
-	constructor(pack: PlayerPack, side: Side, color: number) {
+	constructor(pack: PlayerPack, side: Side, color: number, agent?: string) {
 		this.pack = pack;
 		this.side = side;
-		const { root, meshes } = pack.createModel(side);
+		const { root, meshes } = pack.createModel(side, agent);
 		this.model = root;
 		this.meshes = meshes.filter((mesh) => {
 			const firstPerson = isFirstPerson(mesh);
@@ -544,17 +636,18 @@ class PlayerModel {
 		action.time = Math.max(0, Math.min(action.getClip().duration, time));
 	}
 
-	private setWeapon(key: string | null) {
-		if (key === this.weaponKey && this.weaponLoading === null) return;
-		if (key === this.weaponLoading) return;
-		this.weaponKey = key;
+	private setWeapon(key: string | null, skin: ReplaySkin | null = null) {
+		const id = key && skin ? `${key}|${skin.paint}|${skin.wear}` : key;
+		if (id === this.weaponKey && this.weaponLoading === null) return;
+		if (id === this.weaponLoading) return;
+		this.weaponKey = id;
 		this.weaponSlot.clear();
-		if (!key) return;
-		this.weaponLoading = key;
-		void this.pack.weapon(key).then((template) => {
-			if (this.weaponLoading !== key) return;
+		if (!key || !id) return;
+		this.weaponLoading = id;
+		void this.pack.weapon(key, skin).then((template) => {
+			if (this.weaponLoading !== id) return;
 			this.weaponLoading = null;
-			if (!template || this.weaponKey !== key) return;
+			if (!template || this.weaponKey !== id) return;
 			const weapon = template.scene.clone();
 			weapon.traverse((object) => {
 				if ((object as THREE.Mesh).isMesh) this.applyMaterial(object as THREE.Mesh);
@@ -590,7 +683,7 @@ class PlayerModel {
 			this.setWeapon(null);
 		} else {
 			this.root.position.set(player.x, player.y, player.z);
-			this.setWeapon(weaponModelKey(key, player.side));
+			this.setWeapon(weaponModelKey(key, player.side), skinAt(replay, player.index, tick, key));
 			this.locomotion(replay, tick, player, base, seconds);
 			const pose = weaponPoseName(key);
 			if (pose) this.set(crouch ? `idle_crouch_${pose}` : `idle_${pose}`, 1, 0, true);
@@ -763,6 +856,9 @@ export class PlayerModels {
 	private models: PlayerModel[] = [];
 	private props: { root: THREE.Group; slot: THREE.Group; key: string | null }[] = [];
 	private shading: WorldShading | null = null;
+	private players: { side: Side; agent?: string }[] = [];
+	private colors: Record<Side, number> = { CT: 0xffffff, T: 0xffffff };
+	onChange: (() => void) | null = null;
 
 	constructor(pack: PlayerPack) {
 		this.pack = pack;
@@ -790,17 +886,38 @@ export class PlayerModels {
 		return this.shading !== null;
 	}
 
-	setPlayers(sides: Side[], colors: Record<Side, number>) {
+	setPlayers(players: { side: Side; agent?: string }[], colors: Record<Side, number>) {
 		for (const model of this.models) {
 			this.root.remove(model.root);
 			model.dispose();
 		}
-		this.models = sides.map((side) => {
-			const model = new PlayerModel(this.pack, side, colors[side]);
-			model.setShading(this.shading);
-			this.root.add(model.root);
-			return model;
+		const current = players;
+		this.players = players;
+		this.colors = colors;
+		this.models = players.map(({ side, agent }, i) => {
+			if (agent && this.pack.hasAgent(agent))
+				void this.pack.loadAgent(agent).then((template) => {
+					if (template && this.players === current) this.rebuild(i);
+				});
+			return this.build(side, agent);
 		});
+	}
+
+	private build(side: Side, agent?: string): PlayerModel {
+		const model = new PlayerModel(this.pack, side, this.colors[side], agent);
+		model.setShading(this.shading);
+		this.root.add(model.root);
+		return model;
+	}
+
+	private rebuild(index: number) {
+		const old = this.models[index];
+		const player = this.players[index];
+		if (!old || !player) return;
+		this.root.remove(old.root);
+		old.dispose();
+		this.models[index] = this.build(player.side, player.agent);
+		this.onChange?.();
 	}
 
 	update(
@@ -888,3 +1005,73 @@ const GRENADE_MODELS: Record<GrenadeType, string> = {
 	molotov: 'molotov',
 	decoy: 'decoy'
 };
+
+function makeTemplate(scene: THREE.Object3D): Template {
+	const materials = new Map<THREE.Mesh, MaterialExtras>();
+	scene.traverse((object) => {
+		const mesh = object as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		materials.set(mesh, (mesh.material as THREE.Material).userData as MaterialExtras);
+		mesh.frustumCulled = false;
+	});
+	return { scene, materials };
+}
+
+function paintExtras(
+	skin: ReplaySkin,
+	paint: SkinsPackManifest['paints'][string],
+	base: SkinsPackManifest['weapons'][string]
+): PaintExtras {
+	const { ints, floats, vectors, textures } = paint;
+	const offset = (name: string) => [vectors[name]?.[0] ?? 0, vectors[name]?.[1] ?? 0];
+	const sizeScale = ints.g_bIgnoreWeaponSizeScale === 1 ? 1 : base.uvScale;
+	const customNormal = ints.F_OVERRIDE_NORMAL === 1 || ints.g_bUseNormalMap === 1;
+	const ownMasks = ints.g_bOverrideDefaultMasks === 1 ? textures.g_tPaintByNumberMasks : undefined;
+	const anodized = ANODIZED.has(paint.style);
+	return {
+		style: paint.style,
+		textures: {
+			pattern: textures.g_tPattern,
+			normal: customNormal ? textures.g_tNormal : undefined,
+			wear: textures.g_tWear,
+			grunge: textures.g_tGrunge,
+			masks: ownMasks ?? base.textures.g_tMasks
+		},
+		colors: [0, 1, 2, 3].map((i) => vectors[`g_vColor${i}`]?.slice(0, 3) ?? [1, 1, 1]),
+		pattern: [
+			(floats.g_flPatternTexCoordScale ?? 1) * sizeScale,
+			floats.g_flPatternTexCoordRotation ?? 0,
+			...offset('g_vPatternTexCoordOffset')
+		] as PaintExtras['pattern'],
+		wearTransform: [
+			floats.g_flWearTexCoordScale ?? 1,
+			floats.g_flWearTexCoordRotation ?? 0,
+			...offset('g_vWearTexCoordOffset')
+		] as PaintExtras['wearTransform'],
+		grunge: [
+			floats.g_flGrungeTexCoordScale ?? 1,
+			floats.g_flGrungeTexCoordRotation ?? 0,
+			...offset('g_vGrungeTexCoordOffset')
+		] as PaintExtras['grunge'],
+		wear: Math.max(0, Math.min(1, skin.wear)),
+		surface: anodized ? [1, 0.3] : [0, 0.55]
+	};
+}
+
+export function skinAt(
+	replay: RoundReplay,
+	player: number,
+	tick: number,
+	key: string | null
+): ReplaySkin | null {
+	const changes = replay.meta.skinChanges;
+	const skins = replay.meta.skins;
+	if (!changes || !skins || !key) return null;
+	let index = -1;
+	for (let i = 0; i < changes.length; i += 3) {
+		if (changes[i]! > tick) break;
+		if (changes[i + 1] === player) index = changes[i + 2]!;
+	}
+	const skin = index >= 0 ? skins[index] : undefined;
+	return skin && itemWeaponKey(skin.item) === key ? skin : null;
+}
