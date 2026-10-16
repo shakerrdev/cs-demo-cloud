@@ -151,3 +151,28 @@ test('falls back to every mesh and can drop skins', () => {
 	assert.equal(gltf.skins, undefined);
 	assert.deepEqual(gltf.meshes![0]!.primitives[0]!.attributes, { POSITION: 0 });
 });
+
+test('tags the materials of chosen meshes with their part', () => {
+	const gltf: Gltf = {
+		accessors: [],
+		bufferViews: [],
+		nodes: [
+			{ name: 'body', mesh: 0 },
+			{ name: 'arms', mesh: 1 }
+		],
+		meshes: [
+			{ name: 'm.thirdperson_body', primitives: [{ attributes: { POSITION: 0 }, material: 0 }] },
+			{ name: 'm.firstperson_arms', primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }
+		],
+		materials: [{ name: 'skin' }]
+	};
+	processModelGltf(gltf, {
+		part: (name) => (name.includes('.firstperson_') ? 'firstperson' : null),
+		textureParams: new Set()
+	});
+	assert.equal(gltf.meshes![0]!.primitives[0]!.material, 0);
+	assert.equal(gltf.meshes![1]!.primitives[0]!.material, 1);
+	assert.equal(gltf.materials![1]!.name, 'skin');
+	assert.equal(gltf.materials![1]!.extras?.part, 'firstperson');
+	assert.equal(gltf.materials![0]!.extras?.part, undefined);
+});

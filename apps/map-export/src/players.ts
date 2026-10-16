@@ -8,8 +8,11 @@ import {
 	playerClipNames,
 	type PlayerPackManifest,
 	type PlayerPackSound,
+	type PlayerPackViewmodel,
 	type PlayerPackWeapon,
-	type Side
+	type Side,
+	viewmodelClipNames,
+	weaponClass
 } from '@cs-demo-cloud/replay';
 import { EXPORTER_VERSION, forEachLimit, PackBuilder } from './export.ts';
 import { processModelGltf, type Gltf, type ModelGltfOptions, type ModelResult } from './gltf.ts';
@@ -34,7 +37,12 @@ const CHARACTERS: Record<Side, string> = {
 	CT: 'agents/models/ctm_sas/ctm_sas.vmdl',
 	T: 'agents/models/tm_phoenix/tm_phoenix.vmdl'
 };
-const CHARACTER_MESHES = ['thirdperson_body', 'thirdperson_default_gloves'];
+const CHARACTER_MESHES = [
+	'thirdperson_body',
+	'thirdperson_default_gloves',
+	'firstperson_default_gloves_arms',
+	'firstperson_sleeves'
+];
 const SKELETON_ROOT = 'root_motion';
 const WEAPON_BONE = 'weapon';
 
@@ -258,6 +266,58 @@ async function exportModel(
 	return { glb: await readFile(glb), ...result };
 }
 
+async function exportViewmodel(
+	tools: Tools,
+	vpkPath: string,
+	gameinfo: string,
+	options: PlayerExportOptions,
+	pack: PackBuilder,
+	log: (message: string) => void
+): Promise<PlayerPackViewmodel | undefined> {
+	const groups = new Map<string, string[]>();
+	for (const key of Object.keys(WEAPON_MODELS)) {
+		const kind = weaponClass(key);
+		const group = kind === 'c4' ? 'grenade' : kind;
+		groups.set(group, [...(groups.get(group) ?? []), key]);
+	}
+	const animations: string[] = [];
+	const clips = new Set<string>();
+	for (const [group, keys] of groups) {
+		const wanted = viewmodelClipNames(keys);
+		log(`players: exporting ${wanted.length} first-person ${group} animations`);
+		const exported = await exportModel(
+			tools,
+			vpkPath,
+			gameinfo,
+			CHARACTERS.CT,
+			join(options.workDir, 'viewmodel', group),
+			[
+				'--gltf_export_animations',
+				'--gltf_animation_list',
+				wanted.join(','),
+				'--gltf_mesh_list',
+				CHARACTER_MESHES[0]!
+			],
+			{
+				keepMeshes: false,
+				skeletonRoot: SKELETON_ROOT,
+				animations: (name) => name.startsWith('animation/anims/viewmodel/'),
+				textureParams: new Set()
+			},
+			options.reuseWork
+		).catch((error: Error) => {
+			log(`  ${group} first-person animations failed: ${error.message.split('\n')[0]}`);
+			return null;
+		});
+		if (!exported?.clips.length) continue;
+		const missing = wanted.filter((clip) => !exported.clips.includes(clip));
+		if (missing.length) log(`  ${missing.length} missing: ${missing.join(', ')}`);
+		for (const clip of exported.clips) clips.add(clip);
+		animations.push(await pack.addFile(`viewmodel/${group}.glb`, exported.glb, true));
+	}
+	return animations.length ? { animations, clips: [...clips].sort() } : undefined;
+}
+
 async function exportSounds(
 	vrf: Vrf,
 	tools: Tools,
@@ -406,6 +466,7 @@ export async function exportPlayers(
 				{
 					skeletonRoot: SKELETON_ROOT,
 					meshes: (name) => CHARACTER_MESHES.some((mesh) => name.endsWith(`.${mesh}`)),
+					part: (name) => (name.includes('.firstperson_') ? 'firstperson' : null),
 					textureParams: TEXTURE_PARAMS
 				},
 				options.reuseWork
@@ -452,6 +513,8 @@ export async function exportPlayers(
 			};
 		});
 
+		const viewmodel = await exportViewmodel(tools, vpkPath, gameinfo, options, pack, log);
+
 		log('players: exporting sounds');
 		const sounds = await exportSounds(
 			new Vrf(tools.vrf, gameinfo),
@@ -484,6 +547,7 @@ export async function exportPlayers(
 			clips: animations.clips.sort(),
 			weapons: Object.fromEntries(Object.entries(weapons).sort(([a], [b]) => a.localeCompare(b))),
 			sounds,
+			viewmodel,
 			textures: pack.textures
 		};
 		await pack.addFile(

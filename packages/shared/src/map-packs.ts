@@ -97,6 +97,7 @@ interface PlayersManifestShape {
 	animations?: unknown;
 	weapons?: Record<string, { model?: unknown }>;
 	sounds?: Record<string, { files?: unknown[] }>;
+	viewmodel?: { animations?: unknown[] };
 	textures?: Record<string, { file?: unknown; low?: { file?: unknown } }>;
 }
 
@@ -142,7 +143,8 @@ export async function installMapPack(storage: Storage, zipPath: string): Promise
 				...Object.values(players.characters),
 				players.animations,
 				...Object.values(players.weapons ?? {}).map((weapon) => weapon.model),
-				...Object.values(players.sounds ?? {}).flatMap((sound) => sound.files ?? [])
+				...Object.values(players.sounds ?? {}).flatMap((sound) => sound.files ?? []),
+				...(players.viewmodel?.animations ?? [])
 			];
 			textures = players.textures;
 		} else {

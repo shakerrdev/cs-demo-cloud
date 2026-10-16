@@ -508,6 +508,7 @@ export interface ModelGltfOptions {
 	keepMeshes?: boolean;
 	skeletonRoot?: string;
 	dropSkins?: boolean;
+	part?: (mesh: string) => string | null;
 	textureParams: Set<string>;
 }
 
@@ -576,6 +577,26 @@ export function processModelGltf(gltf: Gltf, options: ModelGltfOptions): ModelRe
 		if (source.doubleSided) material.doubleSided = true;
 		return material;
 	});
+
+	if (options.part) {
+		const parts = new Map<string, number>();
+		for (const mesh of meshes) {
+			const part = mesh.name ? options.part(mesh.name) : null;
+			if (!part) continue;
+			for (const primitive of mesh.primitives) {
+				if (primitive.material === undefined) continue;
+				const key = `${primitive.material}|${part}`;
+				let index = parts.get(key);
+				if (index === undefined) {
+					const source = gltf.materials[primitive.material]!;
+					index = gltf.materials.length;
+					gltf.materials.push({ ...source, extras: { ...source.extras, part } });
+					parts.set(key, index);
+				}
+				primitive.material = index;
+			}
+		}
+	}
 
 	const skeleton = new Set<number>();
 	const rootIndex = options.skeletonRoot
