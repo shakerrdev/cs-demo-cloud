@@ -8,6 +8,8 @@ import type { Storage } from './storage.ts';
 const MANIFEST = 'map.json';
 const PLAYERS_MANIFEST = 'players.json';
 const PLAYERS_VERSION = 1;
+const SKINS_MANIFEST = 'skins.json';
+const SKINS_VERSION = 1;
 const INFO = 'installed.json';
 const PACK_VERSION = 1;
 const MAP_NAME = /^[a-z0-9_]{1,64}$/;
@@ -26,6 +28,7 @@ export interface InstalledMapPack {
 export class MapPackError extends Error {}
 
 export const PLAYER_PACK = 'players';
+export const SKINS_PACK = 'skins';
 
 export function isMapName(value: string): boolean {
 	return MAP_NAME.test(value);
@@ -122,12 +125,35 @@ export async function installMapPack(storage: Storage, zipPath: string): Promise
 	const incoming = join(root, `.incoming-${randomUUID()}`);
 	try {
 		const playersEntry = zip.entries.get(PLAYERS_MANIFEST);
+		const skinsEntry = zip.entries.get(SKINS_MANIFEST);
 		const manifestEntry = zip.entries.get(MANIFEST);
 		let name: string;
 		let manifest: { exportedAt?: unknown; build?: unknown };
 		let models: unknown[];
 		let textures: PlayersManifestShape['textures'];
-		if (playersEntry) {
+		if (skinsEntry) {
+			const skins = JSON.parse(new TextDecoder().decode(await zip.read(skinsEntry))) as {
+				version?: unknown;
+				exportedAt?: unknown;
+				build?: unknown;
+				agents?: Record<string, unknown>;
+				weapons?: Record<string, { model?: unknown }>;
+				textures?: PlayersManifestShape['textures'];
+			};
+			if (skins.version !== SKINS_VERSION)
+				throw new MapPackError(
+					`Unsupported skins pack version ${String(skins.version)}; export it again`
+				);
+			name = SKINS_PACK;
+			manifest = skins;
+			models = [
+				...Object.values(skins.agents ?? {}),
+				...Object.values(skins.weapons ?? {}).flatMap((weapon) =>
+					weapon.model === undefined ? [] : [weapon.model]
+				)
+			];
+			textures = skins.textures;
+		} else if (playersEntry) {
 			const players = JSON.parse(
 				new TextDecoder().decode(await zip.read(playersEntry))
 			) as PlayersManifestShape;
@@ -157,7 +183,12 @@ export async function installMapPack(storage: Storage, zipPath: string): Promise
 				throw new MapPackError(
 					`Unsupported map pack version ${String(map.version)}; export it again`
 				);
-			if (typeof map.map !== 'string' || !isMapName(map.map) || map.map === PLAYER_PACK)
+			if (
+				typeof map.map !== 'string' ||
+				!isMapName(map.map) ||
+				map.map === PLAYER_PACK ||
+				map.map === SKINS_PACK
+			)
 				throw new MapPackError('The pack has no valid map name');
 			if (!Array.isArray(map.worlds) || !map.worlds.length)
 				throw new MapPackError('The pack has no worlds');

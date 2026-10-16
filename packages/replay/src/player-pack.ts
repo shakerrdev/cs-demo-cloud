@@ -382,3 +382,42 @@ export function playerClipNames(): string[] {
 	clips.push('idle_c4', 'idle_crouch_c4');
 	return [...new Set(clips)];
 }
+
+export const SKINS_PACK_VERSION = 1;
+export const SKINS_PACK_MANIFEST = 'skins.json';
+export const SKINS_PACK_NAME = 'skins';
+
+export interface SkinsPackManifest {
+	version: number;
+	exportedAt: string;
+	build: string | null;
+	tools: Record<string, string>;
+	agents: Record<string, string>;
+	weapons: Record<string, SkinWeapon>;
+	paints: Record<string, SkinPaint>;
+	textures: Record<string, PackTextureRef>;
+}
+
+export interface SkinWeapon {
+	model?: string;
+	translation?: number[];
+	rotation?: number[];
+	textures: Record<string, string>;
+	uvScale: number;
+	weaponLength: number;
+}
+
+export interface SkinPaint {
+	name: string;
+	style: number;
+	legacy: boolean;
+	wear: [number, number];
+	ints: Record<string, number>;
+	floats: Record<string, number>;
+	vectors: Record<string, number[]>;
+	textures: Record<string, string>;
+}
+
+export function skinWeaponKey(key: string, legacy: boolean): string {
+	return legacy ? `${key}:legacy` : key;
+}
