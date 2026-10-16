@@ -226,13 +226,21 @@
 		<h2>3D maps</h2>
 		<p class="hint">
 			Maps with textures, lighting and sky, and player models for the 3D view. Make the packs on a
-			PC with CS2 using the map exporter (see the README), then add the zips here.
+			PC with CS2 using the map exporter (see the README), then add the zips here. The skins pack
+			holds the agents and weapon skins your demos use: give the exporter
+			<a href="/api/cosmetics?download">this list</a> or an API token.
 		</p>
 		{#if data.mapPacks.length}
 			<ul class="list">
 				{#each data.mapPacks as pack (pack.map)}
 					<li>
-						<span>{pack.map === 'players' ? 'Player models and sounds' : pack.map}</span>
+						<span
+							>{pack.map === 'players'
+								? 'Player models and sounds'
+								: pack.map === 'skins'
+									? 'Skins and agents'
+									: pack.map}</span
+						>
 						<span class="muted"
 							>{formatBytes(pack.bytes)} · game {pack.build ?? 'unknown'} · exported {formatDate(
 								new Date(pack.exportedAt)
