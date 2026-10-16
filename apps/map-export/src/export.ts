@@ -41,6 +41,7 @@ import {
 	type Entity
 } from './entities.ts';
 import { processWorldGltf, repackBuffers, type Gltf } from './gltf.ts';
+import { resampleTexture } from './resample.ts';
 import { kv3Array, kv3Object, type Kv3Value } from './kv3.ts';
 import { gameBuild } from './steam.ts';
 import { run, Vrf } from './vrf.ts';
@@ -148,6 +149,7 @@ export class PackBuilder {
 	private writes: Promise<void> = Promise.resolve();
 	private log: (message: string) => void;
 	private maxTextureSize: number;
+	resampler: ((path: string) => Promise<Uint8Array | null>) | null = null;
 	bytes = 0;
 
 	constructor(path: string, log: (message: string) => void, maxTextureSize = 0) {
@@ -197,10 +199,20 @@ export class PackBuilder {
 			this.log(`  skipped ${key} (${parsed.unsupported})`);
 			return null;
 		}
-		const texture =
+		let texture =
 			folder === 'textures' && maxSize > 0
 				? limitTextureSize(parsed.texture, maxSize)
 				: parsed.texture;
+		if (
+			this.resampler &&
+			folder === 'textures' &&
+			maxSize > 0 &&
+			Math.max(texture.width, texture.height) > maxSize
+		) {
+			const png = await this.resampler(key).catch(() => null);
+			const resampled = png ? resampleTexture(parsed.texture, png, maxSize) : null;
+			if (resampled) texture = resampled;
+		}
 
 		const file = await this.addFile(this.uniqueName(folder, key), encodePackTexture(texture), true);
 		const ref: PackTextureRef = {
