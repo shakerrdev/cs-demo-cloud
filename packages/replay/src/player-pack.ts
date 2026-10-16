@@ -136,6 +136,70 @@ const KNIVES: [RegExp, string][] = [
 	[/kukri/, 'knife_kukri']
 ];
 
+const ITEMS: Record<number, string> = {
+	1: 'deagle',
+	2: 'elite',
+	3: 'fiveseven',
+	4: 'glock',
+	7: 'ak47',
+	8: 'aug',
+	9: 'awp',
+	10: 'famas',
+	11: 'g3sg1',
+	13: 'galilar',
+	14: 'm249',
+	16: 'm4a4',
+	17: 'mac10',
+	19: 'p90',
+	23: 'mp5sd',
+	24: 'ump45',
+	25: 'xm1014',
+	26: 'bizon',
+	27: 'mag7',
+	28: 'negev',
+	29: 'sawedoff',
+	30: 'tec9',
+	31: 'taser',
+	32: 'hkp2000',
+	33: 'mp7',
+	34: 'mp9',
+	35: 'nova',
+	36: 'p250',
+	38: 'scar20',
+	39: 'sg556',
+	40: 'ssg08',
+	42: 'knife',
+	59: 'knife',
+	60: 'm4a1_silencer',
+	61: 'usp_silencer',
+	63: 'cz75a',
+	64: 'revolver',
+	500: 'knife_bayonet',
+	503: 'knife_css',
+	505: 'knife_flip',
+	506: 'knife_gut',
+	507: 'knife_karambit',
+	508: 'knife_m9',
+	509: 'knife_tactical',
+	512: 'knife_falchion',
+	514: 'knife_bowie',
+	515: 'knife_butterfly',
+	516: 'knife_push',
+	517: 'knife_cord',
+	518: 'knife_canis',
+	519: 'knife_ursus',
+	520: 'knife_navaja',
+	521: 'knife_outdoor',
+	522: 'knife_stiletto',
+	523: 'knife_talon',
+	525: 'knife_skeleton',
+	526: 'knife_kukri'
+};
+
+export function itemWeaponKey(item: number): string | null {
+	return ITEMS[item] ?? null;
+}
+
 export function weaponKey(name: string): string | null {
 	const flat = name
 		.toLowerCase()

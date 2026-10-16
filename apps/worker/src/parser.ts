@@ -65,7 +65,14 @@ export const tickProps = [
 	'mvps',
 	'score',
 	'team_clan_name',
-	'game_time'
+	'game_time',
+	'agent_skin',
+	'weapon_skin_id',
+	'weapon_paint_seed',
+	'weapon_float',
+	'm_iItemDefinitionIndex',
+	'm_iItemIDLow',
+	'm_iItemIDHigh'
 ] as const;
 
 export type TickProp = (typeof tickProps)[number];

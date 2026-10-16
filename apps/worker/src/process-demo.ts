@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
 import { saveMatch, type Db, type Demo } from '@cs-demo-cloud/db';
-import { REPLAY_VERSION, encodeRound } from '@cs-demo-cloud/replay';
+import { REPLAY_VERSION, collectCosmetics, encodeRound } from '@cs-demo-cloud/replay';
 import type { Storage } from '@cs-demo-cloud/shared';
 import { analyzeDemo } from './analyze.ts';
 import { openDemoFile } from './decompress.ts';
@@ -45,6 +45,10 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 			replayBytes += compressed.length;
 			await writeFile(storage.replayPath(demo.id, replay.meta.round), compressed);
 		}
+		await writeFile(
+			storage.cosmeticsPath(demo.id),
+			JSON.stringify(collectCosmetics(analyzed.replays))
+		);
 		step('replays');
 
 		const parseMs = Math.round(performance.now() - startedAt);

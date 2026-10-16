@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+	itemWeaponKey,
 	playerClipNames,
 	viewmodelClipNames,
 	viewmodelClips,
@@ -81,4 +82,12 @@ test('names the first-person clips per weapon', () => {
 	const names = viewmodelClipNames(['ak47', 'm4a1_silencer', 'smokegrenade']);
 	assert.ok(names.includes('pullpin_smoke'));
 	assert.equal(new Set(names).size, names.length);
+});
+
+test('maps item definitions to weapon keys', () => {
+	assert.equal(itemWeaponKey(7), 'ak47');
+	assert.equal(itemWeaponKey(60), 'm4a1_silencer');
+	assert.equal(itemWeaponKey(507), 'knife_karambit');
+	assert.equal(itemWeaponKey(59), 'knife');
+	assert.equal(itemWeaponKey(5027), null);
 });

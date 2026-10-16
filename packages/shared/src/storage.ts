@@ -23,6 +23,7 @@ export function createStorage(dataDir = resolveDataDir()) {
 			join(dataDir, 'demos', format === 'dem' ? `${id}.dem` : `${id}.dem.${format}`),
 		replayDir: (id: string) => join(dataDir, 'replays', id),
 		replayPath: (id: string, round: number) => join(dataDir, 'replays', id, `${round}.bin.gz`),
+		cosmeticsPath: (id: string) => join(dataDir, 'replays', id, 'cosmetics.json'),
 		radarPath: (map: string, lower = false) =>
 			join(dataDir, 'maps', `${map}${lower ? '_lower' : ''}.png`),
 		mapMeshPath: (map: string, version: number) =>

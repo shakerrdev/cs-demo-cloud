@@ -6,3 +6,4 @@ export * from './mesh.ts';
 export * from './player-pack.ts';
 export * from './types.ts';
 export * from './weapons.ts';
+export * from './cosmetics.ts';

@@ -18,10 +18,13 @@ import {
 	type ReplayEffect,
 	type ReplayGrenade,
 	type ReplayKill,
+	type ReplaySkin,
 	type RoundColumns,
 	type RoundReplay,
 	type Side,
-	type TeamKey
+	type TeamKey,
+	itemWeaponKey,
+	weaponKey
 } from '@cs-demo-cloud/replay';
 import {
 	bool,
@@ -186,6 +189,11 @@ export function analyzeDemo(
 		createColumns(roundPlayers[r]!.length * grid.count)
 	);
 	const weaponTables = spans.map(() => new Map<string, number>([['', 0]]));
+	const skinTables = spans.map(() => new Map<string, number>());
+	const skinLists = spans.map(() => [] as ReplaySkin[]);
+	const skinChanges = spans.map(() => [] as number[]);
+	const lastSkins = spans.map(() => new Map<number, number>());
+	const agents = spans.map(() => new Map<number, string>());
 
 	for (let i = 0; i < ticks.tick.length; i++) {
 		const rounds = rowRounds[i];
@@ -215,6 +223,35 @@ export function analyzeDemo(
 			cols.health[at] = clampU8(num(ticks.health[i]));
 			cols.armor[at] = clampU8(num(ticks.armor_value[i]));
 			cols.weapon[at] = weapon;
+
+			const agent = agentName(ticks.agent_skin[i]);
+			if (agent && !agents[r]!.has(p)) agents[r]!.set(p, agent);
+			const item = num(ticks.m_iItemDefinitionIndex[i]);
+			const itemKey = itemWeaponKey(item);
+			if (itemKey && itemKey === weaponKey(weaponName)) {
+				const owned = num(ticks.m_iItemIDLow[i]) !== 0 || num(ticks.m_iItemIDHigh[i]) !== 0;
+				const paint = owned && itemKey !== 'knife' ? num(ticks.weapon_skin_id[i]) : 0;
+				const previous = lastSkins[r]!.get(p) ?? -1;
+				let skin = owned && previous >= 0 && skinLists[r]![previous]!.item === item ? previous : -1;
+				if (paint > 0) {
+					const entry: ReplaySkin = {
+						item,
+						paint,
+						seed: num(ticks.weapon_paint_seed[i]),
+						wear: Math.round(num(ticks.weapon_float[i]) * 1e6) / 1e6
+					};
+					const id = `${entry.item}:${entry.paint}:${entry.seed}:${entry.wear}`;
+					skin = skinTables[r]!.get(id) ?? -1;
+					if (skin < 0) {
+						skin = skinLists[r]!.push(entry) - 1;
+						skinTables[r]!.set(id, skin);
+					}
+				}
+				if (previous !== skin) {
+					lastSkins[r]!.set(p, skin);
+					skinChanges[r]!.push(ticks.tick[i]!, p, skin);
+				}
+			}
 			cols.flags[at] =
 				FLAG_PRESENT |
 				(bool(ticks.is_alive[i]) ? FLAG_ALIVE : 0) |
@@ -362,7 +399,8 @@ export function analyzeDemo(
 				reason: span.reason,
 				scoreA,
 				scoreB,
-				players: roundPlayers[r]!.map((entry) => ({
+				players: roundPlayers[r]!.map((entry, p) => ({
+					...(agents[r]!.has(p) ? { agent: agents[r]!.get(p) } : {}),
 					steamid: entry.key,
 					name: entry.name,
 					team: teamOf(entry),
@@ -376,6 +414,8 @@ export function analyzeDemo(
 				shots,
 				swings,
 				reloads,
+				skins: skinLists[r]!,
+				skinChanges: skinChanges[r]!,
 				grenades: grenadesByRound.paths[r] ?? [],
 				effects: buildEffects(
 					roundEvents,
@@ -429,6 +469,12 @@ export function analyzeDemo(
 		kills: killRows,
 		replays
 	};
+}
+
+function agentName(value: unknown): string | null {
+	const name = str(value)?.replace(/^customplayer_/, '');
+	if (!name || name.endsWith('map_based')) return null;
+	return /^[a-z0-9_]+$/.test(name) ? name : null;
 }
 
 function isKnife(weapon: string | null): boolean {

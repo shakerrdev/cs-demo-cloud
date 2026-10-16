@@ -20,6 +20,14 @@ export interface ReplayPlayer {
 	name: string;
 	team: TeamKey;
 	side: Side;
+	agent?: string;
+}
+
+export interface ReplaySkin {
+	item: number;
+	paint: number;
+	seed: number;
+	wear: number;
 }
 
 export interface ReplayKill {
@@ -91,6 +99,8 @@ export interface RoundMeta {
 	shots: number[];
 	swings?: number[];
 	reloads?: number[];
+	skins?: ReplaySkin[];
+	skinChanges?: number[];
 	grenades: ReplayGrenade[];
 	effects: ReplayEffect[];
 	bomb: ReplayBombEvent[];
