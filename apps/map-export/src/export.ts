@@ -41,7 +41,6 @@ import {
 	type Entity
 } from './entities.ts';
 import { processWorldGltf, repackBuffers, type Gltf } from './gltf.ts';
-import { resampleTexture } from './resample.ts';
 import { kv3Array, kv3Object, type Kv3Value } from './kv3.ts';
 import { gameBuild } from './steam.ts';
 import { run, Vrf } from './vrf.ts';
@@ -149,7 +148,10 @@ export class PackBuilder {
 	private writes: Promise<void> = Promise.resolve();
 	private log: (message: string) => void;
 	private maxTextureSize: number;
-	resampler: ((path: string) => Promise<Uint8Array | null>) | null = null;
+	resampler:
+		((path: string, source: PackTexture, maxSize: number) => Promise<PackTexture | null>) | null =
+		null;
+	textureCache: string | null = null;
 	bytes = 0;
 
 	constructor(path: string, log: (message: string) => void, maxTextureSize = 0) {
@@ -159,10 +161,17 @@ export class PackBuilder {
 	}
 
 	async addFile(name: string, content: Uint8Array, compress: boolean): Promise<string> {
-		const entry = compress ? `${name}.gz` : name;
-		const data = compress ? new Uint8Array(await gzip(content, { level: 6 })) : content;
+		if (compress) return this.addGzipped(name, new Uint8Array(await gzip(content, { level: 6 })));
+		return this.addEntry(name, content, true);
+	}
+
+	private addGzipped(name: string, data: Uint8Array): Promise<string> {
+		return this.addEntry(`${name}.gz`, data, false);
+	}
+
+	private async addEntry(entry: string, data: Uint8Array, store: boolean): Promise<string> {
 		this.bytes += data.length;
-		const write = this.writes.then(() => this.zip.add(entry, data, !compress));
+		const write = this.writes.then(() => this.zip.add(entry, data, store));
 		this.writes = write.catch(() => {});
 		await write;
 		return entry;
@@ -185,6 +194,32 @@ export class PackBuilder {
 		const key = path.replace(/_c$/, '');
 		if (this.textures[key]) return this.textures[key]!;
 		if (this.missing.has(key)) return null;
+
+		const cached = this.textureCache
+			? join(this.textureCache, `${key.replaceAll('/', '__')}.${folder}.${maxSize}`)
+			: null;
+		if (cached && existsSync(`${cached}.json`)) {
+			const saved = JSON.parse(await readFile(`${cached}.json`, 'utf8')) as {
+				ref: Omit<PackTextureRef, 'file' | 'low'>;
+				low?: Omit<NonNullable<PackTextureRef['low']>, 'file'>;
+				radianceSh?: number[];
+			};
+			const ref: PackTextureRef = {
+				...saved.ref,
+				file: await this.addGzipped(this.uniqueName(folder, key), await readFile(`${cached}.gz`))
+			};
+			if (saved.low)
+				ref.low = {
+					...saved.low,
+					file: await this.addGzipped(
+						this.uniqueName(folder, `${key.replace(/\.vtex$/, '')}_low`),
+						await readFile(`${cached}.low.gz`)
+					)
+				};
+			this.textures[key] = ref;
+			if (saved.radianceSh) this.radianceSh.set(key, saved.radianceSh);
+			return ref;
+		}
 
 		const compiled = `${key}_c`;
 		const vpk = vpks.find((candidate) => candidate.has(compiled));
@@ -209,12 +244,12 @@ export class PackBuilder {
 			maxSize > 0 &&
 			Math.max(texture.width, texture.height) > maxSize
 		) {
-			const png = await this.resampler(key).catch(() => null);
-			const resampled = png ? resampleTexture(parsed.texture, png, maxSize) : null;
+			const resampled = await this.resampler(key, parsed.texture, maxSize).catch(() => null);
 			if (resampled) texture = resampled;
 		}
 
-		const file = await this.addFile(this.uniqueName(folder, key), encodePackTexture(texture), true);
+		const full = new Uint8Array(await gzip(encodePackTexture(texture), { level: 6 }));
+		const file = await this.addGzipped(this.uniqueName(folder, key), full);
 		const ref: PackTextureRef = {
 			file,
 			format: texture.format,
@@ -232,11 +267,12 @@ export class PackBuilder {
 			Math.max(texture.width, texture.height) > lowSize
 		) {
 			const low = limitTextureSize(texture, lowSize);
+			const lowData = new Uint8Array(await gzip(encodePackTexture(low), { level: 6 }));
+			if (cached) await writeFile(`${cached}.low.gz`, lowData);
 			ref.low = {
-				file: await this.addFile(
+				file: await this.addGzipped(
 					this.uniqueName(folder, `${key.replace(/\.vtex$/, '')}_low`),
-					encodePackTexture(low),
-					true
+					lowData
 				),
 				width: low.width,
 				height: low.height,
@@ -245,6 +281,18 @@ export class PackBuilder {
 		}
 		this.textures[key] = ref;
 		if (parsed.info.radianceSh) this.radianceSh.set(key, parsed.info.radianceSh);
+		if (cached) {
+			await writeFile(`${cached}.gz`, full);
+			const { file: _file, low, ...rest } = ref;
+			await writeFile(
+				`${cached}.json`,
+				JSON.stringify({
+					ref: rest,
+					low: low ? { width: low.width, height: low.height, bytes: low.bytes } : undefined,
+					radianceSh: parsed.info.radianceSh
+				})
+			);
+		}
 		return ref;
 	}
 
