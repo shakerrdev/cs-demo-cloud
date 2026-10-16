@@ -87,6 +87,19 @@ Upload is the primary way in and always works. Auto-fetch and import helpers bui
 | Valve matchmaking   | Steam Web API `GetNextMatchSharingCode` with your match-history auth code, then the Game Coordinator resolves each share code to a download URL   | Needs a logged-in Steam account for the GC (a separate bot account is safest). Download links expire about a month after the match, so fetch promptly |
 | Companion extension | Browser extension / userscript that adds a "Send to cs-demo-cloud" button on sites like FACEIT and sends the demo with your own logged-in session | Works around platforms that lock demo downloads behind private APIs. Authenticates with a personal API token                                          |
 
+### Uploading with an API token
+
+Scripts, userscripts and browser extensions can upload as you with a personal token from **Settings → API tokens** (shown once; revoke it there any time):
+
+```sh
+curl -H "Authorization: Bearer cdc_…" \
+  -H "Content-Type: application/octet-stream" \
+  -H "X-File-Name: match.dem.gz" \
+  --data-binary @match.dem.gz https://demos.example.com/api/demos
+```
+
+The answer is `{"id": "…", "duplicate": false}` (201, or 200 when the file is already in the library). Tokens work on every `/api/` route and nowhere else, and those routes answer CORS requests from any site, so a page script on FACEIT can call them directly. Demos uploaded with a token are marked as coming from an extension.
+
 ## Auto-import from Valve
 
 The **Auto-import** page downloads new Premier, Competitive and Wingman matches on its own:
@@ -211,6 +224,7 @@ Everything requires signing in, and accounts only come from invite links.
 - On first start (no accounts yet) the web app prints a one-time admin invite link to its log. Open it to create your account.
 - Admins create more invite links in **Settings** (member or admin, valid once for 7 days), see open invites and remove people. Everyone can change their own password there.
 - Invited people share one match library; each upload remembers who added it.
+- A demo can be deleted from its match page (or `DELETE /api/demos/<id>`) by the person who uploaded it and by admins; that removes the file, its replays and its stats. A demo that is being parsed right now can't be deleted until it's done.
 - Lost access? Create a fresh admin invite from the server: `pnpm invite --admin`, or in Docker as described below.
 
 Passwords are hashed with scrypt; sessions last 30 days (extended while in use) in an http-only cookie. Logins are rate limited per name and address.
@@ -272,5 +286,5 @@ Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web 
 - [x] Docker image and compose setup
 - [x] Published image with CI
 - [x] 3D viewer
-- [ ] Personal API tokens
+- [x] Personal API tokens
 - [ ] Companion extension (FACEIT and other sites)
