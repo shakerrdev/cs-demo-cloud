@@ -8,6 +8,7 @@
 		type TeamKey
 	} from '@cs-demo-cloud/replay';
 	import { formatClock } from '#lib/format.ts';
+	import { EAR_HEIGHT, ReplayAudio, type Listener } from './audio.ts';
 	import { drawFrame, sideColors } from './draw.ts';
 	import { bombState, lastTick, playerStates } from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
@@ -46,6 +47,7 @@
 	];
 	const viewKey = 'viewer.view';
 	const qualityKey = 'viewer.textures';
+	const soundKey = 'viewer.sound';
 	const qualities: { value: TextureQuality; label: string }[] = [
 		{ value: 'auto', label: 'Textures: auto' },
 		{ value: 'high', label: 'Textures: high' },
@@ -76,6 +78,8 @@
 	let sceneError = $state<string | null>(null);
 	let packStatus = $state<PackStatus>({ state: 'none' });
 	let textureQuality = $state<TextureQuality>(savedQuality());
+	let audio = $state.raw<ReplayAudio | null>(null);
+	let soundOn = $state(savedSound());
 
 	let radar = $state.raw<HTMLImageElement | null>(null);
 	let lowerRadar = $state.raw<HTMLImageElement | null>(null);
@@ -107,6 +111,48 @@
 		} catch {
 			return;
 		}
+	}
+
+	function savedSound(): boolean {
+		try {
+			return localStorage.getItem(soundKey) !== 'off';
+		} catch {
+			return true;
+		}
+	}
+
+	function toggleSound() {
+		soundOn = !soundOn;
+		audio?.unlock();
+		try {
+			localStorage.setItem(soundKey, soundOn ? 'on' : 'off');
+		} catch {
+			return;
+		}
+	}
+
+	function listener(current: RoundReplay): Listener | null {
+		if (view === '3d') return scene3d?.listener(focus) ?? null;
+		const players = playerStates(current, tick).filter((p) => p.alive && p.present);
+		const focused = focus !== null ? players.find((p) => p.index === focus) : undefined;
+		if (focused) {
+			const yaw = (focused.yaw * Math.PI) / 180;
+			return {
+				position: [focused.x, focused.y, focused.z + EAR_HEIGHT],
+				forward: [Math.cos(yaw), Math.sin(yaw), 0],
+				up: [0, 0, 1]
+			};
+		}
+		if (!players.length) return null;
+		const center = players.reduce(
+			(sum, p) => [
+				sum[0] + p.x / players.length,
+				sum[1] + p.y / players.length,
+				sum[2] + p.z / players.length
+			],
+			[0, 0, 0]
+		);
+		return { position: [center[0], center[1], center[2] + 600], forward: [0, 1, 0], up: [0, 0, 1] };
 	}
 
 	function savedQuality(): TextureQuality {
@@ -237,6 +283,28 @@
 	});
 
 	$effect(() => {
+		const version = playerPack;
+		if (!version) return;
+		let current: ReplayAudio | null = null;
+		let cancelled = false;
+		void ReplayAudio.load(version)
+			.then((loaded) => {
+				if (cancelled) loaded?.dispose();
+				else audio = current = loaded;
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+			current?.dispose();
+			audio = null;
+		};
+	});
+
+	$effect(() => {
+		audio?.setVolume(0.7, !soundOn);
+	});
+
+	$effect(() => {
 		scene3d?.setSize(stageWidth, cssSize, pixelRatio);
 	});
 
@@ -269,6 +337,9 @@
 				if (hudTick !== tick) hudTick = tick;
 				lastHud = now;
 			}
+
+			if (audio && current)
+				audio.update(current, tick, playing && !loading, speed, listener(current));
 
 			if (view === '3d') {
 				if (scene3d && current)
@@ -316,6 +387,7 @@
 		else if (event.key === 'PageUp' || event.key === '[') goToRound(round - 1);
 		else if (event.key === 'PageDown' || event.key === ']') goToRound(round + 1);
 		else if (/^[1-5]$/.test(event.key)) speed = speeds[Number(event.key) - 1]!;
+		else if (event.key === 'm' || event.key === 'M') toggleSound();
 		else if (event.key === 'v' || event.key === 'V') setView(view === '3d' ? '2d' : '3d');
 		else if ((event.key === 'c' || event.key === 'C') && view === '3d') {
 			const index = cameraModes.findIndex((option) => option.mode === cameraMode);
@@ -385,7 +457,16 @@
 	const halfBreak = (number: number) => number === 12 || (number > 24 && (number - 24) % 3 === 0);
 </script>
 
-<svelte:window bind:innerHeight onkeydown={onKey} />
+<svelte:window
+	bind:innerHeight
+	onkeydown={(event) => {
+		if (soundOn) audio?.unlock();
+		onKey(event);
+	}}
+	onpointerdown={() => {
+		if (soundOn) audio?.unlock();
+	}}
+/>
 
 <div class="viewer">
 	{#each teamKeys as team (team)}
@@ -586,6 +667,15 @@
 					aria-label="Round timeline"
 				/>
 			</div>
+			{#if audio}
+				<button
+					type="button"
+					class="sound"
+					aria-pressed={soundOn}
+					onclick={toggleSound}
+					title="Sound (M)">{soundOn ? 'Sound on' : 'Sound off'}</button
+				>
+			{/if}
 			<select bind:value={speed} aria-label="Playback speed">
 				{#each speeds as option (option)}
 					<option value={option}>{option}×</option>

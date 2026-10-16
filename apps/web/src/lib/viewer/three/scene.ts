@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { FLAG_PRESENT, type MapInfo, type MapMesh, type RoundReplay } from '@cs-demo-cloud/replay';
+import type { Listener } from '../audio.ts';
 import { playerStates, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
 import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
@@ -30,6 +31,7 @@ const POV_FOV = 74;
 const ORBIT_FOV = 50;
 const ROOF_CUT = 170;
 const MAX_PLAYER_SCALE = 3;
+const LISTENER_RANGE = 500;
 
 export class ReplayScene {
 	onPick: ((index: number) => void) | null = null;
@@ -255,6 +257,26 @@ export class ReplayScene {
 		this.pack = null;
 		if (this.mapObject) this.mapObject.visible = true;
 		this.dirty = true;
+	}
+
+	listener(focus: number | null): Listener {
+		const e = this.camera.matrixWorld.elements;
+		const focused = focus !== null ? this.players[focus] : undefined;
+		const p =
+			this.mode !== 'free' && focused?.alive
+				? this.projected.set(focused.x, focused.y, focused.z + eyeHeight(focused))
+				: this.camera.position.distanceTo(this.controls.target) > LISTENER_RANGE
+					? this.projected
+							.copy(this.camera.position)
+							.sub(this.controls.target)
+							.setLength(LISTENER_RANGE)
+							.add(this.controls.target)
+					: this.camera.position;
+		return {
+			position: [p.x, p.y, p.z],
+			forward: [-e[8]!, -e[9]!, -e[10]!],
+			up: [e[4]!, e[5]!, e[6]!]
+		};
 	}
 
 	resetView() {
