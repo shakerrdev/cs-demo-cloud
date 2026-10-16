@@ -37,16 +37,16 @@ const CHARACTERS: Record<Side, string> = {
 	CT: 'agents/models/ctm_sas/ctm_sas.vmdl',
 	T: 'agents/models/tm_phoenix/tm_phoenix.vmdl'
 };
-const CHARACTER_MESHES = [
+export const CHARACTER_MESHES = [
 	'thirdperson_body',
 	'thirdperson_default_gloves',
 	'firstperson_default_gloves_arms',
 	'firstperson_sleeves'
 ];
-const SKELETON_ROOT = 'root_motion';
-const WEAPON_BONE = 'weapon';
+export const SKELETON_ROOT = 'root_motion';
+export const WEAPON_BONE = 'weapon';
 
-const WEAPON_MODELS: Record<string, string> = {
+export const WEAPON_MODELS: Record<string, string> = {
 	ak47: 'ak47/weapon_rif_ak47',
 	aug: 'aug/weapon_rif_aug',
 	awp: 'awp/weapon_snip_awp',
@@ -190,7 +190,7 @@ const SOUND_SCRIPTS = [
 
 const DEFAULT_CURVE = [0, 1, 400, 0.6, 1500, 0.15, 3000, 0];
 
-const TEXTURE_PARAMS = new Set([
+export const TEXTURE_PARAMS = new Set([
 	'g_tColor',
 	'g_tNormal',
 	'g_tAmbientOcclusion',
@@ -221,7 +221,7 @@ function vrfModelArgs(vpk: string, model: string, gameinfo: string, outDir: stri
 	];
 }
 
-async function exportModel(
+export async function exportModel(
 	tools: Tools,
 	vpk: string,
 	gameinfo: string,
@@ -236,12 +236,14 @@ async function exportModel(
 	if (reuse && existsSync(glb) && existsSync(resultPath)) {
 		const saved = JSON.parse(await readFile(resultPath, 'utf8')) as {
 			textures: string[];
+			materials?: string[];
 			clips: string[];
 			nodes: ModelResult['nodes'];
 		};
 		return {
 			glb: await readFile(glb),
 			textures: new Set(saved.textures),
+			materials: saved.materials ?? [],
 			clips: saved.clips,
 			nodes: saved.nodes
 		};
@@ -269,7 +271,12 @@ async function exportModel(
 	]);
 	await writeFile(
 		resultPath,
-		JSON.stringify({ textures: [...result.textures], clips: result.clips, nodes: result.nodes })
+		JSON.stringify({
+			textures: [...result.textures],
+			materials: result.materials,
+			clips: result.clips,
+			nodes: result.nodes
+		})
 	);
 	for (const entry of await readdir(workDir))
 		if (entry !== 'model.glb' && entry !== 'result.json')

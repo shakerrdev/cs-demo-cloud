@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { exportMap } from './export.ts';
 import { exportPlayers } from './players.ts';
+import { exportSkins, fetchCosmetics } from './skins.ts';
 import { findCsgo } from './steam.ts';
 import { defaultToolsDir, ensureTools } from './tools.ts';
 
@@ -10,6 +11,7 @@ const usage = `Exports CS2 maps as 3D map packs for cs-demo-cloud.
 
 Usage: node apps/map-export/src/index.ts [options] <map> [map...]
        node apps/map-export/src/index.ts --players
+       node apps/map-export/src/index.ts --skins <cosmetics.json | server url> [--token <api token>]
 
   --game <folder>   CS2 install folder (found through Steam if left out)
   --out <folder>    Where the packs go (default: ./map-packs)
@@ -21,6 +23,9 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --low-memory      Run Source 2 Viewer on one thread with less memory (slower, for 4 GB machines)
   --all             Every map in the game's maps folder
   --players         Player models, animations and weapons (players.zip)
+  --skins <source>  Agents and weapon skins your demos use (skins.zip), from the list in
+                    Settings or straight from your server with --token
+  --token <token>   API token for --skins <server url>
 
 Example: node apps/map-export/src/index.ts de_dust2 de_mirage`;
 
@@ -37,11 +42,13 @@ const { values, positionals } = parseArgs({
 		'low-memory': { type: 'boolean', default: false },
 		all: { type: 'boolean', default: false },
 		players: { type: 'boolean', default: false },
+		skins: { type: 'string' },
+		token: { type: 'string' },
 		help: { type: 'boolean', short: 'h', default: false }
 	}
 });
 
-if (values.help || (!positionals.length && !values.all && !values.players)) {
+if (values.help || (!positionals.length && !values.all && !values.players && !values.skins)) {
 	console.log(usage);
 	process.exit(values.help ? 0 : 1);
 }
@@ -86,6 +93,29 @@ if (values.players) {
 	} catch (error) {
 		failed++;
 		console.error(`players failed: ${error instanceof Error ? error.message : error}`);
+	}
+}
+if (values.skins) {
+	const started = Date.now();
+	log('\n== skins');
+	try {
+		const cosmetics = await fetchCosmetics(values.skins, values.token ?? process.env.CDC_TOKEN);
+		const { pack, bytes } = await exportSkins({
+			csgo,
+			outDir: resolve(values.out!),
+			workDir: join(resolve(values.work ?? tmpdir()), 'cs-demo-cloud-skins'),
+			tools,
+			cosmetics,
+			log,
+			keepWork: values['keep-work'],
+			reuseWork: values['reuse-work']
+		});
+		log(
+			`skins: ${pack} (${(bytes / 1024 / 1024).toFixed(1)} MB, ${((Date.now() - started) / 1000).toFixed(0)} s)`
+		);
+	} catch (error) {
+		failed++;
+		console.error(`skins failed: ${error instanceof Error ? error.message : error}`);
 	}
 }
 for (const map of maps) {

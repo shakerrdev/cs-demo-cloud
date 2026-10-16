@@ -514,6 +514,7 @@ export interface ModelGltfOptions {
 
 export interface ModelResult {
 	textures: Set<string>;
+	materials: string[];
 	clips: string[];
 	nodes: Record<string, { translation?: number[]; rotation?: number[] }>;
 }
@@ -658,7 +659,10 @@ export function processModelGltf(gltf: Gltf, options: ModelGltfOptions): ModelRe
 	delete gltf.extensions;
 	delete gltf.extensionsUsed;
 	delete gltf.extensionsRequired;
-	return { textures, clips: [...seen], nodes: transforms };
+	const materials = (gltf.materials ?? []).flatMap((material) =>
+		material.extras?.vmat ? [material.extras.vmat.Name] : []
+	);
+	return { textures, materials: [...new Set(materials)], clips: [...seen], nodes: transforms };
 }
 
 function containsNode(nodes: NonNullable<Gltf['nodes']>, index: number, target: number): boolean {
