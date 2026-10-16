@@ -212,6 +212,7 @@ export class Actors {
 	private vector = new THREE.Vector3();
 	private vector2 = new THREE.Vector3();
 	private capsules = true;
+	private simpleEffects = true;
 
 	constructor() {
 		this.bodyGeometry.rotateX(Math.PI / 2);
@@ -321,6 +322,10 @@ export class Actors {
 
 	setCapsules(visible: boolean) {
 		this.capsules = visible;
+	}
+
+	setSimpleEffects(visible: boolean) {
+		this.simpleEffects = visible;
 	}
 
 	bodies(): THREE.Object3D[] {
@@ -463,7 +468,7 @@ export class Actors {
 		this.blasts.begin();
 		this.rings.begin();
 
-		for (const effect of meta.effects) {
+		for (const effect of this.simpleEffects ? meta.effects : []) {
 			if (tick < effect.startTick || tick > effect.endTick) continue;
 			const age = (tick - effect.startTick) / meta.tickRate;
 			const left = (effect.endTick - tick) / meta.tickRate;
@@ -532,7 +537,7 @@ export class Actors {
 		players: PlayerState[],
 		pov: number | null
 	) {
-		const { shots } = replay.meta;
+		const shots = this.simpleEffects ? replay.meta.shots : [];
 		this.shots.begin();
 		for (let i = 0; i < shots.length; i += 2) {
 			const shotTick = shots[i]!;

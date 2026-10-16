@@ -6,6 +6,7 @@ import { playerStates, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
 import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
 import type { MapPack, PackProgress, TextureQuality } from './cs2/pack.ts';
+import type { GameEffects } from './cs2/effects.ts';
 import type { PlayerModels } from './cs2/players.ts';
 
 export type { TextureQuality };
@@ -67,6 +68,9 @@ export class ReplayScene {
 	private pack: MapPack | null = null;
 	private packKey = '';
 	private models: PlayerModels | null = null;
+	private effects: GameEffects | null = null;
+	private replay: RoundReplay | null = null;
+	private muzzleFallback = new THREE.Vector3();
 	private modelsKey = '';
 	private started = performance.now();
 
@@ -205,6 +209,14 @@ export class ReplayScene {
 				this.scene.add(pack.main);
 				if (this.mapObject) this.mapObject.visible = false;
 				this.models?.setShading(pack.characterShading);
+				void import('./cs2/effects.ts').then(({ GameEffects }) => {
+					if (this.pack !== pack) return;
+					this.effects = new GameEffects();
+					this.effects.setShading(pack.characterShading);
+					this.scene.add(this.effects.root);
+					this.actors.setSimpleEffects(false);
+					this.dirty = true;
+				});
 				this.dirty = true;
 			})
 			.catch((error: Error) => {
@@ -251,6 +263,12 @@ export class ReplayScene {
 
 	private clearPack() {
 		this.models?.setShading(null);
+		if (this.effects) {
+			this.scene.remove(this.effects.root);
+			this.effects.dispose();
+			this.effects = null;
+			this.actors.setSimpleEffects(true);
+		}
 		if (!this.pack) return;
 		this.scene.remove(this.pack.main);
 		this.pack.dispose();
@@ -286,6 +304,7 @@ export class ReplayScene {
 
 	render(frame: SceneFrame) {
 		const { replay, tick, focus, mode, roofs } = frame;
+		this.replay = replay;
 		if (replay.meta.round !== this.round) {
 			this.round = replay.meta.round;
 			this.actors.setPlayers(replay.meta.players);
@@ -323,6 +342,23 @@ export class ReplayScene {
 		this.actors.setCapsules(!models);
 		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
 		this.models?.update(replay, tick, this.players, this.pov, true);
+		this.effects?.update(
+			replay,
+			tick,
+			this.players,
+			this.camera,
+			(index, target) => {
+				const player = this.players[index];
+				if (!player || index === this.pov) return null;
+				return (
+					this.models?.muzzle(player, target) ??
+					target
+						.set(player.x, player.y, player.z + eyeHeight(player) - 6)
+						.add(aimDirection(player, this.muzzleFallback).multiplyScalar(28))
+				);
+			},
+			(performance.now() - this.started) / 1000
+		);
 		if (this.pack) this.renderPack(this.pack);
 		else this.renderer.render(this.scene, this.camera);
 		this.drawOverlay(focus);

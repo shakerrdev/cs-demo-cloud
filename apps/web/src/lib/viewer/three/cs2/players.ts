@@ -660,6 +660,20 @@ class PlayerModel {
 		this.setOnce(name, 1, since, true);
 	}
 
+	muzzle(player: PlayerState, target: THREE.Vector3): THREE.Vector3 | null {
+		if (!this.root.visible || !this.wpn) return null;
+		const kind = weaponClass(weaponKey(player.weapon));
+		if (kind !== 'rifle' && kind !== 'pistol') return null;
+		const yaw = player.yaw * DEG;
+		const pitch = player.pitch * DEG;
+		this.wpn.getWorldPosition(target);
+		return target.add(
+			this.axis
+				.set(Math.cos(pitch) * Math.cos(yaw), Math.cos(pitch) * Math.sin(yaw), -Math.sin(pitch))
+				.multiplyScalar(kind === 'rifle' ? 24 : 9)
+		);
+	}
+
 	private aim(player: PlayerState) {
 		if (!this.spine.length) return;
 		const yaw = player.yaw * DEG;
@@ -728,6 +742,10 @@ export class PlayerModels {
 		players.forEach((player, i) => {
 			this.models[i]?.update(replay, tick, player, player.present && i !== pov, ghosts);
 		});
+	}
+
+	muzzle(player: PlayerState, target: THREE.Vector3): THREE.Vector3 | null {
+		return this.active ? (this.models[player.index]?.muzzle(player, target) ?? null) : null;
 	}
 
 	dispose() {
