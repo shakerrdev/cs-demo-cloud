@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
 	playerClipNames,
+	viewmodelClipNames,
+	viewmodelClips,
 	weaponClass,
 	weaponKey,
 	weaponModelKey,
@@ -53,4 +55,30 @@ test('lists every clip the viewer asks for once', () => {
 	assert.equal(new Set(clips).size, clips.length);
 	for (const name of ['idle_rifle', 'walk_ne_pistol', 'crouch_sw_knife', 'idle_ak', 'shoot_awp'])
 		assert.ok(clips.includes(name), name);
+});
+
+test('names the first-person clips per weapon', () => {
+	assert.deepEqual(viewmodelClips('ak47'), {
+		draw: 'draw_ak',
+		idle: 'idle_ak',
+		shoot: 'shoot1_ak',
+		reload: 'reload_ak'
+	});
+	assert.equal(viewmodelClips('m4a1_silencer')?.idle, 'idle_rifle');
+	assert.equal(viewmodelClips('usp_silencer')?.draw, 'draw_pistol');
+	assert.equal(viewmodelClips('m249')?.idle, 'idle1_m249');
+	assert.equal(viewmodelClips('taser')?.reload, undefined);
+	assert.equal(viewmodelClips('knife')?.idle, 'idle_knife');
+	assert.equal(viewmodelClips('knife_default_t')?.idle, 'idle_default_t');
+	assert.deepEqual(viewmodelClips('knife_karambit')?.attack, [
+		'light_miss1_karambit',
+		'heavy_miss1_karambit'
+	]);
+	assert.equal(viewmodelClips('incgrenade')?.throw, 'throw_overhand_incendiary');
+	assert.equal(viewmodelClips('decoy')?.idle, 'idle_grenade');
+	assert.equal(viewmodelClips('c4')?.plant, 'plant_c4');
+	assert.equal(viewmodelClips(null), null);
+	const names = viewmodelClipNames(['ak47', 'm4a1_silencer', 'smokegrenade']);
+	assert.ok(names.includes('pullpin_smoke'));
+	assert.equal(new Set(names).size, names.length);
 });

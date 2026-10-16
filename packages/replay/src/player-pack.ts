@@ -17,7 +17,24 @@ export interface PlayerPackManifest {
 	clips: string[];
 	weapons: Record<string, PlayerPackWeapon>;
 	sounds?: Record<string, PlayerPackSound>;
+	viewmodel?: PlayerPackViewmodel;
 	textures: Record<string, PackTextureRef>;
+}
+
+export interface PlayerPackViewmodel {
+	animations: string[];
+	clips: string[];
+}
+
+export interface ViewmodelClips {
+	draw: string;
+	idle: string;
+	shoot?: string;
+	reload?: string;
+	attack?: string[];
+	pullpin?: string;
+	throw?: string;
+	plant?: string;
 }
 
 export interface PlayerPackSound {
@@ -222,6 +239,63 @@ export function weaponPoseName(key: string | null): string | null {
 export function weaponShootName(key: string | null): string | null {
 	if (!key || !POSE_NAMES[key]) return null;
 	return SHOOT_NAMES[key] ?? `shoot_${POSE_NAMES[key]}`;
+}
+
+const VIEWMODEL_NAMES: Record<string, string> = {
+	...POSE_NAMES,
+	m4a1_silencer: 'rifle',
+	usp_silencer: 'pistol'
+};
+const VIEWMODEL_IDLE: Record<string, string> = { g3sg1: 'idle1', m249: 'idle1' };
+const VIEWMODEL_GRENADES: Record<string, string> = {
+	flashbang: 'flashbang',
+	hegrenade: 'hegrenade',
+	incgrenade: 'incendiary',
+	molotov: 'molotov',
+	smokegrenade: 'smoke',
+	decoy: 'grenade'
+};
+
+export function viewmodelClips(key: string | null): ViewmodelClips | null {
+	if (!key) return null;
+	if (key === 'c4') return { draw: 'draw_c4', idle: 'idle_c4', plant: 'plant_c4' };
+	const grenade = VIEWMODEL_GRENADES[key];
+	if (grenade)
+		return {
+			draw: `draw_${grenade}`,
+			idle: `idle_${grenade}`,
+			pullpin: `pullpin_${grenade}`,
+			throw: `throw_overhand_${grenade}`
+		};
+	if (key.startsWith('knife')) {
+		const name =
+			key === 'knife' || key === 'knife_default_ct' ? 'knife' : key.replace(/^knife_/, '');
+		const plain = name === 'knife' || name === 'default_t';
+		return {
+			draw: `draw_${name}`,
+			idle: `${plain ? 'idle' : 'idle1'}_${name}`,
+			attack: [`light_miss1_${name}`, `heavy_miss1_${name}`]
+		};
+	}
+	const name = VIEWMODEL_NAMES[key];
+	if (!name) return null;
+	return {
+		draw: `draw_${name}`,
+		idle: `${VIEWMODEL_IDLE[key] ?? 'idle'}_${name}`,
+		shoot: key === 'elite' ? 'shoot_right1_elite' : `shoot1_${name}`,
+		reload: key === 'taser' ? undefined : `reload_${name}`
+	};
+}
+
+export function viewmodelClipNames(keys: string[]): string[] {
+	const clips = new Set<string>();
+	for (const key of keys) {
+		const set = viewmodelClips(key);
+		if (!set) continue;
+		for (const value of Object.values(set))
+			for (const clip of Array.isArray(value) ? value : [value]) if (clip) clips.add(clip);
+	}
+	return [...clips];
 }
 
 export const LOCOMOTION_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as const;
