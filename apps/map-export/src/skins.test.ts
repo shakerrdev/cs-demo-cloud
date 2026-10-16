@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { compositePaint, materialParams, mergeParams, paintKits } from './skins.ts';
+import {
+	compositePaint,
+	iconCosmetics,
+	materialParams,
+	mergeParams,
+	paintKits,
+	trimParams
+} from './skins.ts';
 
 test('reads paint kits from items_game', () => {
 	const kits = paintKits(`"items_game" { "paint_kits" {
@@ -79,4 +86,65 @@ test('reads material params and composite overrides', () => {
 	assert.deepEqual(merged.vectors.g_vColor0, [1, 0, 0.2, 1]);
 	assert.equal(merged.ints.g_nRandomSeed, undefined);
 	assert.equal(merged.ints.F_PAINT_STYLE, 1);
+});
+
+test('finds every weapon and paint kit pair from the generated icons', () => {
+	const items = new Map([
+		['weapon_ak47', 7],
+		['weapon_knife', 42],
+		['weapon_knife_karambit', 507]
+	]);
+	const kits = new Map([
+		[
+			941,
+			{
+				name: 'cu_ak-47_phantom_disruptor',
+				style: 7,
+				legacy: true,
+				wear: [0, 1] as [number, number],
+				composite: null
+			}
+		],
+		[
+			38,
+			{
+				name: 'aa_fade',
+				style: 6,
+				legacy: true,
+				wear: [0, 0.08] as [number, number],
+				composite: null
+			}
+		]
+	]);
+	assert.deepEqual(
+		iconCosmetics(
+			[
+				'weapon_ak47_cu_ak-47_phantom_disruptor',
+				'weapon_knife_karambit_aa_fade',
+				'weapon_ak47_unknown',
+				'leather_handwraps_x'
+			],
+			items,
+			kits
+		),
+		[
+			{ item: 7, paint: 941 },
+			{ item: 507, paint: 38 }
+		]
+	);
+	assert.deepEqual(
+		trimParams({
+			shader: '',
+			ints: { F_PAINT_STYLE: 1, g_bEnableSticker0: 0 },
+			floats: { g_flPatternTexCoordScale: 2, g_fGlitterScale: 25 },
+			vectors: { g_vColor0: [1, 1, 1, 1], g_vSticker0Offset: [0, 0, 0, 0] },
+			textures: {},
+			strings: {}
+		}),
+		{
+			ints: { F_PAINT_STYLE: 1 },
+			floats: { g_flPatternTexCoordScale: 2 },
+			vectors: { g_vColor0: [1, 1, 1, 1] }
+		}
+	);
 });

@@ -23,8 +23,10 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --low-memory      Run Source 2 Viewer on one thread with less memory (slower, for 4 GB machines)
   --all             Every map in the game's maps folder
   --players         Player models, animations and weapons (players.zip)
-  --skins <source>  Agents and weapon skins your demos use (skins.zip), from the list in
-                    Settings or straight from your server with --token
+  --skins <source>  Agents and weapon skins (skins.zip): "all" for every skin and agent in
+                    the game, or only those your demos use, from the list in Settings or
+                    straight from your server with --token
+  --skin-texture-size <px>  Size of skin patterns (default 1024)
   --token <token>   API token for --skins <server url>
 
 Example: node apps/map-export/src/index.ts de_dust2 de_mirage`;
@@ -44,6 +46,7 @@ const { values, positionals } = parseArgs({
 		players: { type: 'boolean', default: false },
 		skins: { type: 'string' },
 		token: { type: 'string' },
+		'skin-texture-size': { type: 'string' },
 		help: { type: 'boolean', short: 'h', default: false }
 	}
 });
@@ -99,13 +102,17 @@ if (values.skins) {
 	const started = Date.now();
 	log('\n== skins');
 	try {
-		const cosmetics = await fetchCosmetics(values.skins, values.token ?? process.env.CDC_TOKEN);
+		const cosmetics =
+			values.skins === 'all'
+				? 'all'
+				: await fetchCosmetics(values.skins, values.token ?? process.env.CDC_TOKEN);
 		const { pack, bytes } = await exportSkins({
 			csgo,
 			outDir: resolve(values.out!),
 			workDir: join(resolve(values.work ?? tmpdir()), 'cs-demo-cloud-skins'),
 			tools,
 			cosmetics,
+			patternSize: values['skin-texture-size'] ? Number(values['skin-texture-size']) : undefined,
 			log,
 			keepWork: values['keep-work'],
 			reuseWork: values['reuse-work']

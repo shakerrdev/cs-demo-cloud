@@ -5,11 +5,14 @@ import {
 	SKINS_PACK_MANIFEST,
 	SKINS_PACK_NAME,
 	SKINS_PACK_VERSION,
+	decodePackTexture,
+	encodePackTexture,
 	itemWeaponKey,
 	skinWeaponKey,
 	type Cosmetics,
 	type SkinPaint,
 	type SkinWeapon,
+	type PackTexture,
 	type SkinsPackManifest
 } from '@cs-demo-cloud/replay';
 import { EXPORTER_VERSION, forEachLimit, limitTextureSize, PackBuilder } from './export.ts';
@@ -28,13 +31,15 @@ import type { Tools } from './tools.ts';
 import { run, Vrf } from './vrf.ts';
 import { Vpk } from './vpk.ts';
 import { parseVtex } from './vtex.ts';
+import { ResamplePool } from './resample.ts';
 
 export interface SkinsExportOptions {
 	csgo: string;
 	outDir: string;
 	workDir: string;
 	tools: Tools;
-	cosmetics: Cosmetics;
+	cosmetics: Cosmetics | 'all';
+	patternSize?: number;
 	log: (message: string) => void;
 	keepWork?: boolean;
 	reuseWork?: boolean;
@@ -253,9 +258,9 @@ class Blocks {
 	read(path: string): Promise<Kv3Value | null> {
 		let promise = this.cache.get(path);
 		if (!promise) {
-			const file = join(this.dir, `${path.replaceAll('/', '__')}.json`);
+			const file = this.file(path);
 			promise = (async () => {
-				if (existsSync(file)) return JSON.parse(await readFile(file, 'utf8')) as Kv3Value;
+				if (existsSync(file)) return JSON.parse(await readFile(file, 'utf8')) as Kv3Value | null;
 				try {
 					const data = await this.vrf.dataBlock(this.vpk, `${path}_c`);
 					await mkdir(this.dir, { recursive: true });
@@ -270,6 +275,111 @@ class Blocks {
 		}
 		return promise;
 	}
+
+	async prefetch(paths: string[]) {
+		const missing = [...new Set(paths)].filter(
+			(path) => !this.cache.has(path) && !existsSync(this.file(path))
+		);
+		await mkdir(this.dir, { recursive: true });
+		for (let i = 0; i < missing.length; i += 60) {
+			const batch = missing.slice(i, i + 60);
+			const found = await this.vrf
+				.dataBlocks(
+					this.vpk,
+					batch.map((path) => `${path}_c`)
+				)
+				.catch((error: Error) => {
+					this.log(`  reading materials failed: ${error.message.split('\n')[0]}`);
+					return new Map<string, Kv3Value>();
+				});
+			for (const path of batch)
+				await writeFile(this.file(path), JSON.stringify(found.get(`${path}_c`) ?? null));
+			if (missing.length > 120)
+				this.log(`  read ${Math.min(i + 60, missing.length)}/${missing.length}`);
+		}
+	}
+
+	private file(path: string): string {
+		return join(this.dir, `${path.replaceAll('/', '__')}.json`);
+	}
+}
+
+const KEPT_INTS = new Set([
+	'F_PAINT_STYLE',
+	'F_OVERRIDE_NORMAL',
+	'g_bUseNormalMap',
+	'g_bOverrideDefaultMasks',
+	'g_bIgnoreWeaponSizeScale'
+]);
+const KEPT_FLOATS = /^g_fl(Pattern|Wear|Grunge)TexCoord(Scale|Rotation)$|^g_flColorBrightness$/;
+const KEPT_VECTORS = /^g_v(Pattern|Wear|Grunge)TexCoordOffset$|^g_vColor[0-3]$/;
+
+export function trimParams(params: MaterialParams) {
+	return {
+		ints: Object.fromEntries(Object.entries(params.ints).filter(([name]) => KEPT_INTS.has(name))),
+		floats: Object.fromEntries(
+			Object.entries(params.floats).filter(([name]) => KEPT_FLOATS.test(name))
+		),
+		vectors: Object.fromEntries(
+			Object.entries(params.vectors).filter(([name]) => KEPT_VECTORS.test(name))
+		)
+	};
+}
+
+export function weaponItems(itemsGame: string): Map<string, number> {
+	const root = parseKv1(itemsGame).items_game as Kv1Object | undefined;
+	const items = new Map<string, number>();
+	const block = root?.items;
+	if (!block || typeof block !== 'object') return items;
+	for (const [index, value] of Object.entries(block)) {
+		if (typeof value !== 'object' || typeof value.name !== 'string') continue;
+		if (itemWeaponKey(Number(index))) items.set(value.name, Number(index));
+	}
+	return items;
+}
+
+export function iconCosmetics(
+	icons: string[],
+	items: Map<string, number>,
+	kits: Map<number, PaintKit>
+): Cosmetics['paints'] {
+	const byName = new Map([...kits].map(([index, kit]) => [kit.name, index]));
+	const weapons = [...items.keys()].sort((a, b) => b.length - a.length);
+	const paints = new Map<string, { item: number; paint: number }>();
+	for (const icon of icons) {
+		const weapon = weapons.find((name) => icon.startsWith(`${name}_`));
+		if (!weapon) continue;
+		const paint = byName.get(icon.slice(weapon.length + 1));
+		const item = items.get(weapon)!;
+		if (paint !== undefined) paints.set(`${item}:${paint}`, { item, paint });
+	}
+	return [...paints.values()];
+}
+
+function allCosmetics(vpk: Vpk, itemsGame: string, kits: Map<number, PaintKit>): Cosmetics {
+	const agents = vpk
+		.list('agents/models/')
+		.filter((path) => /^agents\/models\/[^/]+\/[^/]+\.vmdl_c$/.test(path))
+		.map((path) =>
+			path
+				.split('/')
+				.pop()!
+				.replace(/\.vmdl_c$/, '')
+		)
+		.filter((name) => name !== 'ctm_sas' && name !== 'tm_phoenix');
+	const icons = vpk
+		.list('panorama/images/econ/default_generated/')
+		.filter((path) => path.endsWith('_light_png.vtex_c'))
+		.map((path) =>
+			path
+				.split('/')
+				.pop()!
+				.replace(/_light_png\.vtex_c$/, '')
+		);
+	return {
+		agents: [...new Set(agents)].sort(),
+		paints: iconCosmetics(icons, weaponItems(itemsGame), kits)
+	};
 }
 
 function agentModel(vpk: Vpk, agent: string): string | null {
@@ -293,7 +403,8 @@ export async function fetchCosmetics(source: string, token?: string): Promise<Co
 export async function exportSkins(
 	options: SkinsExportOptions
 ): Promise<{ pack: string; bytes: number }> {
-	const { csgo, log, tools, cosmetics } = options;
+	const { csgo, log, tools } = options;
+	const patternSize = options.patternSize ?? PATTERN_SIZE;
 	const vpkPath = join(csgo, 'pak01_dir.vpk');
 	const gameinfo = join(csgo, 'gameinfo.gi');
 	await mkdir(options.outDir, { recursive: true });
@@ -307,16 +418,20 @@ export async function exportSkins(
 	const blocks = new Blocks(vrf, vpkPath, join(options.workDir, 'blocks'), log);
 	const pack = new PackBuilder(partPath, log, AGENT_TEXTURE_SIZE);
 	const textures = new Map<string, number>();
+	let pool: ResamplePool | null = null;
 	const want = (path: string | undefined, size: number) => {
 		if (!path) return;
 		textures.set(path, Math.max(textures.get(path) ?? 0, size));
 	};
 
 	try {
-		const kits = paintKits(
-			new TextDecoder().decode(await vpk.read('scripts/items/items_game.txt'))
+		const itemsGame = new TextDecoder().decode(await vpk.read('scripts/items/items_game.txt'));
+		const kits = paintKits(itemsGame);
+		const cosmetics =
+			options.cosmetics === 'all' ? allCosmetics(vpk, itemsGame, kits) : options.cosmetics;
+		log(
+			`skins: ${kits.size} paint kits in the game, ${cosmetics.paints.length} skins and ${cosmetics.agents.length} agents to export`
 		);
-		log(`skins: ${kits.size} paint kits in the game, ${cosmetics.paints.length} used`);
 
 		const agents: Record<string, string> = {};
 		for (const agent of cosmetics.agents) {
@@ -422,6 +537,27 @@ export async function exportSkins(
 			return result;
 		};
 
+		const used = [...new Set(cosmetics.paints.map(({ paint }) => paint))].flatMap((paint) => {
+			const kit = kits.get(paint);
+			return kit ? [kit] : [];
+		});
+		const recipePath = (kit: PaintKit) =>
+			kit.composite ?? `weapons/paints/legacy/${kit.name}.vcompmat`;
+		await blocks.prefetch(used.map(recipePath));
+		const recipes = new Map<string, ReturnType<typeof compositePaint>>();
+		for (const kit of used) {
+			const recipe = await blocks.read(recipePath(kit));
+			recipes.set(
+				kit.name,
+				recipe ? compositePaint(recipe) : { material: null, overrides: materialParams({}) }
+			);
+		}
+		const basePath = (kit: PaintKit) =>
+			recipes.get(kit.name)?.material ??
+			`materials/models/weapons/customization/paints/vmats/${kit.name}.vmat`;
+		await blocks.prefetch(used.map(basePath));
+
+		let done = 0;
 		await forEachLimit(cosmetics.paints, 2, async ({ item, paint }) => {
 			const key = itemWeaponKey(item);
 			const kit = kits.get(paint);
@@ -431,15 +567,8 @@ export async function exportSkins(
 			}
 			if (!(await weapon(key, kit.legacy))) return;
 			if (paints[paint]) return;
-			const recipe = await blocks.read(
-				kit.composite ?? `weapons/paints/legacy/${kit.name}.vcompmat`
-			);
-			const { material, overrides } = recipe
-				? compositePaint(recipe)
-				: { material: null, overrides: materialParams({}) };
-			const base = await blocks.read(
-				material ?? `materials/models/weapons/customization/paints/vmats/${kit.name}.vmat`
-			);
+			const overrides = recipes.get(kit.name)?.overrides ?? materialParams({});
+			const base = await blocks.read(basePath(kit));
 			if (!base) {
 				log(`  no material for ${kit.name}`);
 				return;
@@ -449,51 +578,99 @@ export async function exportSkins(
 				Object.entries(params.textures).filter(([name]) => PAINT_TEXTURES.has(name))
 			);
 			for (const [name, texture] of Object.entries(picked))
-				want(texture, name === 'g_tPattern' || name === 'g_tNormal' ? PATTERN_SIZE : DETAIL_SIZE);
+				want(texture, name === 'g_tPattern' || name === 'g_tNormal' ? patternSize : DETAIL_SIZE);
 			paints[paint] = {
 				name: kit.name,
 				style: kit.style || (params.ints.F_PAINT_STYLE ?? 6) + 1,
 				legacy: kit.legacy,
 				wear: kit.wear,
-				ints: params.ints,
-				floats: params.floats,
-				vectors: params.vectors,
+				...trimParams(params),
 				textures: picked
 			};
-			log(`skins: ${kit.name} (style ${paints[paint]!.style}) for ${key}`);
+			done++;
+			if (cosmetics.paints.length < 100 || done % 100 === 0)
+				log(`skins: ${done} paint kits (${kit.name}, style ${paints[paint]!.style})`);
 		});
 
 		const pngDir = join(options.workDir, 'png');
 		const pngPath = (path: string) => join(pngDir, path.replace(/\.vtex$/, '.png'));
-		const oversized: string[] = [];
+		const resampledDir = join(options.workDir, 'resampled');
+		const cachePath = (path: string, size: number) =>
+			join(resampledDir, `${path.replaceAll('/', '__')}.${size}.cstx`);
+		await mkdir(resampledDir, { recursive: true });
+		const packedDir = join(options.workDir, 'packed');
+		const scanPath = join(options.workDir, 'scan.json');
+		const scan: Record<string, PackTexture | null> = existsSync(scanPath)
+			? JSON.parse(await readFile(scanPath, 'utf8'))
+			: {};
+		const oversized: { path: string; size: number; source: PackTexture }[] = [];
+		let scanned = 0;
 		for (const [path, size] of textures) {
-			if (!vpk.has(`${path}_c`) || existsSync(pngPath(path))) continue;
-			const parsed = parseVtex(await vpk.read(`${path}_c`));
-			if (!parsed.texture) continue;
-			const limited = limitTextureSize(parsed.texture, size);
-			if (Math.max(limited.width, limited.height) > size) oversized.push(path);
+			if (
+				!vpk.has(`${path}_c`) ||
+				existsSync(cachePath(path, size)) ||
+				existsSync(join(packedDir, `${path.replaceAll('/', '__')}.textures.${size}.json`))
+			)
+				continue;
+			const id = `${path}|${size}`;
+			if (!(id in scan)) {
+				const parsed = parseVtex(await vpk.read(`${path}_c`));
+				const limited = parsed.texture ? limitTextureSize(parsed.texture, size) : null;
+				scan[id] =
+					parsed.texture && limited && Math.max(limited.width, limited.height) > size
+						? { ...parsed.texture, mipData: [] }
+						: null;
+				if (++scanned % 200 === 0) await writeFile(scanPath, JSON.stringify(scan));
+			}
+			const source = scan[id];
+			if (source) oversized.push({ path, size, source });
 		}
-		if (oversized.length) log(`skins: decoding ${oversized.length} textures to shrink them`);
-		for (let i = 0; i < oversized.length; i += 24)
+		await writeFile(scanPath, JSON.stringify(scan));
+		if (oversized.length) log(`skins: shrinking ${oversized.length} textures`);
+		pool = new ResamplePool();
+		const workers = pool;
+		for (let i = 0; i < oversized.length; i += 24) {
+			const batch = oversized.slice(i, i + 24);
 			await run(tools.vrf, [
 				'-i',
 				vpkPath,
 				'-f',
-				oversized
-					.slice(i, i + 24)
-					.map((path) => `${path}_c`)
-					.join(','),
+				batch.map(({ path }) => `${path}_c`).join(','),
 				'-d',
 				'-o',
 				pngDir + sep
 			]).catch((error: Error) => log(`  decoding failed: ${error.message.split('\n')[0]}`));
-		pack.resampler = async (path) => (existsSync(pngPath(path)) ? readFile(pngPath(path)) : null);
+			await Promise.all(
+				batch.map(async ({ path, size, source }) => {
+					const png = pngPath(path);
+					if (!existsSync(png)) return;
+					const result = await workers
+						.resample(source, await readFile(png), size)
+						.catch(() => null);
+					if (result) await writeFile(cachePath(path, size), encodePackTexture(result));
+					await rm(png, { force: true });
+				})
+			);
+			if (oversized.length > 48)
+				log(`  ${Math.min(i + 24, oversized.length)}/${oversized.length} shrunk`);
+		}
+		pack.textureCache = packedDir;
+		await mkdir(pack.textureCache, { recursive: true });
+		pack.resampler = async (path, _source, maxSize) => {
+			const cached = cachePath(path, maxSize);
+			return existsSync(cached) ? decodePackTexture(await readFile(cached)) : null;
+		};
 
 		log(`skins: packing ${textures.size} textures`);
+		let packed = 0;
 		await forEachLimit(
 			[...textures].sort(([a], [b]) => a.localeCompare(b)),
-			4,
-			([texture, size]) => pack.addTexture(texture, [vpk], 'textures', size)
+			8,
+			async ([texture, size]) => {
+				await pack.addTexture(texture, [vpk], 'textures', size);
+				await rm(cachePath(texture, size), { force: true });
+				if (++packed % 250 === 0) log(`  ${packed}/${textures.size} textures`);
+			}
 		);
 
 		const manifest: SkinsPackManifest = {
@@ -523,6 +700,7 @@ export async function exportSkins(
 		await pack.close().catch(() => {});
 		throw error;
 	} finally {
+		await pool?.close();
 		await vpk.close();
 		if (!options.keepWork && !options.reuseWork)
 			await rm(options.workDir, { recursive: true, force: true });
