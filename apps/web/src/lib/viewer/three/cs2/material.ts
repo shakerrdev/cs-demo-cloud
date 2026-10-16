@@ -438,7 +438,7 @@ export function createCs2Material(
 	const paint = extras.paint;
 	if (paint) {
 		defines.SKIN_PAINT = paint.style;
-		const colorPattern = paint.style >= 6;
+		const colorPattern = paint.style >= 7;
 		const texture = (
 			uniform: string,
 			path: string | undefined,

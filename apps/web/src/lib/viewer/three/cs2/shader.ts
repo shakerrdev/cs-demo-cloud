@@ -532,7 +532,7 @@ void main() {
 	float wearTexel = texture(uPaintWear, (uWearTransform * vec3(vUv, 1.0)).xy).r;
 	vec3 grunge = texture(uPaintGrunge, (uGrungeTransform * vec3(vUv, 1.0)).xy).rgb;
 	vec3 paint;
-	#if SKIN_PAINT == 6 || SKIN_PAINT == 7 || SKIN_PAINT == 8 || SKIN_PAINT == 9
+	#if SKIN_PAINT >= 7
 	paint = pattern.rgb;
 	#elif SKIN_PAINT == 1 || SKIN_PAINT == 4
 	paint = uPaintColors[0];
