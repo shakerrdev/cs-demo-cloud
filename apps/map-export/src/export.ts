@@ -174,7 +174,12 @@ export class PackBuilder {
 		return name;
 	}
 
-	async addTexture(path: string, vpks: Vpk[], folder = 'textures'): Promise<PackTextureRef | null> {
+	async addTexture(
+		path: string,
+		vpks: Vpk[],
+		folder = 'textures',
+		maxSize = this.maxTextureSize
+	): Promise<PackTextureRef | null> {
 		const key = path.replace(/_c$/, '');
 		if (this.textures[key]) return this.textures[key]!;
 		if (this.missing.has(key)) return null;
@@ -193,8 +198,8 @@ export class PackBuilder {
 			return null;
 		}
 		const texture =
-			folder === 'textures' && this.maxTextureSize > 0
-				? limitTextureSize(parsed.texture, this.maxTextureSize)
+			folder === 'textures' && maxSize > 0
+				? limitTextureSize(parsed.texture, maxSize)
 				: parsed.texture;
 
 		const file = await this.addFile(this.uniqueName(folder, key), encodePackTexture(texture), true);

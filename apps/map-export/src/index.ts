@@ -2,12 +2,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { exportMap } from './export.ts';
+import { exportPlayers } from './players.ts';
 import { findCsgo } from './steam.ts';
 import { defaultToolsDir, ensureTools } from './tools.ts';
 
 const usage = `Exports CS2 maps as 3D map packs for cs-demo-cloud.
 
 Usage: node apps/map-export/src/index.ts [options] <map> [map...]
+       node apps/map-export/src/index.ts --players
 
   --game <folder>   CS2 install folder (found through Steam if left out)
   --out <folder>    Where the packs go (default: ./map-packs)
@@ -18,6 +20,7 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --max-texture-size <px>  Drop texture mips above this size (default 2048, 0 keeps all)
   --low-memory      Run Source 2 Viewer on one thread with less memory (slower, for 4 GB machines)
   --all             Every map in the game's maps folder
+  --players         Player models, animations and weapons (players.zip)
 
 Example: node apps/map-export/src/index.ts de_dust2 de_mirage`;
 
@@ -33,11 +36,12 @@ const { values, positionals } = parseArgs({
 		'max-texture-size': { type: 'string' },
 		'low-memory': { type: 'boolean', default: false },
 		all: { type: 'boolean', default: false },
+		players: { type: 'boolean', default: false },
 		help: { type: 'boolean', short: 'h', default: false }
 	}
 });
 
-if (values.help || (!positionals.length && !values.all)) {
+if (values.help || (!positionals.length && !values.all && !values.players)) {
 	console.log(usage);
 	process.exit(values.help ? 0 : 1);
 }
@@ -63,6 +67,27 @@ if (values.all) {
 }
 
 let failed = 0;
+if (values.players) {
+	const started = Date.now();
+	log('\n== players');
+	try {
+		const { pack, bytes } = await exportPlayers({
+			csgo,
+			outDir: resolve(values.out!),
+			workDir: join(resolve(values.work ?? tmpdir()), 'cs-demo-cloud-players'),
+			tools,
+			log,
+			keepWork: values['keep-work'],
+			reuseWork: values['reuse-work']
+		});
+		log(
+			`players: ${pack} (${(bytes / 1024 / 1024).toFixed(1)} MB, ${((Date.now() - started) / 1000).toFixed(0)} s)`
+		);
+	} catch (error) {
+		failed++;
+		console.error(`players failed: ${error instanceof Error ? error.message : error}`);
+	}
+}
 for (const map of maps) {
 	const started = Date.now();
 	log(`\n== ${map}`);

@@ -501,3 +501,148 @@ export function repackBuffers(gltf: Gltf, bin: Uint8Array): RepackResult {
 	gltf.buffers = [{ byteLength: result.length }];
 	return { bin: result, compacted };
 }
+
+export interface ModelGltfOptions {
+	meshes?: (name: string) => boolean;
+	animations?: (name: string) => boolean;
+	keepMeshes?: boolean;
+	skeletonRoot?: string;
+	dropSkins?: boolean;
+	textureParams: Set<string>;
+}
+
+export interface ModelResult {
+	textures: Set<string>;
+	clips: string[];
+	nodes: Record<string, { translation?: number[]; rotation?: number[] }>;
+}
+
+const MODEL_ATTRIBUTES = ['POSITION', 'NORMAL', 'TANGENT', 'TEXCOORD_0', 'JOINTS_0', 'WEIGHTS_0'];
+
+export function processModelGltf(gltf: Gltf, options: ModelGltfOptions): ModelResult {
+	const textures = new Set<string>();
+	const nodes = gltf.nodes ?? [];
+	const meshes = gltf.meshes ?? [];
+	const wanted = (index: number) => {
+		const name = meshes[index]?.name;
+		return Boolean(name) && (options.meshes?.(name!) ?? true);
+	};
+	const fallback = !meshes.some((_, index) => wanted(index));
+	const keepMesh = (index: number) => options.keepMeshes !== false && (fallback || wanted(index));
+
+	const transforms: ModelResult['nodes'] = {};
+	for (const node of nodes) {
+		if (typeof node.name === 'string')
+			transforms[node.name] = {
+				translation: node.translation as number[] | undefined,
+				rotation: node.rotation as number[] | undefined
+			};
+		if (node.mesh !== undefined && !keepMesh(node.mesh)) {
+			delete node.mesh;
+			delete node.skin;
+		}
+		if (options.dropSkins) delete node.skin;
+		delete node.extensions;
+	}
+	if (options.dropSkins) delete gltf.skins;
+
+	for (const mesh of meshes) {
+		for (const primitive of mesh.primitives) {
+			const attributes: Record<string, number> = {};
+			for (const key of MODEL_ATTRIBUTES)
+				if (
+					primitive.attributes[key] !== undefined &&
+					!(options.dropSkins && (key === 'JOINTS_0' || key === 'WEIGHTS_0'))
+				)
+					attributes[key] = primitive.attributes[key]!;
+			primitive.attributes = attributes;
+		}
+	}
+
+	gltf.materials = (gltf.materials ?? []).map((source) => {
+		const vmat = source.extras?.vmat;
+		if (vmat) {
+			vmat.TextureParams = Object.fromEntries(
+				Object.entries(vmat.TextureParams).filter(([name]) => options.textureParams.has(name))
+			);
+			for (const path of Object.values(vmat.TextureParams)) textures.add(path);
+		}
+		const material: GltfMaterial = {
+			name: source.name ?? 'default',
+			extras: { ...(vmat ? { vmat } : {}), tint: source.pbrMetallicRoughness?.baseColorFactor }
+		};
+		if (source.alphaMode) material.alphaMode = source.alphaMode;
+		if (source.alphaCutoff !== undefined) material.alphaCutoff = source.alphaCutoff;
+		if (source.doubleSided) material.doubleSided = true;
+		return material;
+	});
+
+	const skeleton = new Set<number>();
+	const rootIndex = options.skeletonRoot
+		? nodes.findIndex((node) => node.name === options.skeletonRoot)
+		: -1;
+	const walk = (index: number) => {
+		skeleton.add(index);
+		for (const child of (nodes[index]?.children as number[] | undefined) ?? []) walk(child);
+	};
+	if (rootIndex >= 0) walk(rootIndex);
+
+	const scenes = (gltf.scenes as { nodes?: number[] }[] | undefined) ?? [];
+	if (rootIndex >= 0)
+		for (const scene of scenes)
+			scene.nodes = scene.nodes?.filter(
+				(index) => nodes[index]?.mesh !== undefined || containsNode(nodes, index, rootIndex)
+			);
+
+	const animations =
+		(gltf.animations as
+			| { name?: string; channels: { target: { node?: number } }[]; samplers: unknown[] }[]
+			| undefined) ?? [];
+	const kept = animations.filter((animation) => {
+		const name = animation.name ?? '';
+		return options.animations ? options.animations(name) : false;
+	});
+	if (rootIndex >= 0)
+		for (const animation of kept) {
+			const channels = animation.channels.filter(
+				(channel) => channel.target.node !== undefined && skeleton.has(channel.target.node)
+			) as { sampler: number; target: { node?: number } }[];
+			const samplers: unknown[] = [];
+			const remap = new Map<number, number>();
+			for (const channel of channels) {
+				let index = remap.get(channel.sampler);
+				if (index === undefined) {
+					index = samplers.length;
+					samplers.push(animation.samplers[channel.sampler]);
+					remap.set(channel.sampler, index);
+				}
+				channel.sampler = index;
+			}
+			animation.channels = channels;
+			animation.samplers = samplers;
+		}
+	const seen = new Set<string>();
+	gltf.animations = kept.filter((animation) => {
+		const short = (animation.name ?? '').split('/').pop()!;
+		if (seen.has(short)) return false;
+		seen.add(short);
+		animation.name = short;
+		return true;
+	});
+	if (!(gltf.animations as unknown[]).length) delete gltf.animations;
+
+	delete gltf.textures;
+	delete gltf.images;
+	delete gltf.samplers;
+	delete gltf.extensions;
+	delete gltf.extensionsUsed;
+	delete gltf.extensionsRequired;
+	return { textures, clips: [...seen], nodes: transforms };
+}
+
+function containsNode(nodes: NonNullable<Gltf['nodes']>, index: number, target: number): boolean {
+	if (index === target) return true;
+	return ((nodes[index]?.children as number[] | undefined) ?? []).some((child) =>
+		containsNode(nodes, child, target)
+	);
+}

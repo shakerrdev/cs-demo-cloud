@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { repackBuffers, type Gltf } from './gltf.ts';
+import { processModelGltf, repackBuffers, type Gltf } from './gltf.ts';
 
 function sharedVertexGltf() {
 	const positions = new Float32Array(100 * 3).map((_, i) => i);
@@ -64,4 +64,90 @@ test('copies only the vertices each primitive of a shared buffer uses', () => {
 	assert.deepEqual(gltf.accessors[b!.attributes.POSITION!]!.max, [297, 298, 299]);
 	assert.ok(result.bin.length < 200);
 	assert.equal(result.bin.length % 4, 0);
+});
+
+test('keeps the player skeleton, chosen meshes and world clips of a model', () => {
+	const gltf: Gltf = {
+		accessors: [],
+		bufferViews: [],
+		nodes: [
+			{ name: 'model', children: [1] },
+			{ name: 'root_motion', children: [2] },
+			{ name: 'pelvis', translation: [0, 1, 0] },
+			{ name: 'weapon_skeleton', children: [4] },
+			{ name: 'weapon' },
+			{ name: 'body', mesh: 0, skin: 0 },
+			{ name: 'legacy', mesh: 1, skin: 0 }
+		],
+		meshes: [
+			{
+				name: 'm.body_hd',
+				primitives: [{ attributes: { POSITION: 0, TEXCOORD_1: 1, JOINTS_0: 2 }, material: 0 }]
+			},
+			{ name: 'm.body_legacy', primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }
+		],
+		materials: [
+			{
+				name: 'body',
+				extras: {
+					vmat: {
+						Name: 'body',
+						ShaderName: 'csgo_character.vfx',
+						IntParams: {},
+						FloatParams: {},
+						VectorParams: {},
+						TextureParams: { g_tColor: 'a.vtex', g_tBloodMask: 'b.vtex' }
+					}
+				}
+			}
+		],
+		scenes: [{ nodes: [0, 3, 5, 6] }],
+		skins: [{ joints: [1, 2] }],
+		animations: [
+			{
+				name: 'animation/anims/world/rifle/idle_rifle',
+				channels: [
+					{ sampler: 0, target: { node: 4, path: 'rotation' } },
+					{ sampler: 1, target: { node: 2, path: 'rotation' } }
+				],
+				samplers: ['weapon', 'pelvis']
+			},
+			{ name: 'animation/anims/viewmodel/idle_rifle', channels: [], samplers: [] }
+		]
+	};
+	const result = processModelGltf(gltf, {
+		skeletonRoot: 'root_motion',
+		meshes: (name) => !name.endsWith('.body_legacy'),
+		animations: (name) => name.startsWith('animation/anims/world/'),
+		textureParams: new Set(['g_tColor'])
+	});
+
+	assert.deepEqual([...result.textures], ['a.vtex']);
+	assert.deepEqual(result.clips, ['idle_rifle']);
+	assert.deepEqual(result.nodes.pelvis, { translation: [0, 1, 0], rotation: undefined });
+	assert.deepEqual(gltf.scenes, [{ nodes: [0, 5] }]);
+	assert.equal(gltf.nodes![6]!.mesh, undefined);
+	assert.deepEqual(gltf.meshes![0]!.primitives[0]!.attributes, { POSITION: 0, JOINTS_0: 2 });
+	const [animation] = gltf.animations as { channels: unknown[]; samplers: unknown[] }[];
+	assert.deepEqual(animation!.samplers, ['pelvis']);
+	assert.deepEqual(animation!.channels, [{ sampler: 0, target: { node: 2, path: 'rotation' } }]);
+});
+
+test('falls back to every mesh and can drop skins', () => {
+	const gltf: Gltf = {
+		accessors: [],
+		bufferViews: [],
+		nodes: [{ name: 'knife', mesh: 0, skin: 0 }],
+		meshes: [{ name: 'k.body_legacy', primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1 } }] }],
+		skins: [{ joints: [0] }]
+	};
+	processModelGltf(gltf, {
+		meshes: (name) => !name.endsWith('.body_legacy'),
+		dropSkins: true,
+		textureParams: new Set()
+	});
+	assert.equal(gltf.nodes![0]!.mesh, 0);
+	assert.equal(gltf.nodes![0]!.skin, undefined);
+	assert.equal(gltf.skins, undefined);
+	assert.deepEqual(gltf.meshes![0]!.primitives[0]!.attributes, { POSITION: 0 });
 });
