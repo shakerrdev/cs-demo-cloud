@@ -82,9 +82,10 @@ Death animations and the AUG can't be read by Source 2 Viewer 20.0 yet, so death
 
 Demos record each player's agent and the paint kit, pattern seed and wear of every gun and knife they hold (only real inventory items; picked-up weapons keep their owner's skin). A skins pack draws them:
 
-- **Settings → 3D maps** links the list of agents and skins your demos use; give it to the exporter: `node apps/map-export/src/index.ts --skins cosmetics.json`, or point it at your server with an API token: `--skins https://demos.example.com --token cdc_…`
-- it writes `map-packs/skins.zip` with those agent models (third person and first-person arms) and, for each paint kit, the weapon model it paints (the legacy model for older finishes), the pattern, wear and grunge textures and the kit's colours and settings; upload it like the other packs and export it again when new skins show up
-- the viewer paints the weapons itself: custom paint jobs, gunsmith, patina and airbrushed finishes use their artwork, hydrographic, spray-paint and solid finishes colour the pattern or the weapon's masks with the kit's four colours, and wear strips paint where the wear texture is thinner than the item's float, revealing the base weapon and adding grime
+- `node apps/map-export/src/index.ts --skins all` packs every skin and agent in the game (about 2,000 weapon and knife skins and 78 agents, about 1.6 GB, an hour or two the first time; it picks up where it stopped when run again with `--reuse-work`)
+- or only what your demos use: **Settings → 3D maps** links that list; give it to the exporter with `--skins cosmetics.json`, or point it at your server with an API token: `--skins https://demos.example.com --token cdc_…`. `--skin-texture-size 512` makes either pack smaller
+- it writes `map-packs/skins.zip` with the agent models (third person and first-person arms) and, for each paint kit, the weapon model it paints (the legacy model for older finishes), the pattern, wear and grunge textures and the kit's colours and settings; upload it like the other packs; the viewer only downloads the agents and skins a demo shows
+- the viewer paints the weapons itself: custom paint jobs, gunsmith and patina finishes use their artwork; hydrographic, spray-paint, anodized and airbrushed finishes (fades, dopplers) colour the pattern or the weapon's masks with the kit's four colours, and wear strips paint where the wear texture is thinner than the item's float, revealing the base weapon and adding grime
 - it's an approximation of the game's compositor: pattern seeds don't shift the pattern yet, and glitter, pearlescence and overlay effects of newer kits are left out
 - gloves aren't in the demo data, so everyone keeps their agent's default gloves
 
