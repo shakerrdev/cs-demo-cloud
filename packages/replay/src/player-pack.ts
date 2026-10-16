@@ -16,7 +16,16 @@ export interface PlayerPackManifest {
 	animations: string;
 	clips: string[];
 	weapons: Record<string, PlayerPackWeapon>;
+	sounds?: Record<string, PlayerPackSound>;
 	textures: Record<string, PackTextureRef>;
+}
+
+export interface PlayerPackSound {
+	files: string[];
+	volume: number;
+	pitch: number;
+	curve: number[];
+	loop?: boolean;
 }
 
 export interface PlayerPackWeapon {
