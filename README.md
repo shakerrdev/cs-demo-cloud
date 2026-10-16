@@ -51,7 +51,7 @@ With a map pack installed, the 3D view shows the map as it looks in CS2 instead 
 Packs are made from the game files on a PC with CS2 installed, then uploaded once:
 
 1. Install [Node.js](https://nodejs.org) 22.18 or newer and pnpm, clone this repository and run `pnpm install`
-2. Run `node apps/map-export/src/index.ts de_dust2 de_mirage` (or `--all`). It finds CS2 through Steam (or pass `--game <folder>`), and on the first run downloads [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI 20.0 and [gltfpack](https://github.com/zeux/meshoptimizer) 1.3 into a local cache
+2. Run `node apps/map-export/src/index.ts de_dust2 de_mirage` (or `--all`). It finds CS2 through Steam (or pass `--game <folder>`), and on the first run downloads [Source 2 Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat) CLI 20.1 and [gltfpack](https://github.com/zeux/meshoptimizer) 1.3 into a local cache
 3. In **Settings → 3D maps**, add the zip from `map-packs/` (admins only). Uploading a pack again replaces it
 
 Source 2 Viewer exports geometry and materials as glTF; the exporter keeps the lightmap UVs, drops tool brushes, gives every mesh only the vertices it uses, compresses the meshes with meshopt and copies textures straight out of the VPKs in their GPU formats (BC1 to BC7, no re-encoding), plus small copies of big textures and lightmaps so the viewer can show the map before the full ones arrive. Lightmaps, probes, cube maps, sky, fog and post processing come from the world and entity lumps.
