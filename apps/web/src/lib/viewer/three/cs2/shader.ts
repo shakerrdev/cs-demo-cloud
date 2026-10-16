@@ -40,13 +40,24 @@ out vec4 vPaint;
 out vec4 vBlend;
 #endif
 
+#include <skinning_pars_vertex>
+
 void main() {
-	vec4 world = modelMatrix * vec4(position, 1.0);
+	vec3 transformed = position;
+	vec3 objectNormal = normal;
+	vec3 objectTangent = tangent.xyz;
+	#include <skinbase_vertex>
+	#include <skinnormal_vertex>
+	#include <skinning_vertex>
+#ifdef USE_SKINNING
+	objectTangent = (skinMatrix * vec4(objectTangent, 0.0)).xyz;
+#endif
+	vec4 world = modelMatrix * vec4(transformed, 1.0);
 	vPosition = world.xyz;
 	vWorld = (world.xyz - uSkyOrigin) * uWorldScale;
 	mat3 normalToWorld = mat3(modelMatrix);
-	vNormal = normalize(normalToWorld * normal);
-	vTangent = normalize(normalToWorld * tangent.xyz);
+	vNormal = normalize(normalToWorld * objectNormal);
+	vTangent = normalize(normalToWorld * objectTangent);
 	vBitangent = tangent.w * cross(vNormal, vTangent);
 	vUv = (uUvTransform * vec3(uv, 1.0)).xy + uUvScroll * uTime;
 #ifdef UV2_ATTR
@@ -456,7 +467,7 @@ void main() {
 
 	vec3 normalTs = decodeNormal(normalTex.rg);
 	normalTs = normalize(mix(vec3(0.0, 0.0, 1.0), normalTs, uBumpStrength));
-	float roughness = normalTex.b;
+	float roughness = ROUGHNESS;
 
 #if DETAIL > 0
 	vec2 detailUv = (uDetailTransform * vec3(DETAIL_UV, 1.0)).xy;

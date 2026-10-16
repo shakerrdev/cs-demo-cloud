@@ -406,6 +406,8 @@ export function createCs2Material(
 	if (world.defines.FOG_CUBE && I.g_bFogEnabled !== 0) defines.FOG_CUBE = 1;
 	if (world.defines.FOG_GRADIENT && I.g_bFogEnabled !== 0) defines.FOG_GRADIENT = 1;
 
+	defines.ROUGHNESS =
+		shader === 'csgo_character' || shader === 'csgo_weapon' ? 'normalTex.a' : 'normalTex.b';
 	const material = new THREE.ShaderMaterial({
 		name: vmat.Name,
 		glslVersion: THREE.GLSL3,
