@@ -76,7 +76,7 @@ On game-look maps the effects are drawn to match: smokes are lit, noisy volumes 
 
 The pack also carries the game's sounds (about 20 MB): every gun near and far, footsteps, landings, kills and headshots, flash, HE, smoke and molotov detonations with the fire loop, grenade bounces, and the bomb's plant, beeps, defuse and explosion. They play in both views with CS2's own volume-by-distance curves, positioned around you: in 3D from the followed player's head or near where the camera looks, in 2D from the selected player. **Sound on/off** (or **M**) toggles them; at 4× and faster footsteps and bounces are left out. Footsteps always use the concrete set, since replays don't know the surface.
 
-Death animations and the AUG can't be read by Source 2 Viewer 20.0 yet, so deaths are a simple fall and the AUG isn't drawn.
+Death animations can't be read by Source 2 Viewer yet, so deaths are a simple fall.
 
 ### Skins and agents
 

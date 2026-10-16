@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { openZipFile } from '@cs-demo-cloud/shared/zip';
 
-export const VRF_VERSION = '20.0';
+export const VRF_VERSION = '20.1';
 export const GLTFPACK_VERSION = '1.3';
 
 export interface Tools {
