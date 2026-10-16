@@ -1,3 +1,5 @@
+import { availableParallelism } from 'node:os';
+import { Worker } from 'node:worker_threads';
 import { inflateSync } from 'node:zlib';
 import type { PackTexture, TextureFormat } from '@cs-demo-cloud/replay';
 
@@ -289,4 +291,62 @@ export function resampleTexture(
 		image = halve(image);
 	}
 	return { ...source, format, width, height, mips: mipData.length, mipData };
+}
+
+export class ResamplePool {
+	private workers: Worker[] = [];
+	private idle: Worker[] = [];
+	private waiting: (() => void)[] = [];
+	private jobs = new Map<
+		number,
+		{ resolve: (texture: PackTexture | null) => void; reject: (error: Error) => void }
+	>();
+	private next = 0;
+
+	constructor(size = Math.max(1, availableParallelism() - 1)) {
+		for (let i = 0; i < size; i++) {
+			const worker = new Worker(new URL('./resample-worker.ts', import.meta.url));
+			worker.on(
+				'message',
+				(message: { id: number; result?: PackTexture | null; error?: string }) => {
+					const job = this.jobs.get(message.id);
+					this.jobs.delete(message.id);
+					this.release(worker);
+					if (!job) return;
+					if (message.error) job.reject(new Error(message.error));
+					else job.resolve(message.result ?? null);
+				}
+			);
+			this.workers.push(worker);
+			this.idle.push(worker);
+		}
+	}
+
+	async resample(
+		source: PackTexture,
+		png: Uint8Array,
+		maxSize: number
+	): Promise<PackTexture | null> {
+		const worker = await this.acquire();
+		const id = this.next++;
+		return new Promise((resolve, reject) => {
+			this.jobs.set(id, { resolve, reject });
+			worker.postMessage({ id, source: { ...source, mipData: [] }, png, maxSize });
+		});
+	}
+
+	private acquire(): Promise<Worker> {
+		const worker = this.idle.pop();
+		if (worker) return Promise.resolve(worker);
+		return new Promise((resolve) => this.waiting.push(() => resolve(this.idle.pop()!)));
+	}
+
+	private release(worker: Worker) {
+		this.idle.push(worker);
+		this.waiting.shift()?.();
+	}
+
+	async close() {
+		await Promise.all(this.workers.map((worker) => worker.terminate()));
+	}
 }
