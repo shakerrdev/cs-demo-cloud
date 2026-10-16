@@ -28,11 +28,12 @@
 		version: number;
 		map: string;
 		mapPack: string | null;
+		playerPack: string | null;
 		rounds: RoundInfo[];
 		teamNames: Record<TeamKey, string>;
 	}
 
-	let { demoId, version, map, mapPack, rounds, teamNames }: Props = $props();
+	let { demoId, version, map, mapPack, playerPack, rounds, teamNames }: Props = $props();
 
 	const ROUND_SECONDS = 115;
 	const BOMB_SECONDS = 40;
@@ -229,6 +230,10 @@
 
 	$effect(() => {
 		scene3d?.setPack(map, mapPack, textureQuality);
+	});
+
+	$effect(() => {
+		scene3d?.setPlayerPack(playerPack, textureQuality);
 	});
 
 	$effect(() => {

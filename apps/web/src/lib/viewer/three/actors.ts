@@ -173,6 +173,7 @@ interface PlayerActor {
 	body: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
 	ghost: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
 	head: THREE.Group;
+	nose: THREE.Mesh;
 	aim: THREE.Line;
 	marker: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
 	side: Side;
@@ -210,6 +211,7 @@ export class Actors {
 	private matrix = new THREE.Matrix4();
 	private vector = new THREE.Vector3();
 	private vector2 = new THREE.Vector3();
+	private capsules = true;
 
 	constructor() {
 		this.bodyGeometry.rotateX(Math.PI / 2);
@@ -317,6 +319,10 @@ export class Actors {
 		});
 	}
 
+	setCapsules(visible: boolean) {
+		this.capsules = visible;
+	}
+
 	bodies(): THREE.Object3D[] {
 		return this.players.filter((actor) => actor.group.visible).map((actor) => actor.body);
 	}
@@ -368,7 +374,7 @@ export class Actors {
 		group.add(body, ghost, head, marker);
 		group.visible = false;
 		this.root.add(group);
-		return { group, body, ghost, head, aim, marker, side: 'CT' };
+		return { group, body, ghost, head, nose, aim, marker, side: 'CT' };
 	}
 
 	private updatePlayers(
@@ -392,6 +398,9 @@ export class Actors {
 			actor.ghost.scale.set(1, 1, crouch);
 			actor.head.position.set(0, 0, eyeHeight(player));
 			actor.head.rotation.set(0, player.pitch * DEG, 0);
+			actor.body.visible = this.capsules;
+			actor.ghost.visible = this.capsules;
+			actor.nose.visible = this.capsules;
 			actor.aim.visible = i === focus;
 			actor.marker.visible = i === focus;
 			actor.body.material.emissive.setScalar(player.blind * 0.8);
@@ -400,7 +409,7 @@ export class Actors {
 
 	private updateDeaths(kills: ReplayKill[], players: ReplayPlayer[], tick: number) {
 		let count = 0;
-		for (const kill of kills) {
+		for (const kill of this.capsules ? kills : []) {
 			if (kill.tick > tick || count >= this.deaths.instanceMatrix.count) continue;
 			const victim = players[kill.victim];
 			if (!victim) continue;

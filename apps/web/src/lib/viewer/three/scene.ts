@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { FLAG_PRESENT, type MapInfo, type MapMesh, type RoundReplay } from '@cs-demo-cloud/replay';
 import { playerStates, type PlayerState } from '../frame.ts';
-import { Actors, aimDirection, eyeHeight } from './actors.ts';
+import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
 import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
 import type { MapPack, PackProgress, TextureQuality } from './cs2/pack.ts';
+import type { PlayerModels } from './cs2/players.ts';
 
 export type { TextureQuality };
 
@@ -63,6 +64,8 @@ export class ReplayScene {
 	private detach: () => void;
 	private pack: MapPack | null = null;
 	private packKey = '';
+	private models: PlayerModels | null = null;
+	private modelsKey = '';
 	private started = performance.now();
 
 	constructor(canvas: HTMLCanvasElement, overlay: HTMLCanvasElement) {
@@ -199,6 +202,7 @@ export class ReplayScene {
 				);
 				this.scene.add(pack.main);
 				if (this.mapObject) this.mapObject.visible = false;
+				this.models?.setShading(pack.characterShading);
 				this.dirty = true;
 			})
 			.catch((error: Error) => {
@@ -208,7 +212,43 @@ export class ReplayScene {
 			});
 	}
 
+	setPlayerPack(version: string | null, quality: TextureQuality = 'auto') {
+		const key = version ? `${version}@${quality}` : '';
+		if (key === this.modelsKey) return;
+		this.modelsKey = key;
+		this.clearModels();
+		if (!version) return;
+		import('./cs2/players.ts')
+			.then(async ({ PlayerModels, PlayerPack }) => {
+				const pack = await PlayerPack.load(this.renderer, version, quality);
+				if (this.modelsKey !== key) {
+					pack.dispose();
+					return;
+				}
+				pack.onChange = this.markDirty;
+				const models = new PlayerModels(pack);
+				this.models = models;
+				models.setShading(this.pack?.characterShading ?? null);
+				this.scene.add(models.root);
+				this.round = -1;
+				this.dirty = true;
+			})
+			.catch((error: Error) => {
+				if (this.modelsKey === key) console.warn(error);
+			});
+	}
+
+	private clearModels() {
+		if (!this.models) return;
+		this.scene.remove(this.models.root);
+		this.models.dispose();
+		this.models = null;
+		this.actors.setCapsules(true);
+		this.dirty = true;
+	}
+
 	private clearPack() {
+		this.models?.setShading(null);
 		if (!this.pack) return;
 		this.scene.remove(this.pack.main);
 		this.pack.dispose();
@@ -227,6 +267,10 @@ export class ReplayScene {
 		if (replay.meta.round !== this.round) {
 			this.round = replay.meta.round;
 			this.actors.setPlayers(replay.meta.players);
+			this.models?.setPlayers(
+				replay.meta.players.map((player) => player.side),
+				sideColors
+			);
 			this.updateHeightRange(replay);
 			this.dirty = true;
 		}
@@ -253,7 +297,10 @@ export class ReplayScene {
 		const cutZ = roofs ? 1e9 : this.cutHeight(focused) + ROOF_CUT;
 		this.mapMaterial.uniforms.uCutZ!.value = cutZ;
 		this.pack?.setCutZ(cutZ);
+		const models = this.models?.active ? this.models : null;
+		this.actors.setCapsules(!models);
 		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
+		this.models?.update(replay, tick, this.players, this.pov, true);
 		if (this.pack) this.renderPack(this.pack);
 		else this.renderer.render(this.scene, this.camera);
 		this.drawOverlay(focus);
@@ -282,6 +329,8 @@ export class ReplayScene {
 
 	dispose() {
 		this.packKey = '';
+		this.modelsKey = '';
+		this.clearModels();
 		this.clearPack();
 		this.detach();
 		this.controls.removeEventListener('change', this.markDirty);
@@ -299,7 +348,7 @@ export class ReplayScene {
 	};
 
 	private sizeOf = (player: PlayerState): number => {
-		if (this.mode === 'pov') return 1;
+		if (this.mode === 'pov' || this.models?.active) return 1;
 		const distance = this.projected
 			.set(player.x, player.y, player.z)
 			.distanceTo(this.camera.position);

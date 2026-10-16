@@ -131,7 +131,8 @@ export class PostProcess {
 		this.target = new THREE.WebGLRenderTarget(1, 1, {
 			type: THREE.HalfFloatType,
 			samples: 4,
-			depthBuffer: true
+			depthBuffer: true,
+			stencilBuffer: true
 		});
 		this.material = new THREE.ShaderMaterial({
 			glslVersion: THREE.GLSL3,

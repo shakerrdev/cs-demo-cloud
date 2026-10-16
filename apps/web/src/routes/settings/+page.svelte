@@ -168,14 +168,14 @@
 	<section class="panel">
 		<h2>3D maps</h2>
 		<p class="hint">
-			Maps with textures, lighting and sky for the 3D view. Make a pack on a PC with CS2 using the
-			map exporter (see the README), then add the zip here.
+			Maps with textures, lighting and sky, and player models for the 3D view. Make the packs on a
+			PC with CS2 using the map exporter (see the README), then add the zips here.
 		</p>
 		{#if data.mapPacks.length}
 			<ul class="list">
 				{#each data.mapPacks as pack (pack.map)}
 					<li>
-						<span>{pack.map}</span>
+						<span>{pack.map === 'players' ? 'Player models' : pack.map}</span>
 						<span class="muted"
 							>{formatBytes(pack.bytes)} · game {pack.build ?? 'unknown'} · exported {formatDate(
 								new Date(pack.exportedAt)
@@ -204,7 +204,7 @@
 				type="button"
 				class="primary"
 				disabled={!!packUpload}
-				onclick={() => packInput?.click()}>Add map pack</button
+				onclick={() => packInput?.click()}>Add pack</button
 			>
 			{#if packUpload}
 				<span class="muted" role="status"

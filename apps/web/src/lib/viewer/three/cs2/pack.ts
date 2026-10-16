@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { MapPackManifest, PackTextureRef, PackWorld } from '@cs-demo-cloud/replay';
-import { createCs2Material, type MaterialExtras } from './material.ts';
+import { createCs2Material, type MaterialExtras, type WorldShading } from './material.ts';
 import { PostProcess, createSkyMesh } from './post.ts';
 import {
 	createTexture,
@@ -485,6 +485,10 @@ export class MapPack {
 			cam.updateProjectionMatrix();
 			cam.updateMatrixWorld(true);
 		}
+	}
+
+	get characterShading(): WorldShading | null {
+		return this.worlds.find((loaded) => loaded.world.kind === 'world')?.setup.shading ?? null;
 	}
 
 	setCutZ(z: number) {

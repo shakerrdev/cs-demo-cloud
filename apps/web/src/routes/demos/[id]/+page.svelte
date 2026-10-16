@@ -66,6 +66,7 @@
 		version={match.parsedAt.getTime()}
 		map={match.map}
 		mapPack={data.mapPack}
+		playerPack={data.playerPack}
 		{rounds}
 		{teamNames}
 	/>
