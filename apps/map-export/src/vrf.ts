@@ -33,6 +33,20 @@ export function run(
 	});
 }
 
+const DATA_MARKER = '--- Data for block "DATA" ---';
+
+export function splitDataBlocks(output: string): Map<string, string> {
+	const blocks = new Map<string, string>();
+	const headers = [...output.matchAll(/^\[\d+\/\d+\] (.+?)\s*$/gm)];
+	headers.forEach((header, i) => {
+		const end = headers[i + 1]?.index ?? output.length;
+		const section = output.slice(header.index!, end);
+		const start = section.indexOf(DATA_MARKER);
+		if (start >= 0) blocks.set(header[1]!, section.slice(start + DATA_MARKER.length).trim());
+	});
+	return blocks;
+}
+
 export class Vrf {
 	private cli: string;
 	private gameinfo: string;
@@ -44,10 +58,22 @@ export class Vrf {
 
 	async dataBlock(vpk: string, path: string): Promise<Kv3Value> {
 		const output = await run(this.cli, ['-i', vpk, '-f', path, '-b', 'DATA']);
-		const marker = '--- Data for block "DATA" ---';
-		const start = output.indexOf(marker);
+		const start = output.indexOf(DATA_MARKER);
 		if (start < 0) throw new Error(`No DATA block printed for ${path}`);
-		return parseKv3(output.slice(start + marker.length).trim());
+		return parseKv3(output.slice(start + DATA_MARKER.length).trim());
+	}
+
+	async dataBlocks(vpk: string, paths: string[]): Promise<Map<string, Kv3Value>> {
+		const output = await run(this.cli, ['-i', vpk, '-f', paths.join(','), '-b', 'DATA'], {
+			maxOutput: 512 * 1024 * 1024
+		});
+		const parsed = new Map<string, Kv3Value>();
+		for (const [path, text] of splitDataBlocks(output)) {
+			try {
+				parsed.set(path, parseKv3(text));
+			} catch {}
+		}
+		return parsed;
 	}
 
 	async decompile(vpk: string, filter: string, outDir: string, extensions?: string) {
