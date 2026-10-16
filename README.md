@@ -62,6 +62,17 @@ The viewer's **Textures** menu picks how much of that to use per device: auto (h
 
 The browser needs S3TC and BPTC texture compression (any desktop GPU); phones without it keep the simple view.
 
+### Player models
+
+With a player pack installed as well, players in game-look maps are CS2's agents (SAS for CT, Phoenix for T) instead of capsules, holding the weapon they have out:
+
+- `node apps/map-export/src/index.ts --players` writes `map-packs/players.zip` (about 110 MB), uploaded in **Settings → 3D maps** like a map
+- it holds both agents, the world-model animations (idle, walk, run and crouch in eight directions for rifles, pistols and knives, jumps, defusing, planting, weapon poses and shooting) and every weapon model, with textures capped at 1024 px (weapons 512 px)
+- the viewer blends the clips from each player's speed, direction and stance, with the walk and run cycles following the distance covered so feet don't slide; weapon poses and recoil are layered on top, the upper body turns to the aim pitch, and the dead fall over where they died
+- players behind walls still show through faintly in their team colour
+
+Death animations and the AUG can't be read by Source 2 Viewer 20.0 yet, so deaths are a simple fall and the AUG isn't drawn.
+
 ## Demo sources
 
 Upload is the primary way in and always works. Auto-fetch and import helpers build on top of it.
