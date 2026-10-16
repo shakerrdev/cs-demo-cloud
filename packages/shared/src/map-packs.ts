@@ -6,6 +6,8 @@ import { openZipFile } from './zip.ts';
 import type { Storage } from './storage.ts';
 
 const MANIFEST = 'map.json';
+const PLAYERS_MANIFEST = 'players.json';
+const PLAYERS_VERSION = 1;
 const INFO = 'installed.json';
 const PACK_VERSION = 1;
 const MAP_NAME = /^[a-z0-9_]{1,64}$/;
@@ -22,6 +24,8 @@ export interface InstalledMapPack {
 }
 
 export class MapPackError extends Error {}
+
+export const PLAYER_PACK = 'players';
 
 export function isMapName(value: string): boolean {
 	return MAP_NAME.test(value);
@@ -85,6 +89,16 @@ export async function removeMapPack(storage: Storage, map: string): Promise<bool
 	return true;
 }
 
+interface PlayersManifestShape {
+	version?: unknown;
+	exportedAt?: unknown;
+	build?: unknown;
+	characters?: Record<string, unknown>;
+	animations?: unknown;
+	weapons?: Record<string, { model?: unknown }>;
+	textures?: Record<string, { file?: unknown; low?: { file?: unknown } }>;
+}
+
 interface ManifestShape {
 	version?: unknown;
 	map?: unknown;
@@ -105,23 +119,53 @@ export async function installMapPack(storage: Storage, zipPath: string): Promise
 	const root = mapPacksDir(storage);
 	const incoming = join(root, `.incoming-${randomUUID()}`);
 	try {
+		const playersEntry = zip.entries.get(PLAYERS_MANIFEST);
 		const manifestEntry = zip.entries.get(MANIFEST);
-		if (!manifestEntry) throw new MapPackError('The zip has no map.json, so it is not a map pack');
-		const manifest = JSON.parse(
-			new TextDecoder().decode(await zip.read(manifestEntry))
-		) as ManifestShape;
-		if (manifest.version !== PACK_VERSION)
-			throw new MapPackError(
-				`Unsupported map pack version ${String(manifest.version)}; export it again`
-			);
-		if (typeof manifest.map !== 'string' || !isMapName(manifest.map))
-			throw new MapPackError('The pack has no valid map name');
-		if (!Array.isArray(manifest.worlds) || !manifest.worlds.length)
-			throw new MapPackError('The pack has no worlds');
+		let name: string;
+		let manifest: { exportedAt?: unknown; build?: unknown };
+		let models: unknown[];
+		let textures: PlayersManifestShape['textures'];
+		if (playersEntry) {
+			const players = JSON.parse(
+				new TextDecoder().decode(await zip.read(playersEntry))
+			) as PlayersManifestShape;
+			if (players.version !== PLAYERS_VERSION)
+				throw new MapPackError(
+					`Unsupported player pack version ${String(players.version)}; export it again`
+				);
+			if (!players.characters || !players.animations)
+				throw new MapPackError('The player pack has no characters or animations');
+			name = PLAYER_PACK;
+			manifest = players;
+			models = [
+				...Object.values(players.characters),
+				players.animations,
+				...Object.values(players.weapons ?? {}).map((weapon) => weapon.model)
+			];
+			textures = players.textures;
+		} else {
+			if (!manifestEntry)
+				throw new MapPackError('The zip has no map.json, so it is not a map pack');
+			const map = JSON.parse(
+				new TextDecoder().decode(await zip.read(manifestEntry))
+			) as ManifestShape;
+			if (map.version !== PACK_VERSION)
+				throw new MapPackError(
+					`Unsupported map pack version ${String(map.version)}; export it again`
+				);
+			if (typeof map.map !== 'string' || !isMapName(map.map) || map.map === PLAYER_PACK)
+				throw new MapPackError('The pack has no valid map name');
+			if (!Array.isArray(map.worlds) || !map.worlds.length)
+				throw new MapPackError('The pack has no worlds');
+			name = map.map;
+			manifest = map;
+			models = map.worlds.map((world) => world.model);
+			textures = map.textures;
+		}
 
 		const referenced = [
-			...manifest.worlds.map((world) => world.model),
-			...Object.values(manifest.textures ?? {}).flatMap((texture) =>
+			...models,
+			...Object.values(textures ?? {}).flatMap((texture) =>
 				texture.low ? [texture.file, texture.low.file] : [texture.file]
 			)
 		];
@@ -143,7 +187,7 @@ export async function installMapPack(storage: Storage, zipPath: string): Promise
 		const installedAt = new Date().toISOString();
 		const exportedAt = typeof manifest.exportedAt === 'string' ? manifest.exportedAt : installedAt;
 		const info: InstalledMapPack = {
-			map: manifest.map,
+			map: name,
 			version: versionOf(exportedAt, installedAt),
 			exportedAt,
 			build: typeof manifest.build === 'string' ? manifest.build : null,
@@ -153,7 +197,7 @@ export async function installMapPack(storage: Storage, zipPath: string): Promise
 		};
 		await writeFile(join(incoming, INFO), JSON.stringify(info));
 
-		const target = mapPackDir(storage, manifest.map);
+		const target = mapPackDir(storage, name);
 		const old = join(root, `.replaced-${randomUUID()}`);
 		const hadOld = existsSync(target);
 		if (hadOld) await rename(target, old);
