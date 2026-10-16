@@ -8,6 +8,7 @@ import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTextur
 import type { MapPack, PackProgress, TextureQuality } from './cs2/pack.ts';
 import type { GameEffects } from './cs2/effects.ts';
 import type { PlayerModels } from './cs2/players.ts';
+import type { Viewmodel } from './cs2/viewmodel.ts';
 
 export type { TextureQuality };
 
@@ -242,6 +243,7 @@ export class ReplayScene {
 				pack.onChange = this.markDirty;
 				const models = new PlayerModels(pack);
 				this.models = models;
+				if (models.viewmodel) models.viewmodel.onChange = this.markDirty;
 				models.setShading(this.pack?.characterShading ?? null);
 				this.scene.add(models.root);
 				this.round = -1;
@@ -343,6 +345,16 @@ export class ReplayScene {
 		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
 		this.models?.update(replay, tick, this.players, this.pov, true);
 		if (this.effects) this.models?.updateProps(replay, tick);
+		this.camera.updateMatrixWorld();
+		const viewmodel =
+			this.pov !== null
+				? (this.models?.updateViewmodel(
+						replay,
+						tick,
+						this.players[this.pov] ?? null,
+						this.camera
+					) ?? null)
+				: null;
 		this.effects?.update(
 			replay,
 			tick,
@@ -360,12 +372,12 @@ export class ReplayScene {
 			},
 			(performance.now() - this.started) / 1000
 		);
-		if (this.pack) this.renderPack(this.pack);
+		if (this.pack) this.renderPack(this.pack, viewmodel);
 		else this.renderer.render(this.scene, this.camera);
 		this.drawOverlay(focus);
 	}
 
-	private renderPack(pack: MapPack) {
+	private renderPack(pack: MapPack, viewmodel: Viewmodel | null) {
 		const renderer = this.renderer;
 		this.camera.updateMatrixWorld();
 		pack.update(this.camera, (performance.now() - this.started) / 1000);
@@ -380,6 +392,10 @@ export class ReplayScene {
 			renderer.clearDepth();
 		}
 		renderer.render(this.scene, this.camera);
+		if (viewmodel) {
+			renderer.clearDepth();
+			renderer.render(viewmodel.scene, viewmodel.camera);
+		}
 		pack.post.render(renderer);
 		renderer.autoClear = true;
 		renderer.setClearColor(background as THREE.Color);

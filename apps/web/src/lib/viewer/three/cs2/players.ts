@@ -24,13 +24,14 @@ import {
 	type TextureSupport
 } from './textures.ts';
 import type { TextureQuality } from './pack.ts';
+import { Viewmodel } from './viewmodel.ts';
 
 const BASE = '/maps/3d/players';
 const CONCURRENT_DOWNLOADS = 4;
 const DEG = Math.PI / 180;
 
 const INCH = 1 / 0.0254;
-const GLTF_TO_SOURCE = new THREE.Matrix4().set(
+export const GLTF_TO_SOURCE = new THREE.Matrix4().set(
 	0,
 	0,
 	INCH,
@@ -62,13 +63,14 @@ const ADDITIVE_SKIP = new Set(['root_motion', 'pelvis', 'wpnPivot', 'wpn']);
 type LocomotionClass = 'rifle' | 'pistol' | 'knife';
 
 interface TextureJob {
+	path: string;
 	file: string;
 	srgb: boolean;
 	targets: THREE.IUniform[];
 	texture?: THREE.Texture;
 }
 
-interface LoadedWeapon {
+export interface LoadedWeapon {
 	scene: THREE.Object3D;
 	offset: THREE.Matrix4;
 }
@@ -76,6 +78,10 @@ interface LoadedWeapon {
 interface Template {
 	scene: THREE.Object3D;
 	materials: Map<THREE.Mesh, MaterialExtras>;
+}
+
+export function isFirstPerson(mesh: THREE.Object3D): boolean {
+	return (mesh.userData.extras as { part?: string } | undefined)?.part === 'firstperson';
 }
 
 function boneOf(track: THREE.KeyframeTrack): string {
@@ -104,6 +110,7 @@ export class PlayerPack {
 	private abort = new AbortController();
 	private materials = new Map<string, THREE.ShaderMaterial>();
 	private shading: WorldShading | null = null;
+	private viewmodelClips: Promise<Map<string, THREE.AnimationClip>> | null = null;
 	onChange: (() => void) | null = null;
 
 	private constructor(
@@ -244,6 +251,44 @@ export class PlayerPack {
 		return material;
 	}
 
+	get hasViewmodel(): boolean {
+		return Boolean(this.manifest.viewmodel?.animations.length);
+	}
+
+	loadViewmodel(): Promise<Map<string, THREE.AnimationClip>> {
+		if (!this.viewmodelClips) {
+			const files = this.manifest.viewmodel?.animations ?? [];
+			this.viewmodelClips = Promise.all(
+				files.map(async (file) => {
+					const response = await fetch(`${BASE}/${file}?v=${this.version}`, {
+						signal: this.abort.signal
+					});
+					if (!response.ok) return [];
+					const loader = new GLTFLoader();
+					loader.setMeshoptDecoder(MeshoptDecoder);
+					const gltf = await loader.parseAsync(await response.arrayBuffer(), '');
+					return gltf.animations;
+				})
+			)
+				.then((sets) => {
+					const nodes = this.nodeNames('CT');
+					const clips = new Map<string, THREE.AnimationClip>();
+					for (const clip of sets.flat())
+						clips.set(
+							clip.name,
+							new THREE.AnimationClip(
+								clip.name,
+								clip.duration,
+								clip.tracks.filter((track) => nodes.has(boneOf(track)))
+							)
+						);
+					return clips;
+				})
+				.catch(() => new Map());
+		}
+		return this.viewmodelClips;
+	}
+
 	createModel(side: Side): { root: THREE.Object3D; meshes: THREE.SkinnedMesh[] } {
 		const template = this.templates[side];
 		const root = cloneSkinned(template.scene);
@@ -281,8 +326,10 @@ export class PlayerPack {
 						gltf.scene.traverse((object) => {
 							const mesh = object as THREE.Mesh;
 							if (!mesh.isMesh) return;
-							mesh.userData.extras = (mesh.material as THREE.Material).userData;
+							const extras = (mesh.material as THREE.Material).userData as MaterialExtras;
+							mesh.userData.extras = extras;
 							mesh.frustumCulled = false;
+							if (extras.vmat?.Name.includes('/sticker_gaps')) mesh.visible = false;
 						});
 						const offset = new THREE.Matrix4()
 							.compose(
@@ -299,6 +346,13 @@ export class PlayerPack {
 		return promise;
 	}
 
+	promote(extras: MaterialExtras) {
+		const paths = new Set(Object.values(extras.vmat?.TextureParams ?? {}));
+		const urgent = this.queue.filter((job) => paths.has(job.path));
+		if (!urgent.length) return;
+		this.queue = [...urgent, ...this.queue.filter((job) => !paths.has(job.path))];
+	}
+
 	private requestTexture(path: string, srgb: boolean, target: THREE.IUniform) {
 		const ref = this.manifest.textures[path];
 		if (!ref || !supportsFormat(this.support, ref.format)) return;
@@ -306,7 +360,7 @@ export class PlayerPack {
 		const key = `${file}|${srgb}`;
 		let job = this.jobs.get(key);
 		if (!job) {
-			job = { file, srgb, targets: [] };
+			job = { path, file, srgb, targets: [] };
 			this.jobs.set(key, job);
 			this.queue.push(job);
 			this.pump();
@@ -385,7 +439,11 @@ class PlayerModel {
 		this.side = side;
 		const { root, meshes } = pack.createModel(side);
 		this.model = root;
-		this.meshes = meshes;
+		this.meshes = meshes.filter((mesh) => {
+			const firstPerson = isFirstPerson(mesh);
+			if (firstPerson) mesh.visible = false;
+			return !firstPerson;
+		});
 		this.model.matrixAutoUpdate = false;
 		this.model.matrix.copy(GLTF_TO_SOURCE);
 		this.root.add(this.model);
@@ -401,7 +459,7 @@ class PlayerModel {
 			stencilRef: 1,
 			stencilFunc: THREE.NotEqualStencilFunc
 		});
-		for (const mesh of meshes) {
+		for (const mesh of this.meshes) {
 			const ghost = new THREE.SkinnedMesh(mesh.geometry, this.ghostMaterial);
 			ghost.bind(mesh.skeleton, mesh.bindMatrix);
 			ghost.frustumCulled = false;
@@ -700,6 +758,7 @@ class PlayerModel {
 
 export class PlayerModels {
 	readonly root = new THREE.Group();
+	readonly viewmodel: Viewmodel | null;
 	private pack: PlayerPack;
 	private models: PlayerModel[] = [];
 	private props: { root: THREE.Group; slot: THREE.Group; key: string | null }[] = [];
@@ -707,12 +766,24 @@ export class PlayerModels {
 
 	constructor(pack: PlayerPack) {
 		this.pack = pack;
+		this.viewmodel = pack.hasViewmodel ? new Viewmodel(pack) : null;
 	}
 
 	setShading(shading: WorldShading | null) {
 		this.shading = shading;
 		this.pack.setShading(shading);
 		for (const model of this.models) model.setShading(shading);
+		this.viewmodel?.setShading();
+	}
+
+	updateViewmodel(
+		replay: RoundReplay,
+		tick: number,
+		player: PlayerState | null,
+		camera: THREE.PerspectiveCamera
+	): Viewmodel | null {
+		if (!this.active || !this.viewmodel) return null;
+		return this.viewmodel.update(replay, tick, player, camera) ? this.viewmodel : null;
 	}
 
 	get active(): boolean {
@@ -805,6 +876,7 @@ export class PlayerModels {
 
 	dispose() {
 		for (const model of this.models) model.dispose();
+		this.viewmodel?.dispose();
 		this.pack.dispose();
 	}
 }
