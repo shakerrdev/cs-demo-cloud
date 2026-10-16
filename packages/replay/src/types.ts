@@ -89,6 +89,8 @@ export interface RoundMeta {
 	weapons: string[];
 	kills: ReplayKill[];
 	shots: number[];
+	swings?: number[];
+	reloads?: number[];
 	grenades: ReplayGrenade[];
 	effects: ReplayEffect[];
 	bomb: ReplayBombEvent[];

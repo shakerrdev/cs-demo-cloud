@@ -22,6 +22,7 @@ export const eventNames = [
 	'player_death',
 	'player_blind',
 	'weapon_fire',
+	'weapon_reload',
 	'bomb_pickup',
 	'bomb_dropped',
 	'bomb_beginplant',

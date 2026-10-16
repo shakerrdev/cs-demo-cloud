@@ -321,10 +321,15 @@ export function analyzeDemo(
 			});
 
 		const shots: number[] = [];
+		const swings: number[] = [];
+		const reloads: number[] = [];
 		for (const e of roundEvents) {
-			if (e.event_name !== 'weapon_fire' || !isGun(str(e.weapon))) continue;
+			if (e.event_name !== 'weapon_fire' && e.event_name !== 'weapon_reload') continue;
 			const p = indexOf(r, e.user_steamid, e.user_name);
-			if (p >= 0) shots.push(e.tick, p);
+			if (p < 0) continue;
+			if (e.event_name === 'weapon_reload') reloads.push(e.tick, p);
+			else if (isGun(str(e.weapon))) shots.push(e.tick, p);
+			else if (isKnife(str(e.weapon))) swings.push(e.tick, p);
 		}
 
 		const blinds = roundEvents
@@ -369,6 +374,8 @@ export function analyzeDemo(
 				weapons: [...weaponTables[r]!.keys()],
 				kills,
 				shots,
+				swings,
+				reloads,
 				grenades: grenadesByRound.paths[r] ?? [],
 				effects: buildEffects(
 					roundEvents,
@@ -422,6 +429,10 @@ export function analyzeDemo(
 		kills: killRows,
 		replays
 	};
+}
+
+function isKnife(weapon: string | null): boolean {
+	return weapon !== null && /knife|bayonet/.test(weapon);
 }
 
 function isGun(weapon: string | null): boolean {
