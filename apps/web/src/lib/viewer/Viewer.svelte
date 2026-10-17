@@ -204,6 +204,14 @@
 	}
 
 	function listener(current: RoundReplay): Listener | null {
+		const heard = earOf(current);
+		if (!heard) return null;
+		const side = focus !== null ? (current.meta.players[focus]?.side ?? null) : null;
+		const player = view === '3d' && cameraMode === 'pov' ? focus : null;
+		return { ...heard, side, player };
+	}
+
+	function earOf(current: RoundReplay): Listener | null {
 		if (view === '3d') return scene3d?.listener(focus) ?? null;
 		const players = playerStates(current, tick).filter((p) => p.alive && p.present);
 		const focused = focus !== null ? players.find((p) => p.index === focus) : undefined;

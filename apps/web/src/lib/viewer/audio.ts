@@ -1,9 +1,11 @@
 import {
 	FLAG_ALIVE,
+	FLAG_SCOPED,
 	weaponKey,
 	type PlayerPackManifest,
 	type PlayerPackSound,
-	type RoundReplay
+	type RoundReplay,
+	type Side
 } from '@cs-demo-cloud/replay';
 
 const BASE = '/maps/3d/players';
@@ -12,12 +14,20 @@ const RUNNING = 150;
 const LANDING = -260;
 const MAX_VOICES = 28;
 const MAX_GAP_SECONDS = 0.75;
+const ROUND_SECONDS = 115;
+const BOMB_SECONDS = 40;
+const MUSIC_VOLUME = 0.45;
+const RADIO_VOLUME = 0.9;
+const SNIPERS = new Set(['awp', 'ssg08', 'scar20', 'g3sg1']);
+const SCOPED_RIFLES = new Set(['aug', 'sg556']);
 export const EAR_HEIGHT = 64;
 
 export interface Listener {
 	position: [number, number, number];
 	forward: [number, number, number];
 	up: [number, number, number];
+	player?: number | null;
+	side?: Side | null;
 }
 
 interface Cue {
@@ -27,6 +37,8 @@ interface Cue {
 	y: number;
 	z: number;
 	priority: number;
+	owner?: number;
+	global?: 'music' | 'radio';
 }
 
 interface Voice {
@@ -79,6 +91,49 @@ export function soundCues(replay: RoundReplay): Cue[] {
 	const cues: Cue[] = [];
 	const add = (tick: number, key: string, x: number, y: number, z: number, priority = 1) =>
 		cues.push({ tick, key, x, y, z, priority });
+	const own = (tick: number, key: string, owner: number) =>
+		cues.push({ tick, key, x: 0, y: 0, z: 0, priority: 2, owner });
+	const announce = (tick: number, key: string, global: 'music' | 'radio') =>
+		cues.push({ tick, key, x: 0, y: 0, z: 0, priority: 4, global });
+
+	const hurts = meta.hurts ?? [];
+	for (let i = 0; i + 5 < hurts.length; i += 6) {
+		const [tick, victim, , , armor, head] = hurts.slice(i, i + 6) as number[];
+		const f = frameIndex(replay, victim!, tick!);
+		const key = head
+			? armor! > 0
+				? 'hit:helmet'
+				: 'hit:head'
+			: armor! > 0
+				? 'hit:kevlar'
+				: 'hit:body';
+		add(tick!, key, columns.x[f]!, columns.y[f]!, columns.z[f]! + (head ? 62 : 44), 2);
+	}
+
+	const live = meta.freezeEndTick ?? meta.startTick;
+	const plant = meta.bomb.find((event) => event.type === 'plant');
+	const finish = meta.bomb.find((event) => event.type === 'defuse' || event.type === 'explode');
+	announce(meta.startTick, 'music:start', 'music');
+	if (meta.freezeEndTick) announce(meta.freezeEndTick, 'music:action', 'music');
+	const roundTen = live + (ROUND_SECONDS - 10) * meta.tickRate;
+	if (!plant || plant.tick > roundTen) announce(roundTen, 'music:round10', 'music');
+	if (plant) {
+		announce(plant.tick, 'radio:bombpl', 'radio');
+		announce(plant.tick, 'music:bomb', 'music');
+		const bombTen = plant.tick + (BOMB_SECONDS - 10) * meta.tickRate;
+		if (!finish || finish.tick > bombTen) announce(bombTen, 'music:bomb10', 'music');
+	}
+	if (finish?.type === 'defuse') announce(finish.tick, 'radio:bombdef', 'radio');
+	if (meta.endTick) {
+		const radio =
+			meta.winner === 'CT'
+				? 'radio:ctwin'
+				: meta.winner === 'T'
+					? 'radio:terwin'
+					: 'radio:rounddraw';
+		announce(meta.endTick + (finish?.type === 'defuse' ? meta.tickRate : 0), radio, 'radio');
+		announce(meta.endTick, 'music:end', 'music');
+	}
 
 	for (let i = 0; i < meta.shots.length; i += 2) {
 		const tick = meta.shots[i]!;
@@ -144,6 +199,20 @@ export function soundCues(replay: RoundReplay): Cue[] {
 
 	const n = meta.frameCount;
 	const step = meta.tickStep;
+	meta.players.forEach((_, p) => {
+		for (let i = 1; i < n; i++) {
+			const a = p * n + i - 1;
+			const b = a + 1;
+			if (!(columns.flags[b]! & FLAG_ALIVE)) continue;
+			const tick = meta.startTick + i * step;
+			const key = weaponKey(meta.weapons[columns.weapon[b]!] ?? '');
+			if (columns.weapon[b] !== columns.weapon[a] && key) own(tick, `draw:${key}`, p);
+			if (columns.flags[b]! & FLAG_SCOPED && !(columns.flags[a]! & FLAG_SCOPED) && key) {
+				if (SNIPERS.has(key)) own(tick, 'zoom:sniper', p);
+				else if (SCOPED_RIFLES.has(key)) own(tick, 'zoom:rifle', p);
+			}
+		}
+	});
 	meta.players.forEach((player, p) => {
 		let travelled = 0;
 		let next = STRIDE;
@@ -212,6 +281,7 @@ export class ReplayAudio {
 	private volume = 0.7;
 	private muted = false;
 	private listener: Listener | null = null;
+	private music: AudioBufferSourceNode | null = null;
 
 	constructor(manifest: PlayerPackManifest, version: string) {
 		this.sounds = manifest.sounds ?? {};
@@ -271,6 +341,7 @@ export class ReplayAudio {
 			tick - previous < MAX_GAP_SECONDS * replay.meta.tickRate * Math.max(1, speed);
 		this.lastTick = tick;
 		this.lastReplay = replay;
+		if (!continuous) this.stopMusic();
 
 		if (continuous) {
 			const cues = soundCues(replay);
@@ -284,7 +355,12 @@ export class ReplayAudio {
 			for (let i = lo; i < cues.length && cues[i]!.tick <= tick; i++) {
 				const cue = cues[i]!;
 				if (speed > 2 && cue.priority < 2) continue;
-				this.play(cue, speed);
+				if (cue.owner !== undefined && cue.owner !== listener.player) continue;
+				if (cue.global) {
+					if (speed > 2) continue;
+					this.announce(cue, replay);
+				} else if (cue.owner !== undefined) this.announce(cue, replay);
+				else this.play(cue, speed);
 			}
 		}
 		this.updateLoops(replay, tick, playing && speed <= 4);
@@ -386,6 +462,45 @@ export class ReplayAudio {
 		});
 	}
 
+	private stopMusic() {
+		try {
+			this.music?.stop();
+		} catch {
+			this.music?.disconnect();
+		}
+		this.music = null;
+	}
+
+	private announce(cue: Cue, replay: RoundReplay) {
+		let key = cue.key;
+		if (key === 'music:end') {
+			const side = this.listener?.side;
+			key =
+				!replay.meta.winner || !side || side === replay.meta.winner ? 'music:won' : 'music:lost';
+		}
+		const sound = this.sounds[key];
+		const context = this.context;
+		if (!sound || !context || !this.master) return;
+		const file = sound.files[Math.floor(Math.random() * sound.files.length)]!;
+		const scheduled = context.currentTime;
+		const music = cue.global === 'music';
+		if (music) this.stopMusic();
+		void this.buffer(file).then((buffer) => {
+			if (!buffer || context.currentTime - scheduled > 0.4) return;
+			const source = context.createBufferSource();
+			source.buffer = buffer;
+			const node = context.createGain();
+			node.gain.value =
+				sound.volume * (music ? MUSIC_VOLUME : cue.global === 'radio' ? RADIO_VOLUME : 0.6);
+			source.connect(node).connect(this.master!);
+			if (music) {
+				this.stopMusic();
+				this.music = source;
+			}
+			source.start();
+		});
+	}
+
 	private updateLoops(replay: RoundReplay, tick: number, active: boolean) {
 		const context = this.context!;
 		const wanted = new Set<string>();
@@ -438,6 +553,7 @@ export class ReplayAudio {
 	}
 
 	dispose() {
+		this.stopMusic();
 		for (const loop of this.loops.values()) loop.source.disconnect();
 		this.loops.clear();
 		void this.context?.close();

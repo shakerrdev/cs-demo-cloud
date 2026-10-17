@@ -99,6 +99,7 @@ export class ReplayScene {
 	private povPose: PovPose | null = null;
 	private scope: { fov: number; sniper: boolean } | null = null;
 	private blind = 0;
+	private hurt = 0;
 	private pointer = { x: 0, y: 0, down: false };
 	private raycaster = new THREE.Raycaster();
 	private projected = new THREE.Vector3();
@@ -403,6 +404,7 @@ export class ReplayScene {
 		this.povPose = mode === 'pov' && focused ? this.placePov(replay, tick, focused) : null;
 		this.scope = this.pov !== null ? scopeOf(focused) : null;
 		this.blind = this.pov !== null ? (focused?.blind ?? 0) : 0;
+		this.hurt = this.pov !== null ? hurtFlash(replay, this.pov, tick) : 0;
 		if (mode === 'pov') {
 			const fov = this.scope?.fov ?? POV_FOV;
 			if (this.camera.fov !== fov) {
@@ -680,6 +682,21 @@ export class ReplayScene {
 		}
 		ctx.globalAlpha = 1;
 
+		if (this.hurt > 0) {
+			const glow = ctx.createRadialGradient(
+				width / 2,
+				height / 2,
+				Math.min(width, height) * 0.25,
+				width / 2,
+				height / 2,
+				Math.max(width, height) * 0.62
+			);
+			glow.addColorStop(0, 'rgba(200, 0, 0, 0)');
+			glow.addColorStop(1, `rgba(200, 0, 0, ${0.55 * this.hurt})`);
+			ctx.fillStyle = glow;
+			ctx.fillRect(0, 0, width, height);
+		}
+
 		if (this.blind > 0) {
 			ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, this.blind * 1.05)})`;
 			ctx.fillRect(0, 0, width, height);
@@ -717,6 +734,26 @@ export class ReplayScene {
 			ctx.fill();
 		}
 	}
+}
+
+const HURT_SECONDS = 0.45;
+
+function hurtFlash(replay: RoundReplay, player: number, tick: number): number {
+	const hurts = replay.meta.hurts;
+	if (!hurts) return 0;
+	let strongest = 0;
+	for (let i = 0; i + 5 < hurts.length; i += 6) {
+		const at = hurts[i]!;
+		if (at > tick) break;
+		if (hurts[i + 1] !== player) continue;
+		const age = (tick - at) / replay.meta.tickRate;
+		if (age > HURT_SECONDS) continue;
+		strongest = Math.max(
+			strongest,
+			(1 - age / HURT_SECONDS) * Math.min(1, 0.35 + hurts[i + 3]! / 40)
+		);
+	}
+	return strongest;
 }
 
 function startHeight(replay: RoundReplay): number {
