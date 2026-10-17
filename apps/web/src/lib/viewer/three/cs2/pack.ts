@@ -4,6 +4,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { MapPackManifest, PackTextureRef, PackWorld } from '@cs-demo-cloud/replay';
 import { createCs2Material, type MaterialExtras, type WorldShading } from './material.ts';
 import { PostProcess, createSkyMesh } from './post.ts';
+import { DepthPrepass } from './prepass.ts';
 import {
 	createTexture,
 	fetchPackTexture,
@@ -120,6 +121,7 @@ export class MapPack {
 	private abort = new AbortController();
 	private skyboxWorld: LoadedWorld | null = null;
 	private quality: Exclude<TextureQuality, 'auto'>;
+	private prepass: DepthPrepass | null = null;
 
 	private constructor(
 		base: string,
@@ -503,6 +505,15 @@ export class MapPack {
 		return this.worlds.find((loaded) => loaded.world.kind === 'world')?.setup.shading ?? null;
 	}
 
+	renderPrepass(renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
+		if (!this.prepass) {
+			const world = this.worlds.find((loaded) => loaded.world.kind === 'world');
+			if (!world) return;
+			this.prepass = new DepthPrepass(world.group, this.shared);
+		}
+		this.prepass.render(renderer, camera);
+	}
+
 	setCutZ(z: number) {
 		this.shared.uCutZ!.value = z;
 	}
@@ -516,6 +527,7 @@ export class MapPack {
 			group.traverse((object) => (object as THREE.Mesh).geometry?.dispose());
 			setup.dispose();
 		}
+		this.prepass?.dispose();
 		this.sky.geometry.dispose();
 		this.sky.material.dispose();
 		this.post.dispose();

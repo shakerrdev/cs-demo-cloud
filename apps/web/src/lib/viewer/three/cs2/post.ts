@@ -119,6 +119,7 @@ const defaultTonemap: PackTonemap = {
 
 export class PostProcess {
 	readonly target: THREE.WebGLRenderTarget;
+	readonly skyTarget: THREE.WebGLRenderTarget;
 	private scene = new THREE.Scene();
 	private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 	private material: THREE.ShaderMaterial;
@@ -133,6 +134,12 @@ export class PostProcess {
 			samples: 4,
 			depthBuffer: true,
 			stencilBuffer: true
+		});
+		this.target.resolveDepthBuffer = false;
+		this.target.resolveStencilBuffer = false;
+		this.skyTarget = new THREE.WebGLRenderTarget(1, 1, {
+			type: THREE.HalfFloatType,
+			depthBuffer: true
 		});
 		this.material = new THREE.ShaderMaterial({
 			glslVersion: THREE.GLSL3,
@@ -210,11 +217,27 @@ export class PostProcess {
 		this.width = Math.max(1, width);
 		this.height = Math.max(1, height);
 		this.target.setSize(this.width, this.height);
+		this.skyTarget.setSize(this.width, this.height);
 		this.bloom?.setSize(this.width, this.height);
 	}
 
-	render(renderer: THREE.WebGLRenderer) {
-		const bloom = this.bloom?.active ? this.bloom : null;
+	setCompactColor(compact: boolean) {
+		const texture = this.target.texture;
+		const type = compact ? THREE.UnsignedInt101111Type : THREE.HalfFloatType;
+		if (texture.type === type) return;
+		texture.type = type;
+		texture.format = compact ? THREE.RGBFormat : THREE.RGBAFormat;
+		this.target.dispose();
+	}
+
+	setSamples(samples: number) {
+		if (this.target.samples === samples) return;
+		this.target.samples = samples;
+		this.target.dispose();
+	}
+
+	render(renderer: THREE.WebGLRenderer, bloomOn = true) {
+		const bloom = bloomOn && this.bloom?.active ? this.bloom : null;
 		if (bloom) bloom.render(renderer, this.target.texture, this.exposure);
 		this.material.uniforms.uBloomEnabled!.value = bloom ? 1 : 0;
 		renderer.setRenderTarget(null);
@@ -224,6 +247,7 @@ export class PostProcess {
 	dispose() {
 		this.bloom?.dispose();
 		this.target.dispose();
+		this.skyTarget.dispose();
 		this.material.dispose();
 	}
 }
