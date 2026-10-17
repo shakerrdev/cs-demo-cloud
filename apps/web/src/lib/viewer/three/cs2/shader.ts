@@ -1,4 +1,5 @@
 import { skinPaintGlsl } from './skin-paint';
+import { glovePaintGlsl } from './glove-paint.ts';
 import { GRID_OVERFLOW, GRID_SLOTS, GRID_WIDTH } from './volume-grid.ts';
 
 export const MAX_PROBE_VOLUMES = 128;
@@ -222,6 +223,10 @@ vec3 decodeNormal(vec2 rg) {
 vec3 srgbToLinear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
 }
+
+#ifdef GLOVE_PAINT
+${glovePaintGlsl}
+#endif
 
 vec3 linearToSrgb(vec3 c) {
 	c = max(c, vec3(0.0));
@@ -464,6 +469,9 @@ void main() {
 #else
 	vec4 normalTex = vec4(0.5, 0.5, 1.0, 1.0);
 #endif
+#ifdef GLOVE_PAINT
+	GloveSurface glove = glovePaint(vUv);
+#endif
 #ifdef SKIN_PAINT
 	vec2 patternUv = (uPatternTransform * vec3(vUv, 1.0)).xy;
 	#ifdef SKIN_PAINT_NORMAL
@@ -490,6 +498,9 @@ void main() {
 
 	vec3 albedo = color.rgb;
 	float opacity = color.a;
+#ifdef GLOVE_PAINT
+	albedo = glove.albedo;
+#endif
 
 #ifdef PAINT_MULTIPLY
 	vec4 paint = dot(vPaint, vec4(1.0)) > 0.0 ? vPaint : vec4(1.0);
@@ -528,6 +539,10 @@ void main() {
 	vec3 normalTs = decodeNormal(normalTex.rg);
 	normalTs = normalize(mix(vec3(0.0, 0.0, 1.0), normalTs, uBumpStrength));
 	float roughness = ROUGHNESS;
+#ifdef GLOVE_PAINT
+	normalTs = glove.normalTs;
+	roughness = glove.roughness;
+#endif
 
 #if DETAIL > 0
 	vec2 detailUv = (uDetailTransform * vec3(DETAIL_UV, 1.0)).xy;
@@ -568,6 +583,10 @@ void main() {
 
 #ifdef SKIN_PAINT
 	skinPaint(vUv, patternUv, albedo, roughness, metalness);
+#endif
+#ifdef GLOVE_PAINT
+	metalness = glove.metalness;
+	ao *= glove.ao;
 #endif
 
 	vec3 diffuseColor = albedo * (1.0 - metalness);

@@ -22,6 +22,34 @@ export interface MaterialExtras {
 	tint?: number[];
 	layout?: VertexLayout;
 	paint?: PaintExtras;
+	glove?: GloveExtras;
+}
+
+type Vec4 = [number, number, number, number];
+
+export interface GloveExtras {
+	textures: {
+		mask?: string;
+		surface?: string;
+		normal?: string;
+		pattern?: string;
+		detail: (string | undefined)[];
+		detailNormal: (string | undefined)[];
+	};
+	tints: number[][];
+	palette: Vec4;
+	patternX0: Vec4;
+	patternX1: Vec4;
+	detailScale: Vec4;
+	blackPoint: Vec4;
+	roughContrast: Vec4;
+	roughBrightness: Vec4;
+	metalness: Vec4;
+	normalContrast: Vec4;
+	curvature: Vec4;
+	params: Vec4;
+	params2: Vec4;
+	patternProps: Vec4;
 }
 
 export interface PaintExtras {
@@ -509,6 +537,43 @@ export function createCs2Material(
 			)
 		};
 		uniforms.uSprayBias = { value: new THREE.Vector2(...paint.sprayBias) };
+	}
+
+	const glove = extras.glove;
+	if (glove) {
+		defines.GLOVE_PAINT = 1;
+		const texture = (uniform: string, path: string | undefined, fallback: THREE.Texture) => {
+			uniforms[uniform] = { value: fallback };
+			if (path) request(path, false, uniforms[uniform]!);
+		};
+		texture('uGloveMask', glove.textures.mask, defaultTextures.black);
+		texture('uGloveSurface', glove.textures.surface, defaultTextures.white);
+		texture('uGloveNormal', glove.textures.normal, defaultTextures.normal);
+		texture('uGlovePattern', glove.textures.pattern, defaultTextures.black);
+		for (let i = 0; i < 4; i++) {
+			texture(`uGloveDetail${i + 1}`, glove.textures.detail[i], defaultTextures.grey);
+			texture(`uGloveDetailNormal${i + 1}`, glove.textures.detailNormal[i], defaultTextures.normal);
+		}
+		const v4 = (v: Vec4) => ({ value: new THREE.Vector4(...v) });
+		uniforms.uGloveTints = {
+			value: Array.from({ length: 8 }, (_, i) => {
+				const [r = 1, g = 1, b = 1] = glove.tints[i] ?? [];
+				return new THREE.Vector3(r, g, b);
+			})
+		};
+		uniforms.uGlovePalette = v4(glove.palette);
+		uniforms.uGlovePatternX0 = v4(glove.patternX0);
+		uniforms.uGlovePatternX1 = v4(glove.patternX1);
+		uniforms.uGloveDetailScale = v4(glove.detailScale);
+		uniforms.uGloveBlackPoint = v4(glove.blackPoint);
+		uniforms.uGloveRoughContrast = v4(glove.roughContrast);
+		uniforms.uGloveRoughBrightness = v4(glove.roughBrightness);
+		uniforms.uGloveMetalness = v4(glove.metalness);
+		uniforms.uGloveNormalContrast = v4(glove.normalContrast);
+		uniforms.uGloveCurvature = v4(glove.curvature);
+		uniforms.uGloveParams = v4(glove.params);
+		uniforms.uGloveParams2 = v4(glove.params2);
+		uniforms.uGlovePatternProps = v4(glove.patternProps);
 	}
 
 	defines.ROUGHNESS =
