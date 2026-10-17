@@ -21,6 +21,7 @@ import {
 import { bombState, grenadePosition, playerMotion, type PlayerState } from '../../frame.ts';
 import {
 	createCs2Material,
+	type GloveExtras,
 	type MaterialExtras,
 	type PaintExtras,
 	type WorldShading
@@ -133,6 +134,7 @@ export class PlayerPack {
 	private skinsVersion: string | null;
 	private agents = new Map<string, Promise<Template | null>>();
 	private loadedAgents = new Map<string, Template>();
+	private gloves = new Map<string, Promise<Template | null>>();
 	onChange: (() => void) | null = null;
 
 	private constructor(
@@ -300,7 +302,8 @@ export class PlayerPack {
 		const key =
 			JSON.stringify(extras.vmat?.Name ?? 'default') +
 			JSON.stringify(extras.tint ?? []) +
-			(extras.paint ? JSON.stringify(extras.paint) : '');
+			(extras.paint ? JSON.stringify(extras.paint) : '') +
+			(extras.glove ? JSON.stringify(extras.glove) : '');
 		let material = this.materials.get(key);
 		if (!material) {
 			material = createCs2Material(extras, this.shading, (path, srgb, target) =>
@@ -365,7 +368,30 @@ export class PlayerPack {
 	}
 
 	createModel(side: Side, agent?: string): { root: THREE.Object3D; meshes: THREE.SkinnedMesh[] } {
-		const template = this.template(side, agent);
+		return this.instantiate(this.template(side, agent));
+	}
+
+	hasGloves(skin: ReplaySkin | undefined): skin is ReplaySkin {
+		return Boolean(skin && this.skins?.gloves?.[skin.item] && this.skins.paints[skin.paint]?.glove);
+	}
+
+	loadGloves(skin: ReplaySkin): Promise<{ template: Template; extras: GloveExtras } | null> {
+		const file = this.skins?.gloves?.[skin.item]?.model;
+		const paint = this.skins?.paints[skin.paint];
+		if (!file || !paint?.glove) return Promise.resolve(null);
+		let promise = this.gloves.get(file);
+		if (!promise) {
+			promise = this.fetchGltf(`${SKINS_BASE}/${file}?v=${this.skinsVersion}`)
+				.then((gltf) => makeTemplate(gltf.scene))
+				.catch(() => null);
+			this.gloves.set(file, promise);
+		}
+		return promise.then((template) =>
+			template ? { template, extras: gloveExtras(skin, paint) } : null
+		);
+	}
+
+	instantiate(template: Template): { root: THREE.Object3D; meshes: THREE.SkinnedMesh[] } {
 		const root = cloneSkinned(template.scene);
 		const meshes: THREE.SkinnedMesh[] = [];
 		const sources: THREE.Mesh[] = [];
@@ -454,10 +480,13 @@ export class PlayerPack {
 	}
 
 	promote(extras: MaterialExtras) {
-		const paths = new Set([
-			...Object.values(extras.vmat?.TextureParams ?? {}),
-			...Object.values(extras.paint?.textures ?? {})
-		]);
+		const paths = new Set(
+			[
+				...Object.values(extras.vmat?.TextureParams ?? {}),
+				...Object.values(extras.paint?.textures ?? {}),
+				...Object.values(extras.glove?.textures ?? {}).flat()
+			].filter((path): path is string => typeof path === 'string')
+		);
 		const urgent = this.queue.filter((job) => paths.has(job.path));
 		if (!urgent.length) return;
 		this.queue = [...urgent, ...this.queue.filter((job) => !paths.has(job.path))];
@@ -555,7 +584,17 @@ class PlayerModel {
 	private rotation = new THREE.Quaternion();
 	private axis = new THREE.Vector3();
 
-	constructor(pack: PlayerPack, side: Side, color: number, agent?: string) {
+	private hiddenHands = new Set<THREE.BufferGeometry>();
+	private disposed = false;
+
+	constructor(
+		pack: PlayerPack,
+		side: Side,
+		color: number,
+		agent?: string,
+		gloves?: ReplaySkin,
+		onChange?: () => void
+	) {
 		this.pack = pack;
 		this.side = side;
 		const { root, meshes } = pack.createModel(side, agent);
@@ -606,6 +645,23 @@ class PlayerModel {
 		this.weaponSlot.matrixAutoUpdate = false;
 		(this.wpn ?? this.handR)?.add(this.weaponSlot);
 		this.root.visible = false;
+		if (pack.hasGloves(gloves))
+			void pack.loadGloves(gloves).then((loaded) => {
+				if (!loaded || this.disposed) return;
+				const { added, hidden } = attachGloves(
+					pack,
+					this.model,
+					loaded.template,
+					loaded.extras,
+					false
+				);
+				for (const mesh of hidden) this.hiddenHands.add(mesh.geometry);
+				for (const mesh of added) {
+					this.meshes.push(mesh);
+					this.applyMaterial(mesh);
+				}
+				onChange?.();
+			});
 	}
 
 	setShading(shading: WorldShading | null) {
@@ -692,7 +748,8 @@ class PlayerModel {
 			: replay.meta.kills.find((k) => k.victim === player.index && k.tick <= tick);
 		this.root.visible = visible && (player.alive || kill !== undefined);
 		if (!this.root.visible) return;
-		for (const mesh of this.ghosts) mesh.visible = ghost && player.alive;
+		for (const mesh of this.ghosts)
+			mesh.visible = ghost && player.alive && !this.hiddenHands.has(mesh.geometry);
 
 		const meta = replay.meta;
 		const seconds = (tick - meta.startTick) / meta.tickRate;
@@ -873,6 +930,7 @@ class PlayerModel {
 	}
 
 	dispose() {
+		this.disposed = true;
 		this.mixer.stopAllAction();
 		this.ghostMaterial.dispose();
 	}
@@ -885,7 +943,7 @@ export class PlayerModels {
 	private models: PlayerModel[] = [];
 	private props: { root: THREE.Group; slot: THREE.Group; key: string | null }[] = [];
 	private shading: WorldShading | null = null;
-	private players: { side: Side; agent?: string }[] = [];
+	private players: { side: Side; agent?: string; gloves?: ReplaySkin }[] = [];
 	private colors: Record<Side, number> = { CT: 0xffffff, T: 0xffffff };
 	onChange: (() => void) | null = null;
 
@@ -916,7 +974,10 @@ export class PlayerModels {
 		return this.shading !== null;
 	}
 
-	setPlayers(players: { side: Side; agent?: string }[], colors: Record<Side, number>) {
+	setPlayers(
+		players: { side: Side; agent?: string; gloves?: ReplaySkin }[],
+		colors: Record<Side, number>
+	) {
 		for (const model of this.models) {
 			this.root.remove(model.root);
 			model.dispose();
@@ -924,17 +985,19 @@ export class PlayerModels {
 		const current = players;
 		this.players = players;
 		this.colors = colors;
-		this.models = players.map(({ side, agent }, i) => {
+		this.models = players.map(({ side, agent, gloves }, i) => {
 			if (agent && this.pack.hasAgent(agent))
 				void this.pack.loadAgent(agent).then((template) => {
 					if (template && this.players === current) this.rebuild(i);
 				});
-			return this.build(side, agent);
+			return this.build(side, agent, gloves);
 		});
 	}
 
-	private build(side: Side, agent?: string): PlayerModel {
-		const model = new PlayerModel(this.pack, side, this.colors[side], agent);
+	private build(side: Side, agent?: string, gloves?: ReplaySkin): PlayerModel {
+		const model = new PlayerModel(this.pack, side, this.colors[side], agent, gloves, () =>
+			this.onChange?.()
+		);
 		model.setShading(this.shading);
 		this.root.add(model.root);
 		return model;
@@ -946,7 +1009,7 @@ export class PlayerModels {
 		if (!old || !player) return;
 		this.root.remove(old.root);
 		old.dispose();
-		this.models[index] = this.build(player.side, player.agent);
+		this.models[index] = this.build(player.side, player.agent, player.gloves);
 		this.onChange?.();
 	}
 
@@ -1045,6 +1108,133 @@ function makeTemplate(scene: THREE.Object3D): Template {
 		mesh.frustumCulled = false;
 	});
 	return { scene, materials };
+}
+
+const HAND_MATERIAL = /\/glove_|bare_arm/;
+
+export function isHandMesh(mesh: THREE.Object3D, firstPerson: boolean): boolean {
+	const name = (
+		(mesh.userData.extras as MaterialExtras | undefined)?.vmat?.Name ?? ''
+	).toLowerCase();
+	if (isFirstPerson(mesh) !== firstPerson) return false;
+	return firstPerson ? HAND_MATERIAL.test(name) : name.includes('/glove_');
+}
+
+export function attachGloves(
+	pack: PlayerPack,
+	model: THREE.Object3D,
+	template: Template,
+	extras: GloveExtras,
+	firstPerson: boolean
+): { added: THREE.SkinnedMesh[]; hidden: THREE.Mesh[] } {
+	const own: THREE.SkinnedMesh[] = [];
+	model.traverse((object) => {
+		const mesh = object as THREE.SkinnedMesh;
+		if (mesh.isSkinnedMesh && !mesh.userData.gloves) own.push(mesh);
+	});
+	const reference = own.find((mesh) => isFirstPerson(mesh) === firstPerson) ?? own[0];
+	if (!reference?.parent) return { added: [], hidden: [] };
+	const bones = new Map<string, THREE.Bone>();
+	model.traverse((object) => {
+		if ((object as THREE.Bone).isBone) bones.set(object.name, object as THREE.Bone);
+	});
+	const { root } = pack.instantiate(template);
+	const added: THREE.SkinnedMesh[] = [];
+	const candidates: THREE.SkinnedMesh[] = [];
+	root.traverse((object) => {
+		const mesh = object as THREE.SkinnedMesh;
+		if (mesh.isSkinnedMesh && isFirstPerson(mesh) === firstPerson) candidates.push(mesh);
+	});
+	for (const mesh of candidates) {
+		const mapped = mesh.skeleton.bones.map((bone) => bones.get(bone.name));
+		if (mapped.some((bone) => !bone)) continue;
+		mesh.bind(
+			new THREE.Skeleton(mapped as THREE.Bone[], mesh.skeleton.boneInverses),
+			reference.bindMatrix
+		);
+		const ownExtras = (mesh.userData.extras ?? {}) as MaterialExtras;
+		if (ownExtras.vmat?.Name.toLowerCase().includes('glove'))
+			mesh.userData.extras = { ...ownExtras, glove: extras };
+		mesh.userData.gloves = true;
+		mesh.frustumCulled = false;
+		mesh.visible = true;
+		reference.parent.add(mesh);
+		added.push(mesh);
+	}
+	if (!added.length) return { added, hidden: [] };
+	const hidden = own.filter((mesh) => isHandMesh(mesh, firstPerson));
+	for (const mesh of hidden) mesh.visible = false;
+	return { added, hidden };
+}
+
+function patternTransform(scale: number, degrees: number, offset: number[], flip: boolean) {
+	const angle = ((flip ? -degrees : degrees) * Math.PI) / 180;
+	const c = Math.cos(angle);
+	const sn = Math.sin(angle);
+	const half = 0.5 / (scale !== 0 ? scale : 1);
+	const c2 = Math.cos(-angle);
+	const s2 = Math.sin(-angle);
+	const a = half * c2 - half * s2;
+	const b = a * s2 + half * c2;
+	return {
+		x0: [c * scale, -sn * scale, 0, scale * c * a + scale * -sn * b + ((offset[0] ?? 0) - 0.5)],
+		x1: [sn * scale, c * scale, 0, scale * sn * a + scale * c * b + ((offset[1] ?? 0) - 0.5)]
+	} as { x0: [number, number, number, number]; x1: [number, number, number, number] };
+}
+
+function gloveExtras(skin: ReplaySkin, paint: SkinsPackManifest['paints'][string]): GloveExtras {
+	const { ints, floats, vectors, textures } = paint;
+	const layer = (name: string, fallback: number) =>
+		[1, 2, 3, 4].map((i) => floats[`${name}${i}`] ?? fallback) as [number, number, number, number];
+	const flip = ints.g_bFlipFixup === 1;
+	const pattern = patternTransform(
+		floats.g_fPatternTexCoordScale ?? 1,
+		floats.g_fPatternTexCoordRotation ?? 0,
+		vectors.g_fPatternTexCoordOffset ?? [0, 0],
+		flip
+	);
+	const palette = vectors.g_vPatternPaletteIndices ?? [1, 2, 3, 4];
+	return {
+		textures: {
+			mask: textures.g_tLayerMask,
+			surface: textures.g_tSurface,
+			normal: textures.g_tNormal,
+			pattern: textures.g_tPattern,
+			detail: [1, 2, 3, 4].map((i) => textures[`g_tDetail${i}`]),
+			detailNormal: [1, 2, 3, 4].map((i) => textures[`g_tDetailNormal${i}`])
+		},
+		tints: [1, 2, 3, 4, 5, 6, 7, 8].map(
+			(i) => vectors[`g_vColorTint${i}`]?.slice(0, 3) ?? [1, 1, 1]
+		),
+		palette: [palette[0] ?? 1, palette[1] ?? 2, palette[2] ?? 3, palette[3] ?? 4],
+		patternX0: pattern.x0,
+		patternX1: pattern.x1,
+		detailScale: layer('g_fDetailScale', 1),
+		blackPoint: layer('g_fDetailBlackPoint', 0),
+		roughContrast: layer('g_fDetailRoughnessContrast', 0),
+		roughBrightness: layer('g_fDetailRoughnessBrightness', 1),
+		metalness: layer('g_fDetailMetalness', 0),
+		normalContrast: layer('g_fDetailNormalContrast', 1),
+		curvature: layer('g_fCurvaturePower', 1),
+		params: [
+			floats.g_fColorMaskBlur ?? 1,
+			floats.g_fPaintThickness ?? 0,
+			floats.g_fPatternDetailInfluence ?? 0,
+			Math.max(0, Math.min(1, skin.wear))
+		],
+		params2: [
+			flip ? -1 : 1,
+			ints.F_PATTERN === 1 ? 1 : 0,
+			ints.g_nPatternMode ?? 0,
+			(ints.g_nPatternReplaceIndex ?? 1) - 1
+		],
+		patternProps: [
+			floats.g_fPatternRoughnessBrightness ?? 1,
+			floats.g_fPatternMetalness ?? 0,
+			floats.g_fPaintDurability ?? 1,
+			0
+		]
+	};
 }
 
 function paintExtras(

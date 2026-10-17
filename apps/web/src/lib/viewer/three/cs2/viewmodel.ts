@@ -14,6 +14,7 @@ import type { PlayerState } from '../../frame.ts';
 import type { MaterialExtras } from './material.ts';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import {
+	attachGloves,
 	GLTF_TO_SOURCE,
 	isFirstPerson,
 	skinAt,
@@ -121,8 +122,12 @@ export class Viewmodel {
 			void this.pack.loadAgent(agent).then((template) => {
 				if (template) this.onChange?.();
 			});
-		const armsKey = `${player.side}|${ready ? agent : ''}`;
-		const arms = this.armsFor(armsKey, player.side, ready ? agent : undefined);
+		const gloves = replay.meta.players[player.index]?.gloves;
+		const glovesKey = this.pack.hasGloves(gloves)
+			? `${gloves.item}:${gloves.paint}:${gloves.wear}`
+			: '';
+		const armsKey = `${player.side}|${ready ? agent : ''}|${glovesKey}`;
+		const arms = this.armsFor(armsKey, player.side, ready ? agent : undefined, gloves);
 		for (const [id, other] of this.arms) other.model.visible = id === armsKey;
 		const rig = this.rig(arms, clip);
 		this.setWeapon(
@@ -247,7 +252,7 @@ export class Viewmodel {
 		return startTick + frame * tickStep;
 	}
 
-	private armsFor(id: string, side: Side, agent?: string): Arms {
+	private armsFor(id: string, side: Side, agent?: string, gloves?: ReplaySkin): Arms {
 		let arms = this.arms.get(id);
 		if (arms) return arms;
 		const { root } = this.pack.createModel(side, agent);
@@ -279,6 +284,18 @@ export class Viewmodel {
 		};
 		for (const mesh of meshes) this.applyMaterial(mesh);
 		this.arms.set(id, arms);
+		if (this.pack.hasGloves(gloves)) {
+			const target = arms;
+			void this.pack.loadGloves(gloves).then((loaded) => {
+				if (!loaded || this.arms.get(id) !== target) return;
+				const { added } = attachGloves(this.pack, root, loaded.template, loaded.extras, true);
+				for (const mesh of added) {
+					target.meshes.push(mesh);
+					this.applyMaterial(mesh);
+				}
+				this.onChange?.();
+			});
+		}
 		return arms;
 	}
 
