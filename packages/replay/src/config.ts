@@ -46,6 +46,7 @@ export interface AppConfig {
 	pov: {
 		fov: number;
 		viewmodel: boolean;
+		playerViewmodel: boolean;
 		viewmodelFov: number;
 		offsetX: number;
 		offsetY: number;
@@ -57,6 +58,7 @@ export interface AppConfig {
 		flash: boolean;
 		hitFlash: boolean;
 		crosshair: boolean;
+		playerCrosshair: boolean;
 		crosshairColor: string;
 		crosshairSize: number;
 		crosshairGap: number;
@@ -109,6 +111,7 @@ export const defaultConfig: AppConfig = {
 	pov: {
 		fov: 90,
 		viewmodel: true,
+		playerViewmodel: true,
 		viewmodelFov: 68,
 		offsetX: 2.5,
 		offsetY: 0,
@@ -120,6 +123,7 @@ export const defaultConfig: AppConfig = {
 		flash: true,
 		hitFlash: true,
 		crosshair: true,
+		playerCrosshair: true,
 		crosshairColor: '#78ff8c',
 		crosshairSize: 7,
 		crosshairGap: 7,
@@ -273,6 +277,12 @@ export const configSections: ConfigSection[] = [
 			},
 			{ path: 'pov.viewmodel', label: 'Show arms and weapon', kind: 'toggle' },
 			{
+				path: 'pov.playerViewmodel',
+				label: 'Use each player’s viewmodel settings',
+				help: 'FOV and offsets recorded in the demo. The values below apply when a demo has none.',
+				kind: 'toggle'
+			},
+			{
 				path: 'pov.viewmodelFov',
 				label: 'Viewmodel FOV',
 				kind: 'range',
@@ -321,6 +331,12 @@ export const configSections: ConfigSection[] = [
 			{ path: 'pov.flash', label: 'White screen when flashed', kind: 'toggle' },
 			{ path: 'pov.hitFlash', label: 'Red flash when hit', kind: 'toggle' },
 			{ path: 'pov.crosshair', label: 'Crosshair', kind: 'toggle' },
+			{
+				path: 'pov.playerCrosshair',
+				label: 'Use each player’s crosshair',
+				help: 'From the crosshair code in the demo. The settings below apply when a demo has none.',
+				kind: 'toggle'
+			},
 			{ path: 'pov.crosshairColor', label: 'Crosshair colour', kind: 'color' },
 			{
 				path: 'pov.crosshairSize',

@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import {
 	FLAG_PRESENT,
+	crosshairColor,
+	decodeCrosshair,
 	defaultConfig,
+	type Crosshair,
 	horizontalToVerticalFov,
 	type AppConfig,
 	weaponKey,
@@ -130,6 +133,8 @@ export class ReplayScene {
 	private autoScale = new AutoScale();
 	debug: DebugToggles = { ...defaultDebug };
 	private overlayDirty = true;
+	private crosshairs = new Map<string, Crosshair | null>();
+	private viewmodelKey = '';
 
 	constructor(
 		canvas: HTMLCanvasElement,
@@ -376,6 +381,7 @@ export class ReplayScene {
 				models.onChange = this.markDirty;
 				if (models.viewmodel) models.viewmodel.onChange = this.markDirty;
 				models.viewmodel?.setConfig(this.config);
+				this.viewmodelKey = '';
 				models.setShading(this.pack?.characterShading ?? null);
 				this.scene.add(models.root);
 				this.round = -1;
@@ -445,6 +451,7 @@ export class ReplayScene {
 
 	setConfig(config: AppConfig) {
 		this.config = config;
+		this.viewmodelKey = '';
 		this.models?.viewmodel?.setConfig(config);
 		if (this.mode === 'pov') {
 			this.camera.fov = this.povFov;
@@ -526,6 +533,7 @@ export class ReplayScene {
 		profiler.end('models');
 		this.camera.updateMatrixWorld();
 		profiler.begin('viewmodel');
+		if (this.pov !== null) this.applyPlayerViewmodel(replay.meta.players[this.pov]?.viewmodel);
 		const viewmodel =
 			this.pov !== null && pov.viewmodel && debug.viewmodel && !this.scope?.sniper
 				? (this.models?.updateViewmodel(
@@ -834,7 +842,75 @@ export class ReplayScene {
 		}
 	}
 
+	private applyPlayerViewmodel(settings: [number, number, number, number] | undefined) {
+		const use = this.config.pov.playerViewmodel && settings;
+		const key = use ? settings.join(',') : '';
+		if (key === this.viewmodelKey) return;
+		this.viewmodelKey = key;
+		const pov = this.config.pov;
+		this.models?.viewmodel?.setConfig(
+			use
+				? {
+						...this.config,
+						pov: {
+							...pov,
+							viewmodelFov: settings[0],
+							offsetX: settings[1],
+							offsetY: settings[2],
+							offsetZ: settings[3]
+						}
+					}
+				: this.config
+		);
+	}
+
+	private playerCrosshair(): Crosshair | null {
+		if (!this.config.pov.playerCrosshair || this.pov === null) return null;
+		const code = this.replay?.meta.players[this.pov]?.crosshair;
+		if (!code) return null;
+		let crosshair = this.crosshairs.get(code);
+		if (crosshair === undefined) {
+			crosshair = decodeCrosshair(code);
+			this.crosshairs.set(code, crosshair);
+		}
+		return crosshair;
+	}
+
+	private drawPlayerCrosshair(
+		ctx: CanvasRenderingContext2D,
+		cx: number,
+		cy: number,
+		height: number,
+		crosshair: Crosshair
+	) {
+		const scale = height / 480;
+		const ratio = this.pixelRatio;
+		const length = Math.max(1, Math.round(crosshair.size * scale));
+		const thick = Math.max(1, Math.round(crosshair.thickness * scale));
+		const gap = Math.max(0, Math.round((crosshair.gap + 4.5) * scale * 0.5));
+		const half = thick / 2;
+		const bars: [number, number, number, number][] = [
+			[cx - gap - length, cy - half, length, thick],
+			[cx + gap, cy - half, length, thick],
+			[cx - half, cy + gap, thick, length]
+		];
+		if (!crosshair.tStyle) bars.push([cx - half, cy - gap - length, thick, length]);
+		if (crosshair.dot) bars.push([cx - half, cy - half, thick, thick]);
+		if (crosshair.outlineEnabled && crosshair.outline > 0) {
+			const o = Math.max(1, Math.round(crosshair.outline * ratio));
+			ctx.fillStyle = `rgba(0, 0, 0, ${crosshair.alphaEnabled ? crosshair.alpha / 255 : 1})`;
+			for (const [x, y, w, h] of bars) ctx.fillRect(x - o, y - o, w + 2 * o, h + 2 * o);
+		}
+		ctx.fillStyle = crosshairColor(crosshair);
+		for (const [x, y, w, h] of bars) ctx.fillRect(x, y, w, h);
+	}
+
 	private drawCrosshair(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+		const own = this.playerCrosshair();
+		if (own) {
+			this.drawPlayerCrosshair(ctx, Math.round(cx), Math.round(cy), ctx.canvas.height, own);
+			return;
+		}
 		const { crosshairColor, crosshairSize, crosshairGap, crosshairThickness, crosshairDot } =
 			this.config.pov;
 		const ratio = this.pixelRatio;
