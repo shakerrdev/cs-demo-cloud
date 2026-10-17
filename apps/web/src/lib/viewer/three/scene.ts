@@ -11,6 +11,13 @@ import {
 	type RoundReplay
 } from '@cs-demo-cloud/replay';
 import type { Listener } from '../audio.ts';
+import { profiler } from '../perf.ts';
+import {
+	defaultDebug,
+	defaultGraphics,
+	type DebugToggles,
+	type GraphicsSettings
+} from '../graphics.ts';
 import { playerMotion, playerStates, viewState, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
 import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
@@ -19,9 +26,11 @@ import type { GameEffects } from './cs2/effects.ts';
 import type { PlayerModels } from './cs2/players.ts';
 import type { PovPose, Viewmodel } from './cs2/viewmodel.ts';
 
-export type { TextureQuality };
+export type { TextureQuality, DebugToggles, GraphicsSettings };
 
 export type CameraMode = 'free' | 'follow' | 'pov';
+
+const MIN_AUTO_SCALE = 0.5;
 
 export type PackStatus =
 	| { state: 'none' }
@@ -114,13 +123,30 @@ export class ReplayScene {
 	private muzzleFallback = new THREE.Vector3();
 	private modelsKey = '';
 	private started = performance.now();
+	private graphics: GraphicsSettings = defaultGraphics;
+	syncTiming = false;
+	private syncPixel = new Uint8Array(4);
+	private scale = 1;
+	private autoScale = new AutoScale();
+	debug: DebugToggles = { ...defaultDebug };
+	private overlayDirty = true;
 
-	constructor(canvas: HTMLCanvasElement, overlay: HTMLCanvasElement) {
+	constructor(
+		canvas: HTMLCanvasElement,
+		overlay: HTMLCanvasElement,
+		options: { antialias?: boolean } = {}
+	) {
 		this.renderer = new THREE.WebGLRenderer({
 			canvas,
-			antialias: true,
+			antialias: options.antialias ?? true,
 			powerPreference: 'high-performance'
 		});
+		const info = this.renderer.info;
+		profiler.attachGl(this.renderer.getContext() as WebGL2RenderingContext, () => ({
+			draws: info.render.calls,
+			triangles: info.render.triangles
+		}));
+		info.autoReset = false;
 		this.renderer.setClearColor(background);
 		const context = overlay.getContext('2d');
 		if (!context) throw new Error('2D canvas is not available');
@@ -161,7 +187,8 @@ export class ReplayScene {
 		canvas.addEventListener('pointerdown', down);
 		canvas.addEventListener('pointerup', up);
 		canvas.addEventListener('contextmenu', menu);
-		if (import.meta.env.DEV) (window as unknown as { replayScene: ReplayScene }).replayScene = this;
+		if (import.meta.env.DEV || location.search.includes('perf'))
+			(window as unknown as { replayScene: ReplayScene }).replayScene = this;
 		this.detach = () => {
 			canvas.removeEventListener('pointerdown', down);
 			canvas.removeEventListener('pointerup', up);
@@ -174,17 +201,64 @@ export class ReplayScene {
 		this.width = Math.max(1, width);
 		this.height = Math.max(1, height);
 		this.pixelRatio = pixelRatio;
-		this.renderer.setPixelRatio(pixelRatio);
-		this.renderer.setSize(this.width, this.height, false);
-		this.pack?.post.setSize(
-			Math.round(this.width * pixelRatio),
-			Math.round(this.height * pixelRatio)
-		);
 		this.overlay.canvas.width = Math.round(this.width * pixelRatio);
 		this.overlay.canvas.height = Math.round(this.height * pixelRatio);
+		this.overlayDirty = true;
 		this.camera.aspect = this.width / this.height;
 		this.camera.updateProjectionMatrix();
+		this.autoScale.reset();
+		this.applyScale();
+	}
+
+	setGraphics(graphics: GraphicsSettings) {
+		this.graphics = graphics;
+		this.pack?.post.setSamples(graphics.msaa);
+		this.autoScale.reset();
+		this.applyScale();
+	}
+
+	get renderScale(): number {
+		return this.scale;
+	}
+
+	get drawingSize(): { width: number; height: number } {
+		const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+		return { width: size.x, height: size.y };
+	}
+
+	get gpuName(): string {
+		const gl = this.renderer.getContext();
+		const debug = gl.getExtension('WEBGL_debug_renderer_info');
+		return String(
+			debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)
+		);
+	}
+
+	get stats(): { programs: number; textures: number; geometries: number } {
+		const info = this.renderer.info;
+		return {
+			programs: info.programs?.length ?? 0,
+			textures: info.memory.textures,
+			geometries: info.memory.geometries
+		};
+	}
+
+	private applyScale() {
+		const wanted =
+			this.graphics.resolution === 'auto' ? this.autoScale.scale : this.graphics.resolution;
+		this.scale = wanted;
+		const ratio = this.pixelRatio * wanted;
+		this.renderer.setPixelRatio(ratio);
+		this.renderer.setSize(this.width, this.height, false);
+		this.pack?.post.setSize(Math.round(this.width * ratio), Math.round(this.height * ratio));
 		this.dirty = true;
+		profiler.note(`render scale ${wanted.toFixed(2)}`);
+	}
+
+	frameDone(now: number, busy: boolean) {
+		if (this.graphics.resolution !== 'auto') return;
+		const next = this.autoScale.sample(now, busy);
+		if (next !== null && next !== this.scale) this.applyScale();
 	}
 
 	setMap(
@@ -257,10 +331,8 @@ export class ReplayScene {
 				}
 				this.pack = pack;
 				pack.onChange = this.markDirty;
-				pack.post.setSize(
-					Math.round(this.width * this.pixelRatio),
-					Math.round(this.height * this.pixelRatio)
-				);
+				pack.post.setSamples(this.graphics.msaa);
+				this.applyScale();
 				this.scene.add(pack.main);
 				if (this.mapObject) this.mapObject.visible = false;
 				this.models?.setShading(pack.characterShading);
@@ -385,12 +457,16 @@ export class ReplayScene {
 		return horizontalToVerticalFov(this.config.pov.fov);
 	}
 
+	invalidate() {
+		this.dirty = true;
+	}
+
 	resetView() {
 		this.framedMap = null;
 		this.dirty = true;
 	}
 
-	render(frame: SceneFrame) {
+	render(frame: SceneFrame): boolean {
 		const { replay, tick, focus, mode, roofs, xray = true } = frame;
 		this.replay = replay;
 		if (replay.meta.round !== this.round) {
@@ -409,9 +485,11 @@ export class ReplayScene {
 			this.dirty = true;
 		}
 		if (this.controls.enabled) this.controls.update();
-		if (!this.dirty) return;
+		if (!this.dirty) return false;
 		this.dirty = false;
+		this.renderer.info.reset();
 
+		profiler.begin('state');
 		this.players = playerStates(replay, tick);
 		const focused = focus !== null ? this.players[focus] : undefined;
 		this.pov = mode === 'pov' && focused?.alive ? focus : null;
@@ -431,17 +509,25 @@ export class ReplayScene {
 			}
 		}
 
+		profiler.end('state');
+		const debug = this.debug;
 		const cutZ = roofs ? 1e9 : this.cutHeight(focused) + ROOF_CUT;
 		this.mapMaterial.uniforms.uCutZ!.value = cutZ;
 		this.pack?.setCutZ(cutZ);
-		const models = this.models?.active ? this.models : null;
-		this.actors.setCapsules(!models);
+		const models = this.models?.active && debug.models ? this.models : null;
+		profiler.begin('actors');
+		this.actors.setCapsules(!this.models?.active);
 		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
-		this.models?.update(replay, tick, this.players, this.pov, xray);
-		if (this.effects) this.models?.updateProps(replay, tick);
+		profiler.end('actors');
+		profiler.begin('models');
+		if (this.models) this.models.root.visible = debug.models;
+		models?.update(replay, tick, this.players, this.pov, xray && debug.ghosts);
+		if (this.effects) models?.updateProps(replay, tick);
+		profiler.end('models');
 		this.camera.updateMatrixWorld();
+		profiler.begin('viewmodel');
 		const viewmodel =
-			this.pov !== null && pov.viewmodel && !this.scope?.sniper
+			this.pov !== null && pov.viewmodel && debug.viewmodel && !this.scope?.sniper
 				? (this.models?.updateViewmodel(
 						replay,
 						tick,
@@ -450,26 +536,46 @@ export class ReplayScene {
 						this.povPose
 					) ?? null)
 				: null;
-		this.effects?.update(
-			replay,
-			tick,
-			this.players,
-			this.camera,
-			(index, target) => {
-				const player = this.players[index];
-				if (!player || index === this.pov) return null;
-				return (
-					this.models?.muzzle(player, target) ??
-					target
-						.set(player.x, player.y, player.z + eyeHeight(player) - 6)
-						.add(aimDirection(player, this.muzzleFallback).multiplyScalar(28))
-				);
-			},
-			(performance.now() - this.started) / 1000
-		);
+		profiler.end('viewmodel');
+		profiler.begin('effects');
+		if (this.effects) this.effects.root.visible = debug.effects;
+		if (debug.effects)
+			this.effects?.update(
+				replay,
+				tick,
+				this.players,
+				this.camera,
+				(index, target) => {
+					const player = this.players[index];
+					if (!player || index === this.pov) return null;
+					return (
+						this.models?.muzzle(player, target) ??
+						target
+							.set(player.x, player.y, player.z + eyeHeight(player) - 6)
+							.add(aimDirection(player, this.muzzleFallback).multiplyScalar(28))
+					);
+				},
+				(performance.now() - this.started) / 1000
+			);
+		profiler.end('effects');
+		profiler.begin('draw');
 		if (this.pack) this.renderPack(this.pack, viewmodel);
-		else this.renderer.render(this.scene, this.camera);
+		else {
+			profiler.gpuBegin('world');
+			this.renderer.render(this.scene, this.camera);
+			profiler.gpuEnd();
+		}
+		profiler.end('draw');
+		profiler.begin('overlay');
 		this.drawOverlay(focus);
+		profiler.end('overlay');
+		if (this.syncTiming) {
+			profiler.begin('gpu wait');
+			const gl = this.renderer.getContext();
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.syncPixel);
+			profiler.end('gpu wait');
+		}
+		return true;
 	}
 
 	private renderPack(pack: MapPack, viewmodel: Viewmodel | null) {
@@ -479,19 +585,32 @@ export class ReplayScene {
 		const background = this.scene.background;
 		this.scene.background = null;
 		renderer.autoClear = false;
-		renderer.setRenderTarget(pack.post.target);
 		renderer.setClearColor(0x000000, 1);
-		renderer.clear(true, true, true);
-		if (pack.skyboxScene) {
+		pack.main.visible = this.debug.world;
+		pack.post.setCompactColor(this.debug.compactColor);
+		profiler.gpuBegin('skybox');
+		if (pack.skyboxScene && this.debug.world) {
+			renderer.setRenderTarget(pack.post.skyTarget);
+			renderer.clear(true, true, false);
 			renderer.render(pack.skyboxScene, pack.skyboxCamera);
-			renderer.clearDepth();
+			this.scene.background = pack.post.skyTarget.texture;
 		}
+		renderer.setRenderTarget(pack.post.target);
+		renderer.clear(true, true, true);
+		if (this.debug.world && this.debug.prepass) {
+			profiler.gpuBegin('prepass');
+			pack.renderPrepass(renderer, this.camera);
+		}
+		profiler.gpuBegin('world');
 		renderer.render(this.scene, this.camera);
 		if (viewmodel) {
+			profiler.gpuBegin('viewmodel');
 			renderer.clearDepth();
 			renderer.render(viewmodel.scene, viewmodel.camera);
 		}
-		pack.post.render(renderer);
+		profiler.gpuBegin('post');
+		pack.post.render(renderer, this.debug.bloom);
+		profiler.gpuEnd();
 		renderer.autoClear = true;
 		renderer.setClearColor(background as THREE.Color);
 		this.scene.background = background;
@@ -509,6 +628,7 @@ export class ReplayScene {
 		this.mapObject?.geometry.dispose();
 		this.mapMaterial.dispose();
 		for (const texture of this.textures) texture.dispose();
+		profiler.detachGl();
 		this.renderer.dispose();
 		this.renderer.forceContextLoss();
 	}
@@ -638,7 +758,14 @@ export class ReplayScene {
 		const ratio = this.pixelRatio;
 		const width = ctx.canvas.width;
 		const height = ctx.canvas.height;
+		const names = this.pov === null && this.config.viewer.nameplates;
+		const crosshair = this.pov !== null && (this.scope !== null || this.config.pov.crosshair);
+		const empty =
+			!this.debug.overlay || (!names && !crosshair && this.hurt <= 0 && this.blind <= 0);
+		if (empty && !this.overlayDirty) return;
 		ctx.clearRect(0, 0, width, height);
+		this.overlayDirty = !empty;
+		if (empty) return;
 
 		if (this.pov !== null && this.scope) {
 			this.drawScope(ctx, width, height, this.scope.sniper);
@@ -652,7 +779,7 @@ export class ReplayScene {
 		ctx.textBaseline = 'bottom';
 
 		const labels = this.players
-			.filter((p) => p.alive && p.present && this.pov === null && this.config.viewer.nameplates)
+			.filter((p) => names && p.alive && p.present)
 			.map((player) => {
 				const lift = (player.ducking ? 66 : 84) * this.sizeOf(player);
 				this.projected.set(player.x, player.y, player.z + lift).project(this.camera);
@@ -796,4 +923,64 @@ function startHeight(replay: RoundReplay): number {
 function median(values: number[]): number {
 	const sorted = [...values].sort((a, b) => a - b);
 	return sorted[Math.floor(sorted.length / 2)]!;
+}
+
+class AutoScale {
+	scale = 1;
+	private intervals: number[] = [];
+	private last = 0;
+	private changedAt = 0;
+	private before = 0;
+	private lockedUntil = 0;
+	private vsync = Infinity;
+	private ceiling = 1;
+	private ceilingUntil = 0;
+
+	reset() {
+		this.intervals = [];
+		this.last = 0;
+		this.before = 0;
+	}
+
+	sample(now: number, busy: boolean): number | null {
+		const interval = this.last ? now - this.last : 0;
+		this.last = now;
+		if (!busy || interval <= 0 || interval > 250) {
+			this.intervals = [];
+			return null;
+		}
+		this.vsync = Math.min(this.vsync * 1.002, Math.max(4, interval));
+		this.intervals.push(interval);
+		if (this.intervals.length < 40) return null;
+		const sorted = [...this.intervals].sort((a, b) => a - b);
+		const typical = sorted[Math.floor(sorted.length * 0.6)]!;
+		this.intervals = [];
+		const budget = Math.max(this.vsync, 1000 / 144);
+		if (this.before && now - this.changedAt < 3000) {
+			const helped = typical < this.before * 0.93;
+			this.before = 0;
+			if (!helped && this.scale < 1) {
+				this.scale = Math.min(1, Math.round((this.scale / 0.85) * 20) / 20);
+				this.lockedUntil = now + 15000;
+				this.changedAt = now;
+				return this.scale;
+			}
+		}
+		if (now < this.lockedUntil || now - this.changedAt < 1000) return null;
+		if (typical > budget * 1.3 && this.scale > MIN_AUTO_SCALE) {
+			this.before = typical;
+			this.ceiling = Math.max(MIN_AUTO_SCALE, this.scale - 0.05);
+			this.ceilingUntil = now + 30000;
+			this.scale = Math.max(MIN_AUTO_SCALE, Math.round(this.scale * 0.85 * 20) / 20);
+			this.changedAt = now;
+			return this.scale;
+		}
+		const ceiling = now < this.ceilingUntil ? this.ceiling : 1;
+		if (typical < budget * 1.08 && this.scale < ceiling && now - this.changedAt > 4000) {
+			this.scale = Math.min(1, Math.round((this.scale + 0.05) * 20) / 20);
+			this.changedAt = now;
+			return this.scale;
+		}
+		return null;
+	}
 }
