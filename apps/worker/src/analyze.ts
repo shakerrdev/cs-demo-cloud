@@ -125,7 +125,8 @@ function measureTickRate(ticks: TickColumns): number {
 
 export function analyzeDemo(
 	path: string,
-	timings: (step: string) => void = () => {}
+	timings: (step: string) => void = () => {},
+	options: { viewStream?: boolean } = {}
 ): AnalyzedDemo {
 	const header = parseHeader(path);
 	const events = parseEvents(path);
@@ -307,15 +308,17 @@ export function analyzeDemo(
 	const grenadeRows = parseGrenades(path);
 	timings('grenades');
 	let views: ({ grid: Grid; columns: ViewColumns } | null)[] = spans.map(() => null);
-	try {
-		views = buildViews(
-			path,
-			spans,
-			playerIndex,
-			roundPlayers.map((list) => list.length)
-		);
-	} catch (error) {
-		console.warn(`No view stream: ${error instanceof Error ? error.message : error}`);
+	if (options.viewStream !== false) {
+		try {
+			views = buildViews(
+				path,
+				spans,
+				playerIndex,
+				roundPlayers.map((list) => list.length)
+			);
+		} catch (error) {
+			console.warn(`No view stream: ${error instanceof Error ? error.message : error}`);
+		}
 	}
 	timings('view');
 	const grenadesByRound = buildGrenades(grenadeRows, events, roundIndexForTick, indexOf);

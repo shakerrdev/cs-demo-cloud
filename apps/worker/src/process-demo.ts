@@ -1,8 +1,13 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
-import { saveMatch, type Db, type Demo } from '@cs-demo-cloud/db';
-import { REPLAY_VERSION, collectCosmetics, encodeRound } from '@cs-demo-cloud/replay';
+import { getAppConfigJson, saveMatch, type Db, type Demo } from '@cs-demo-cloud/db';
+import {
+	REPLAY_VERSION,
+	collectCosmetics,
+	encodeRound,
+	normalizeConfig
+} from '@cs-demo-cloud/replay';
 import type { Storage } from '@cs-demo-cloud/shared';
 import { analyzeDemo } from './analyze.ts';
 import { openDemoFile } from './decompress.ts';
@@ -33,7 +38,8 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 	);
 	step('open');
 	try {
-		const analyzed = analyzeDemo(file.path, step);
+		const config = normalizeConfig(getAppConfigJson(db));
+		const analyzed = analyzeDemo(file.path, step, { viewStream: config.parsing.viewStream });
 		step('build');
 
 		const replayDir = storage.replayDir(demo.id);
