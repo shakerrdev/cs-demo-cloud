@@ -20,6 +20,22 @@ import {
 
 const DEG = Math.PI / 180;
 const FOV = 54;
+const OFFSET = { right: 2.5, forward: 0, up: -1.5 };
+const BOB_STRIDE = 245;
+const BOB_LATERAL = 0.33;
+const BOB_VERTICAL = 0.14;
+const BOB_LOWER = 0.8;
+const RUN_SPEED = 250;
+const SWAY_PER_DEGREE = 0.012;
+const MAX_SWAY = 2.5;
+
+export interface PovPose {
+	yaw: number;
+	pitch: number;
+	speed: number;
+	distance: number;
+	turn: number;
+}
 const THROW_LEAD = 0.25;
 const PLANT_SECONDS = 3.3;
 
@@ -77,7 +93,8 @@ export class Viewmodel {
 		replay: RoundReplay,
 		tick: number,
 		player: PlayerState | null,
-		camera: THREE.PerspectiveCamera
+		camera: THREE.PerspectiveCamera,
+		view: PovPose | null = null
 	): boolean {
 		this.root.visible = false;
 		if (!player?.alive || !this.clips) return false;
@@ -121,8 +138,10 @@ export class Viewmodel {
 					: Math.min(duration, Math.max(0, pose.time));
 		arms.mixer.update(0);
 
-		this.root.position.copy(camera.position);
-		this.root.rotation.set(0, player.pitch * DEG, player.yaw * DEG);
+		this.place(
+			camera,
+			view ?? { yaw: player.yaw, pitch: player.pitch, speed: 0, distance: 0, turn: 0 }
+		);
 		this.root.visible = true;
 		this.root.updateMatrixWorld(true);
 
@@ -134,6 +153,30 @@ export class Viewmodel {
 		}
 		this.camera.updateMatrixWorld();
 		return true;
+	}
+
+	private place(camera: THREE.PerspectiveCamera, view: PovPose) {
+		const pace = Math.min(1, view.speed / RUN_SPEED);
+		const phase = (view.distance / BOB_STRIDE) * Math.PI * 2;
+		const swing = pace * 0.005 * RUN_SPEED;
+		const lateral = swing * (0.3 + 0.7 * Math.sin(phase)) * BOB_LATERAL;
+		const vertical = swing * (0.3 + 0.7 * Math.sin(phase * 2)) * BOB_VERTICAL;
+		const sway = Math.max(-MAX_SWAY, Math.min(MAX_SWAY, -view.turn * SWAY_PER_DEGREE));
+		const yaw = (view.yaw + sway) * DEG;
+		const pitch = view.pitch * DEG;
+		const forward = new THREE.Vector3(
+			Math.cos(pitch) * Math.cos(yaw),
+			Math.cos(pitch) * Math.sin(yaw),
+			-Math.sin(pitch)
+		);
+		const right = new THREE.Vector3(Math.sin(yaw), -Math.cos(yaw), 0);
+		const up = new THREE.Vector3().crossVectors(right, forward);
+		this.root.position
+			.copy(camera.position)
+			.addScaledVector(right, OFFSET.right + lateral)
+			.addScaledVector(forward, OFFSET.forward)
+			.addScaledVector(up, OFFSET.up + vertical - pace * BOB_LOWER);
+		this.root.rotation.set(-lateral * 0.5 * DEG, pitch, yaw);
 	}
 
 	private pose(

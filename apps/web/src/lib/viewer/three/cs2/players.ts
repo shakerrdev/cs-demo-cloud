@@ -35,7 +35,7 @@ import {
 	type TextureSupport
 } from './textures.ts';
 import type { TextureQuality } from './pack.ts';
-import { Viewmodel } from './viewmodel.ts';
+import { Viewmodel, type PovPose } from './viewmodel.ts';
 
 const BASE = '/maps/3d/players';
 const SKINS_BASE = '/maps/3d/skins';
@@ -905,10 +905,11 @@ export class PlayerModels {
 		replay: RoundReplay,
 		tick: number,
 		player: PlayerState | null,
-		camera: THREE.PerspectiveCamera
+		camera: THREE.PerspectiveCamera,
+		view: PovPose | null = null
 	): Viewmodel | null {
 		if (!this.active || !this.viewmodel) return null;
-		return this.viewmodel.update(replay, tick, player, camera) ? this.viewmodel : null;
+		return this.viewmodel.update(replay, tick, player, camera, view) ? this.viewmodel : null;
 	}
 
 	get active(): boolean {
