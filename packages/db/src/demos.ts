@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, ne } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { demos, matches, type Demo, type NewDemo } from './schema.ts';
 
@@ -65,8 +65,16 @@ export function failDemo(db: Db, id: string, error: string): void {
 export function requeueDemo(db: Db, id: string): void {
 	db.update(demos)
 		.set({ status: 'queued', error: null, updatedAt: new Date() })
-		.where(eq(demos.id, id))
+		.where(and(eq(demos.id, id), ne(demos.status, 'processing')))
 		.run();
+}
+
+export function requeueAllDemos(db: Db): number {
+	return db
+		.update(demos)
+		.set({ status: 'queued', error: null, updatedAt: new Date() })
+		.where(ne(demos.status, 'processing'))
+		.run().changes;
 }
 
 export function touchDemo(db: Db, id: string): void {
