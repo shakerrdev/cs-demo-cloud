@@ -37,6 +37,8 @@ import {
 	parseGrenades,
 	parseHeader,
 	parseTicks,
+	parseSettings,
+	parseSkins,
 	parseView,
 	str,
 	type RawEvent,
@@ -45,6 +47,7 @@ import {
 	type ViewRows
 } from './parser.ts';
 import { detectRounds, type RoundSpan } from './rounds.ts';
+import { glovesBySteamId, settingsAt, type PlayerSettings } from './settings.ts';
 import { assignTeams } from './teams.ts';
 
 const STEP = 4;
@@ -307,6 +310,22 @@ export function analyzeDemo(
 
 	const grenadeRows = parseGrenades(path);
 	timings('grenades');
+	const settingTicks = spans.map((span) =>
+		Math.min(span.lastTick, (span.freezeEndTick ?? span.startTick) + 32)
+	);
+	let roundSettings: Map<string, PlayerSettings>[] = spans.map(() => new Map());
+	let gloves = new Map<string, ReplaySkin>();
+	try {
+		const rows = parseSettings(
+			path,
+			[...new Set(settingTicks)].sort((a, b) => a - b)
+		);
+		roundSettings = settingTicks.map((tick) => settingsAt(rows, tick, playerKey));
+		gloves = glovesBySteamId(parseSkins(path));
+	} catch (error) {
+		console.warn(`No player settings: ${error instanceof Error ? error.message : error}`);
+	}
+	timings('settings');
 	let views: ({ grid: Grid; columns: ViewColumns } | null)[] = spans.map(() => null);
 	const viewRate = options.viewRate ?? 32;
 	let viewStep = Math.max(1, Math.round(tickRate / Math.max(1, viewRate)));
@@ -468,6 +487,8 @@ export function analyzeDemo(
 				scoreB,
 				players: roundPlayers[r]!.map((entry, p) => ({
 					...(agents[r]!.has(p) ? { agent: agents[r]!.get(p) } : {}),
+					...roundSettings[r]!.get(entry.key),
+					...(gloves.has(entry.key) ? { gloves: gloves.get(entry.key) } : {}),
 					steamid: entry.key,
 					name: entry.name,
 					team: teamOf(entry),

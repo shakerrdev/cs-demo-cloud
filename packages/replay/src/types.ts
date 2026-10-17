@@ -23,6 +23,10 @@ export interface ReplayPlayer {
 	team: TeamKey;
 	side: Side;
 	agent?: string;
+	crosshair?: string;
+	viewmodel?: [fov: number, x: number, y: number, z: number];
+	musicKit?: number;
+	gloves?: ReplaySkin;
 }
 
 export interface ReplaySkin {

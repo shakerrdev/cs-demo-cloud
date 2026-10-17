@@ -133,6 +133,40 @@ export function parseView(path: string, ticks: number[]): ViewRows {
 	return completeColumns(demoparser.parseTicks(path, [...viewProps], ticks, null, true), viewProps);
 }
 
+export const settingProps = [
+	'crosshair_code',
+	'music_kit_id',
+	'CCSPlayerPawn.m_flViewmodelFOV',
+	'CCSPlayerPawn.m_flViewmodelOffsetX',
+	'CCSPlayerPawn.m_flViewmodelOffsetY',
+	'CCSPlayerPawn.m_flViewmodelOffsetZ'
+] as const;
+
+export type SettingRows = { [K in (typeof settingProps)[number]]: unknown[] } & {
+	tick: number[];
+	steamid: string[];
+	name: string[];
+};
+
+export function parseSettings(path: string, ticks: number[]): SettingRows {
+	return completeColumns(
+		demoparser.parseTicks(path, [...settingProps], ticks, null, true),
+		settingProps
+	);
+}
+
+export interface RawSkin {
+	steamid: string | null;
+	def_index: number | null;
+	paint_index: number | null;
+	paint_seed: number | null;
+	paint_wear: number | null;
+}
+
+export function parseSkins(path: string): RawSkin[] {
+	return demoparser.parsePlayerSkins(path) as RawSkin[];
+}
+
 export function parseGrenades(path: string): RawGrenade[] {
 	return demoparser.parseGrenades(path, null, false) as RawGrenade[];
 }
