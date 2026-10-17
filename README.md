@@ -47,6 +47,10 @@ Map assets come from Valve's game files, which is fine for a private instance bu
 
 Map calibration (origin, scale, lower-level height) lives in `packages/replay/src/maps.ts`. Maps without awpy geometry still play in 2D.
 
+### Performance
+
+The 3D view has a **Stats** button (or **P**). It shows frame times, JavaScript time per part of the frame, draw calls and GPU times where the browser offers timer queries. **Record 30 s** and **Benchmark** save a JSON report to your downloads. The benchmark runs the same few seconds with each graphics option turned off in turn (resolution, anti-aliasing, bloom, map, players, x-ray, viewmodel, effects, depth prepass, 11-bit colour) and reads back each frame so the GPU's share shows even without timer queries. The toolbar has **Resolution** (auto scales between 50 and 100% to keep up with the screen's refresh rate) and **Anti-aliasing** (4×, 2×, off), remembered per device.
+
 ### Game-look 3D maps
 
 With a map pack installed, the 3D view shows the map as it looks in CS2 instead of the collision mesh: the real geometry and props with their textures, the baked lightmaps (irradiance, directional light and sun shadows), light probes for props, cube map reflections, the 3D skybox, the sky, cubemap and gradient fog, and the map's tonemap, bloom and colour grading. Matches on maps without a pack keep the simple view.
@@ -86,14 +90,14 @@ To add newer sounds to a player pack without exporting the models again, run `no
 
 ### Skins and agents
 
-Demos record each player's agent and the paint kit, pattern seed and wear of every gun and knife they hold (only real inventory items; picked-up weapons keep their owner's skin). A skins pack draws them:
+Demos record each player's agent, gloves, crosshair code, viewmodel FOV/offsets and music kit, and the paint kit, pattern seed and wear of every gun and knife they hold (only real inventory items; picked-up weapons keep their owner's skin). A skins pack draws them:
 
 - `node apps/map-export/src/index.ts --skins all` packs every skin and agent in the game (about 2,000 weapon and knife skins and 78 agents, about 1.6 GB, an hour or two the first time; it picks up where it stopped when run again with `--reuse-work`)
 - or only what your demos use: **Settings → 3D maps** links that list; give it to the exporter with `--skins cosmetics.json`, or point it at your server with an API token: `--skins https://demos.example.com --token cdc_…`. `--skin-texture-size 512` makes either pack smaller
 - it writes `map-packs/skins.zip` with the agent models (third person and first-person arms) and, for each paint kit, the weapon model it paints (the legacy model for older finishes), the pattern, wear and grunge textures and the kit's colours and settings; upload it like the other packs; the viewer only downloads the agents and skins a demo shows
 - the viewer paints the weapons itself: custom paint jobs, gunsmith and patina finishes use their artwork; hydrographic, spray-paint, anodized and airbrushed finishes (fades, dopplers) colour the pattern or the weapon's masks with the kit's four colours, and wear strips paint where the wear texture is thinner than the item's float, revealing the base weapon and adding grime
 - it's an approximation of the game's compositor: pattern seeds don't shift the pattern yet, and glitter, pearlescence and overlay effects of newer kits are left out
-- gloves aren't in the demo data, so everyone keeps their agent's default gloves
+- gloves come from the demo too (glove type, paint kit, seed and wear per player); the pack includes each glove model (third person and first-person arms) and its paint kit, and the viewer paints them with a port of CS2's `csgo_customglove` compositor (palette mask, textile detail layers, pattern); wear damage and grime are left out for now. Older skins packs have no gloves: export again
 
 ## Demo sources
 
@@ -244,7 +248,7 @@ Admins get an **Admin** page with server-wide settings, stored in the database a
 
 - **Sound**: sound on or off for everyone, master volume, from which speed footsteps and bounces are left out, and for each kind of sound (gunshots, distant gunshots, footsteps, grenades, fire, bomb, kills, hits, POV weapon, music kit, announcer) whether it plays and how loud
 - **Viewer**: default view, 3D camera, speed and texture quality, playing the next round automatically, how long before freeze time ends a round starts, round and bomb time for the clock, and whether the game HUD, X-ray and names over players are on by default
-- **First person**: FOV, viewmodel on or off, viewmodel FOV and offsets, bob, sway, camera kick while spraying, scope overlay, flash and hit effects, and the crosshair (colour, size, gap, thickness, dot)
+- **First person**: FOV, viewmodel on or off, each player's own viewmodel settings from the demo (or a fixed viewmodel FOV and offsets), bob, sway, camera kick while spraying, scope overlay, flash and hit effects, and the crosshair: each player's own crosshair code from the demo, or a fixed one (colour, size, gap, thickness, dot)
 - **Parsing**: first-person view samples per second: off, 32 or 64 (64 roughly doubles that pass: ~2 min and ~2.5 GB RAM for a 540 MB demo)
 
 What someone picks in the viewer itself (view, textures, HUD, X-ray, sound on/off) is remembered on their device and wins over the defaults. **Reset to defaults** puts everything back.
