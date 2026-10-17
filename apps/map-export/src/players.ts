@@ -219,6 +219,14 @@ function drawSounds(vpk: Vpk): Record<string, { files: string[] }> {
 	return found;
 }
 
+function decoded(folder: string, file: string): string | null {
+	for (const extension of ['.wav', '.mp3']) {
+		const path = join(folder, file.replace(/\.vsnd$/, extension));
+		if (existsSync(path)) return path;
+	}
+	return null;
+}
+
 function numbered(prefix: string, count: number, suffix = ''): string[] {
 	return Array.from({ length: count }, (_, i) => `${prefix}${i + 1}${suffix}.vsnd`);
 }
@@ -440,9 +448,7 @@ async function exportSounds(
 	const outDir = join(workDir, 'sounds');
 	await mkdir(outDir, { recursive: true });
 	for (let i = 0; i < files.length; i += 40) {
-		const batch = files
-			.slice(i, i + 40)
-			.filter((file) => !existsSync(join(outDir, file.replace(/\.vsnd$/, '.wav'))));
+		const batch = files.slice(i, i + 40).filter((file) => !decoded(outDir, file));
 		if (batch.length)
 			await run(tools.vrf, [
 				'-i',
@@ -457,17 +463,17 @@ async function exportSounds(
 
 	const entries = new Map<string, string>();
 	await forEachLimit(files, 4, async (file) => {
-		const wav = join(outDir, file.replace(/\.vsnd$/, '.wav'));
-		if (!existsSync(wav)) return;
+		const path = decoded(outDir, file);
+		if (!path) return;
 		const name = file
 			.replace(/^sounds\//, '')
 			.replace(/\.vsnd$/, '')
 			.replaceAll('/', '_');
-		const data = await readFile(wav);
-		entries.set(
-			file,
-			await pack.addFile(`sounds/${name}.wav`, STEREO.test(file) ? data : monoWav(data), true)
-		);
+		const data = await readFile(path);
+		const entry = path.endsWith('.mp3')
+			? await pack.addFile(`sounds/${name}.mp3`, data, false)
+			: await pack.addFile(`sounds/${name}.wav`, STEREO.test(file) ? data : monoWav(data), true);
+		entries.set(file, entry);
 	});
 
 	const sounds: Record<string, PlayerPackSound> = {};
