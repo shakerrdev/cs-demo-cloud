@@ -21,6 +21,9 @@
 			<a href="/" class:active={page.url.pathname === '/'}>Matches</a>
 			<a href="/auto-import" class:active={page.url.pathname === '/auto-import'}>Auto-import</a>
 			<a href="/settings" class:active={page.url.pathname === '/settings'}>Settings</a>
+			{#if data.user.role === 'admin'}
+				<a href="/admin" class:active={page.url.pathname === '/admin'}>Admin</a>
+			{/if}
 			<form method="POST" action="/logout">
 				<button type="submit" title="Sign out">{data.user.name} · Sign out</button>
 			</form>

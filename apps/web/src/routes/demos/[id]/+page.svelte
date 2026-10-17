@@ -88,6 +88,7 @@
 		skinsPack={data.skinsPack}
 		{rounds}
 		{teamNames}
+		config={data.config}
 	/>
 
 	<section class="scoreboard">

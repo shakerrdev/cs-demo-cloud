@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { getDemo, getMatch, requeueDemo } from '@cs-demo-cloud/db';
 import { PLAYER_PACK, SKINS_PACK, readMapPack } from '@cs-demo-cloud/shared';
+import { loadConfig } from '#lib/server/config.ts';
 import { db } from '#lib/server/db.ts';
 import { canRemoveDemo, removeDemo } from '#lib/server/demos.ts';
 import { isDemoId, storage } from '#lib/server/storage.ts';
@@ -20,7 +21,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		mapPack: pack?.version ?? null,
 		playerPack: players?.version ?? null,
 		skinsPack: skins?.version ?? null,
-		canDelete: canRemoveDemo(locals.user, demo)
+		canDelete: canRemoveDemo(locals.user, demo),
+		config: loadConfig()
 	};
 };
 
