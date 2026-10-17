@@ -32,6 +32,7 @@ export interface SceneFrame {
 	focus: number | null;
 	mode: CameraMode;
 	roofs: boolean;
+	xray?: boolean;
 }
 
 const background = new THREE.Color(0x0b0d10);
@@ -69,6 +70,7 @@ export function scopeOf(player: PlayerState | undefined): { fov: number; sniper:
 
 export class ReplayScene {
 	onPick: ((index: number) => void) | null = null;
+	onCycle: ((direction: 1 | -1) => void) | null = null;
 	onPackStatus: ((status: PackStatus) => void) | null = null;
 
 	private renderer: THREE.WebGLRenderer;
@@ -143,15 +145,24 @@ export class ReplayScene {
 		};
 		const up = (event: PointerEvent) => {
 			const moved = Math.hypot(event.clientX - this.pointer.x, event.clientY - this.pointer.y);
-			if (this.pointer.down && moved < 5 && event.button === 0) this.pick(event);
+			if (this.pointer.down && moved < 5) {
+				if (this.mode !== 'free' && (event.button === 0 || event.button === 2))
+					this.onCycle?.(event.button === 0 ? 1 : -1);
+				else if (event.button === 0) this.pick(event);
+			}
 			this.pointer.down = false;
+		};
+		const menu = (event: MouseEvent) => {
+			if (this.mode !== 'free') event.preventDefault();
 		};
 		canvas.addEventListener('pointerdown', down);
 		canvas.addEventListener('pointerup', up);
+		canvas.addEventListener('contextmenu', menu);
 		if (import.meta.env.DEV) (window as unknown as { replayScene: ReplayScene }).replayScene = this;
 		this.detach = () => {
 			canvas.removeEventListener('pointerdown', down);
 			canvas.removeEventListener('pointerup', up);
+			canvas.removeEventListener('contextmenu', menu);
 		};
 	}
 
@@ -362,7 +373,7 @@ export class ReplayScene {
 	}
 
 	render(frame: SceneFrame) {
-		const { replay, tick, focus, mode, roofs } = frame;
+		const { replay, tick, focus, mode, roofs, xray = true } = frame;
 		this.replay = replay;
 		if (replay.meta.round !== this.round) {
 			this.round = replay.meta.round;
@@ -374,7 +385,7 @@ export class ReplayScene {
 		if (this.framedMap !== (this.map?.name ?? '')) this.frame(replay);
 		if (mode !== this.mode) this.switchMode(mode);
 
-		const key = `${tick}|${focus}|${mode}|${roofs}|${this.round}`;
+		const key = `${tick}|${focus}|${mode}|${roofs}|${xray}|${this.round}`;
 		if (key !== this.lastKey) {
 			this.lastKey = key;
 			this.dirty = true;
@@ -406,7 +417,7 @@ export class ReplayScene {
 		const models = this.models?.active ? this.models : null;
 		this.actors.setCapsules(!models);
 		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
-		this.models?.update(replay, tick, this.players, this.pov, true);
+		this.models?.update(replay, tick, this.players, this.pov, xray);
 		if (this.effects) this.models?.updateProps(replay, tick);
 		this.camera.updateMatrixWorld();
 		const viewmodel =

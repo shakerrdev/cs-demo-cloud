@@ -10,6 +10,7 @@
 	import { formatClock } from '#lib/format.ts';
 	import { EAR_HEIGHT, ReplayAudio, type Listener } from './audio.ts';
 	import { drawFrame, sideColors } from './draw.ts';
+	import GameHud from './GameHud.svelte';
 	import { bombState, lastTick, playerStates } from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
 	import type { CameraMode, PackStatus, ReplayScene, TextureQuality } from './three/scene.ts';
@@ -58,6 +59,8 @@
 	const viewKey = 'viewer.view';
 	const qualityKey = 'viewer.textures';
 	const soundKey = 'viewer.sound';
+	const hudKey = 'viewer.hud';
+	const xrayKey = 'viewer.xray';
 	const qualities: { value: TextureQuality; label: string }[] = [
 		{ value: 'auto', label: 'Textures: auto' },
 		{ value: 'high', label: 'Textures: high' },
@@ -90,6 +93,12 @@
 	let textureQuality = $state<TextureQuality>(savedQuality());
 	let audio = $state.raw<ReplayAudio | null>(null);
 	let soundOn = $state(savedSound());
+	let hudOn = $state(savedFlag(hudKey, true));
+	let xrayOn = $state(savedFlag(xrayKey, true));
+	let theater = $state(false);
+	let innerWidth = $state(1280);
+	let idle = $state(false);
+	let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
 	let radar = $state.raw<HTMLImageElement | null>(null);
 	let lowerRadar = $state.raw<HTMLImageElement | null>(null);
@@ -100,7 +109,16 @@
 
 	const cssSize = $derived(Math.max(240, Math.min(wrapWidth, innerHeight - 190)));
 	const canvasPx = $derived(Math.round(cssSize * pixelRatio));
-	const stageWidth = $derived(view === '3d' ? Math.max(240, wrapWidth) : cssSize);
+	const stageWidth = $derived(
+		theater ? innerWidth : view === '3d' ? Math.max(240, wrapWidth) : cssSize
+	);
+	const stageHeight = $derived(
+		theater
+			? innerHeight
+			: view === '3d'
+				? Math.max(240, Math.min(Math.round((stageWidth * 9) / 16), innerHeight - 150))
+				: cssSize
+	);
 	const roundInfo = $derived(rounds.find((r) => r.number === round) ?? null);
 	const previousRound = $derived(rounds.find((r) => r.number === round - 1) ?? null);
 	const end = $derived(replay ? lastTick(replay) : 0);
@@ -121,6 +139,50 @@
 		} catch {
 			return;
 		}
+	}
+
+	function savedFlag(key: string, fallback: boolean): boolean {
+		try {
+			const value = localStorage.getItem(key);
+			return value === null ? fallback : value === 'on';
+		} catch {
+			return fallback;
+		}
+	}
+
+	function toggleXray() {
+		xrayOn = !xrayOn;
+		try {
+			localStorage.setItem(xrayKey, xrayOn ? 'on' : 'off');
+		} catch {
+			return;
+		}
+	}
+
+	function toggleHud() {
+		hudOn = !hudOn;
+		try {
+			localStorage.setItem(hudKey, hudOn ? 'on' : 'off');
+		} catch {
+			return;
+		}
+	}
+
+	function setTheater(next: boolean) {
+		theater = next;
+		if (next) {
+			if (view !== '3d') setView('3d');
+			document.documentElement.requestFullscreen?.().catch(() => {});
+		} else if (document.fullscreenElement) {
+			document.exitFullscreen().catch(() => {});
+		}
+		wake();
+	}
+
+	function wake() {
+		idle = false;
+		clearTimeout(idleTimer);
+		if (theater) idleTimer = setTimeout(() => (idle = playing), 2500);
 	}
 
 	function savedSound(): boolean {
@@ -191,6 +253,17 @@
 			focus = players.find((p) => p.alive && p.present)?.index ?? focus;
 	}
 
+	function cycleFocus(direction: 1 | -1) {
+		if (!replay) return;
+		const order = playerStates(replay, tick)
+			.filter((p) => p.alive && p.present)
+			.sort((a, b) => (a.side === b.side ? a.index - b.index : a.side === 'CT' ? -1 : 1));
+		if (!order.length) return;
+		const at = order.findIndex((p) => p.index === focus);
+		const next = at < 0 ? 0 : (at + direction + order.length) % order.length;
+		focus = order[next]!.index;
+	}
+
 	function startOf(next: RoundReplay): number {
 		const { freezeEndTick, startTick, tickRate } = next.meta;
 		return freezeEndTick ? Math.max(startTick, freezeEndTick - 3 * tickRate) : startTick;
@@ -250,6 +323,7 @@
 				if (disposed) return;
 				created = new ReplayScene(canvas, overlay);
 				created.onPick = (index) => (focus = focus === index ? null : index);
+				created.onCycle = cycleFocus;
 				created.onPackStatus = (status) => (packStatus = status);
 				scene3d = created;
 			})
@@ -315,7 +389,7 @@
 	});
 
 	$effect(() => {
-		scene3d?.setSize(stageWidth, cssSize, pixelRatio);
+		scene3d?.setSize(stageWidth, stageHeight, pixelRatio);
 	});
 
 	$effect(() => {
@@ -353,7 +427,7 @@
 
 			if (view === '3d') {
 				if (scene3d && current)
-					scene3d.render({ replay: current, tick, focus, mode: cameraMode, roofs });
+					scene3d.render({ replay: current, tick, focus, mode: cameraMode, roofs, xray: xrayOn });
 			} else if (canvas && current) {
 				const image = level === 'lower' && lowerRadar ? lowerRadar : radar;
 				const key = `${tick}|${canvasPx}|${level}|${image?.src}|${current.meta.round}|${focus}`;
@@ -398,6 +472,10 @@
 		else if (event.key === 'PageDown' || event.key === ']') goToRound(round + 1);
 		else if (/^[1-5]$/.test(event.key)) speed = speeds[Number(event.key) - 1]!;
 		else if (event.key === 'm' || event.key === 'M') toggleSound();
+		else if (event.key === 'f' || event.key === 'F') setTheater(!theater);
+		else if (event.key === 'h' || event.key === 'H') toggleHud();
+		else if ((event.key === 'x' || event.key === 'X') && view === '3d') toggleXray();
+		else if (event.key === 'Escape' && theater) setTheater(false);
 		else if (event.key === 'v' || event.key === 'V') setView(view === '3d' ? '2d' : '3d');
 		else if ((event.key === 'c' || event.key === 'C') && view === '3d') {
 			const index = cameraModes.findIndex((option) => option.mode === cameraMode);
@@ -462,6 +540,9 @@
 		return team === 'a' ? roundInfo.teamASide : roundInfo.teamASide === 'CT' ? 'T' : 'CT';
 	};
 
+	const hudSides = $derived({ a: teamSide('a'), b: teamSide('b') });
+	const hudScores = $derived({ a: previousRound?.scoreA ?? 0, b: previousRound?.scoreB ?? 0 });
+
 	const marker = (value: number) =>
 		replay ? ((value - replay.meta.startTick) / Math.max(1, end - replay.meta.startTick)) * 100 : 0;
 	const halfBreak = (number: number) => number === 12 || (number > 24 && (number - 24) % 3 === 0);
@@ -469,6 +550,7 @@
 
 <svelte:window
 	bind:innerHeight
+	bind:innerWidth
 	onkeydown={(event) => {
 		if (soundOn) audio?.unlock();
 		onKey(event);
@@ -476,9 +558,18 @@
 	onpointerdown={() => {
 		if (soundOn) audio?.unlock();
 	}}
+	onpointermove={() => {
+		if (theater) wake();
+	}}
 />
 
-<div class="viewer">
+<svelte:document
+	onfullscreenchange={() => {
+		if (!document.fullscreenElement && theater) theater = false;
+	}}
+/>
+
+<div class="viewer" class:theater>
 	{#each teamKeys as team (team)}
 		{@const side = teamSide(team)}
 		<aside class="team {team}" style:--side={side ? sideColors[side] : 'var(--muted)'}>
@@ -522,58 +613,45 @@
 	{/each}
 
 	<div class="stage" bind:clientWidth={wrapWidth}>
-		<div class="clock" class:bomb={clock.bomb}>
-			<span class="label">{clock.label}</span>
-			<span class="time">{clock.time}</span>
-		</div>
-		<div class="canvas-wrap" style:width="{stageWidth}px" style:height="{cssSize}px">
+		{#if view === '2d' || !hudOn}
+			<div class="clock" class:bomb={clock.bomb}>
+				<span class="label">{clock.label}</span>
+				<span class="time">{clock.time}</span>
+			</div>
+		{/if}
+		<div class="canvas-wrap" class:idle style:width="{stageWidth}px" style:height="{stageHeight}px">
 			{#if view === '3d'}
 				<canvas
 					bind:this={canvas3d}
 					class="scene"
 					style:width="{stageWidth}px"
-					style:height="{cssSize}px"
+					style:height="{stageHeight}px"
 				></canvas>
 				<canvas
 					bind:this={overlay3d}
 					class="overlay"
 					style:width="{stageWidth}px"
-					style:height="{cssSize}px"
+					style:height="{stageHeight}px"
 				></canvas>
-				<div class="toolbar">
-					<div class="segmented" role="group" aria-label="Camera">
-						{#each cameraModes as option (option.mode)}
-							<button
-								type="button"
-								class:active={cameraMode === option.mode}
-								aria-pressed={cameraMode === option.mode}
-								onclick={() => setCameraMode(option.mode)}>{option.label}</button
-							>
-						{/each}
-					</div>
-					<button
-						type="button"
-						class:active={!roofs}
-						aria-pressed={!roofs}
-						title="Hide everything above the players"
-						onclick={() => (roofs = !roofs)}>Cut roofs</button
-					>
-					<button type="button" onclick={() => scene3d?.resetView()}>Reset</button>
-					{#if mapPack}
-						<select
-							aria-label="Texture quality"
-							value={textureQuality}
-							onchange={(e) => setQuality(e.currentTarget.value as TextureQuality)}
-						>
-							{#each qualities as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					{/if}
-					{#if cameraMode !== 'free' && focus !== null && replay?.meta.players[focus]}
-						<span class="following">{replay.meta.players[focus].name}</span>
-					{/if}
-				</div>
+				{#if hudOn && replay}
+					<GameHud
+						{replay}
+						tick={hudTick}
+						players={hudPlayers}
+						{focus}
+						pov={cameraMode === 'pov'}
+						{teamNames}
+						teamSides={hudSides}
+						scores={hudScores}
+						{clock}
+						map={mapInfo}
+						{radar}
+						{lowerRadar}
+						{pixelRatio}
+						height={stageHeight}
+						onSelect={(index) => (focus = focus === index ? null : index)}
+					/>
+				{/if}
 			{:else}
 				<canvas
 					bind:this={canvas}
@@ -613,43 +691,28 @@
 					{/if}
 				{/if}
 			{/if}
-			<ol class="killfeed">
-				{#each killFeed as kill (kill.tick + ':' + kill.victim)}
-					{@const attacker = replay?.meta.players[kill.attacker]}
-					{@const victim = replay?.meta.players[kill.victim]}
-					<li>
-						{#if attacker && kill.attacker !== kill.victim}
-							<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
-						{/if}
-						<span class="kill-weapon">
-							{weaponTitle(kill.weapon)}{kill.headshot ? ' · HS' : ''}{kill.wallbang
-								? ' · wall'
-								: ''}{kill.throughSmoke ? ' · smoke' : ''}
-						</span>
-						{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
-					</li>
-				{/each}
-			</ol>
+			{#if view === '2d' || !hudOn}
+				<ol class="killfeed">
+					{#each killFeed as kill (kill.tick + ':' + kill.victim)}
+						{@const attacker = replay?.meta.players[kill.attacker]}
+						{@const victim = replay?.meta.players[kill.victim]}
+						<li>
+							{#if attacker && kill.attacker !== kill.victim}
+								<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
+							{/if}
+							<span class="kill-weapon">
+								{weaponTitle(kill.weapon)}{kill.headshot ? ' · HS' : ''}{kill.wallbang
+									? ' · wall'
+									: ''}{kill.throughSmoke ? ' · smoke' : ''}
+							</span>
+							{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
+						</li>
+					{/each}
+				</ol>
+			{/if}
 		</div>
 
-		<div class="controls">
-			<button
-				type="button"
-				class="icon"
-				onclick={() => goToRound(round - 1)}
-				disabled={round <= 1}
-				aria-label="Previous round">‹‹</button
-			>
-			<button type="button" class="play" onclick={() => (playing = !playing)} disabled={!replay}>
-				{playing ? 'Pause' : 'Play'}
-			</button>
-			<button
-				type="button"
-				class="icon"
-				onclick={() => goToRound(round + 1)}
-				disabled={round >= rounds.length}
-				aria-label="Next round">››</button
-			>
+		<div class="controls" class:idle>
 			<div class="timeline">
 				{#if replay}
 					{#if replay.meta.freezeEndTick}
@@ -677,43 +740,117 @@
 					aria-label="Round timeline"
 				/>
 			</div>
-			{#if audio}
+			<div class="buttons">
 				<button
 					type="button"
-					class="sound"
-					aria-pressed={soundOn}
-					onclick={toggleSound}
-					title="Sound (M)">{soundOn ? 'Sound on' : 'Sound off'}</button
+					class="icon"
+					onclick={() => goToRound(round - 1)}
+					disabled={round <= 1}
+					aria-label="Previous round">‹‹</button
 				>
-			{/if}
-			<select bind:value={speed} aria-label="Playback speed">
-				{#each speeds as option (option)}
-					<option value={option}>{option}×</option>
-				{/each}
-			</select>
-			<div class="segmented" role="group" aria-label="View">
-				<button
-					type="button"
-					class:active={view === '2d'}
-					aria-pressed={view === '2d'}
-					onclick={() => setView('2d')}>2D</button
-				>
-				<button
-					type="button"
-					class:active={view === '3d'}
-					aria-pressed={view === '3d'}
-					onclick={() => setView('3d')}>3D</button
-				>
-			</div>
-			{#if view === '2d' && mapInfo?.lowerBelowZ !== null && mapInfo}
-				<button
-					type="button"
-					class="level"
-					onclick={() => (level = level === 'upper' ? 'lower' : 'upper')}
-				>
-					{level === 'upper' ? 'Upper' : 'Lower'}
+				<button type="button" class="play" onclick={() => (playing = !playing)} disabled={!replay}>
+					{playing ? 'Pause' : 'Play'}
 				</button>
-			{/if}
+				<button
+					type="button"
+					class="icon"
+					onclick={() => goToRound(round + 1)}
+					disabled={round >= rounds.length}
+					aria-label="Next round">››</button
+				>
+				<span class="round-label">Round {round}</span>
+				<select bind:value={speed} aria-label="Playback speed">
+					{#each speeds as option (option)}
+						<option value={option}>{option}×</option>
+					{/each}
+				</select>
+				{#if audio}
+					<button
+						type="button"
+						class="sound"
+						aria-pressed={soundOn}
+						onclick={toggleSound}
+						title="Sound (M)">{soundOn ? 'Sound on' : 'Sound off'}</button
+					>
+				{/if}
+				<span class="spacer"></span>
+				{#if view === '3d'}
+					<div class="segmented" role="group" aria-label="Camera">
+						{#each cameraModes as option (option.mode)}
+							<button
+								type="button"
+								class:active={cameraMode === option.mode}
+								aria-pressed={cameraMode === option.mode}
+								onclick={() => setCameraMode(option.mode)}>{option.label}</button
+							>
+						{/each}
+					</div>
+					<button
+						type="button"
+						class:active={!roofs}
+						aria-pressed={!roofs}
+						title="Hide everything above the players"
+						onclick={() => (roofs = !roofs)}>Cut roofs</button
+					>
+					<button type="button" onclick={() => scene3d?.resetView()}>Reset</button>
+					{#if mapPack}
+						<select
+							aria-label="Texture quality"
+							value={textureQuality}
+							onchange={(e) => setQuality(e.currentTarget.value as TextureQuality)}
+						>
+							{#each qualities as option (option.value)}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					{/if}
+					<button
+						type="button"
+						class:active={xrayOn}
+						aria-pressed={xrayOn}
+						title="Show players through walls (X)"
+						onclick={toggleXray}>X-ray</button
+					>
+					<button
+						type="button"
+						class:active={hudOn}
+						aria-pressed={hudOn}
+						title="Game HUD (H)"
+						onclick={toggleHud}>HUD</button
+					>
+					<button
+						type="button"
+						class:active={theater}
+						aria-pressed={theater}
+						title="Full screen (F)"
+						onclick={() => setTheater(!theater)}
+						>{theater ? 'Exit full screen' : 'Full screen'}</button
+					>
+				{/if}
+				<div class="segmented" role="group" aria-label="View">
+					<button
+						type="button"
+						class:active={view === '2d'}
+						aria-pressed={view === '2d'}
+						onclick={() => setView('2d')}>2D</button
+					>
+					<button
+						type="button"
+						class:active={view === '3d'}
+						aria-pressed={view === '3d'}
+						onclick={() => setView('3d')}>3D</button
+					>
+				</div>
+				{#if view === '2d' && mapInfo?.lowerBelowZ !== null && mapInfo}
+					<button
+						type="button"
+						class="level"
+						onclick={() => (level = level === 'upper' ? 'lower' : 'upper')}
+					>
+						{level === 'upper' ? 'Upper' : 'Lower'}
+					</button>
+				{/if}
+			</div>
 		</div>
 	</div>
 </div>
@@ -738,7 +875,9 @@
 	Space play/pause · ←/→ 5 s (Shift 1 s) · [ / ] round · 1–5 speed · V 2D/3D · click a player to
 	highlight
 	{#if view === '3d'}
-		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode
+		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode · F
+		full screen · H HUD · X x-ray · in Follow and POV, left/right click switches to the
+		next/previous player
 	{/if}
 </p>
 
@@ -960,62 +1099,6 @@
 		pointer-events: none;
 	}
 
-	.toolbar {
-		position: absolute;
-		top: 10px;
-		left: 10px;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 6px;
-		max-width: calc(100% - 240px);
-	}
-
-	@media (max-width: 560px) {
-		.toolbar {
-			max-width: calc(100% - 20px);
-		}
-	}
-
-	.toolbar button,
-	.toolbar select {
-		height: 28px;
-		padding: 0 10px;
-		border: 1px solid rgb(255 255 255 / 0.14);
-		border-radius: 7px;
-		background: rgb(0 0 0 / 0.6);
-		color: var(--text);
-		font: inherit;
-		font-size: 12.5px;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.toolbar button.active {
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
-	.toolbar .segmented button {
-		border-radius: 0;
-	}
-
-	.toolbar .segmented button:first-child {
-		border-radius: 7px 0 0 7px;
-	}
-
-	.toolbar .segmented button:last-child {
-		border-radius: 0 7px 7px 0;
-	}
-
-	.following {
-		padding: 4px 9px;
-		border-radius: 6px;
-		background: rgb(0 0 0 / 0.6);
-		font-size: 12.5px;
-		font-weight: 600;
-	}
-
 	.segmented {
 		display: flex;
 	}
@@ -1072,11 +1155,74 @@
 	}
 
 	.controls {
+		display: grid;
+		gap: 6px;
+		width: 100%;
+		max-width: 1100px;
+	}
+
+	.buttons {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 8px;
-		width: 100%;
-		max-width: 900px;
+	}
+
+	.spacer {
+		flex: 1;
+	}
+
+	.round-label {
+		color: var(--muted);
+		font-size: 13px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.controls button.active {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	.viewer.theater {
+		position: fixed;
+		inset: 0;
+		z-index: 100;
+		display: block;
+		background: #000;
+	}
+
+	.viewer.theater .team {
+		display: none;
+	}
+
+	.viewer.theater .stage {
+		position: absolute;
+		inset: 0;
+		display: block;
+	}
+
+	.viewer.theater .canvas-wrap {
+		border-radius: 0;
+	}
+
+	.canvas-wrap.idle {
+		cursor: none;
+	}
+
+	.viewer.theater .controls {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		max-width: none;
+		padding: 36px 16px 12px;
+		background: linear-gradient(rgb(0 0 0 / 0), rgb(0 0 0 / 0.8));
+		transition: opacity 0.3s;
+	}
+
+	.viewer.theater .controls.idle {
+		opacity: 0;
 	}
 
 	.controls button,
