@@ -14,6 +14,10 @@
 	import { EAR_HEIGHT, ReplayAudio, type Listener } from './audio.ts';
 	import { drawFrame, sideColors } from './draw.ts';
 	import GameHud from './GameHud.svelte';
+	import PerfPanel from './PerfPanel.svelte';
+	import { Benchmark } from './bench.ts';
+	import { defaultGraphics, type GraphicsSettings, type Resolution } from './graphics.ts';
+	import { profiler, summarize } from './perf.ts';
 	import { bombState, lastTick, playerStates } from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
 	import type { CameraMode, PackStatus, ReplayScene, TextureQuality } from './three/scene.ts';
@@ -66,6 +70,19 @@
 	const soundKey = 'viewer.sound';
 	const hudKey = 'viewer.hud';
 	const xrayKey = 'viewer.xray';
+	const graphicsKey = 'viewer.graphics';
+	const resolutions: { value: Resolution; label: string }[] = [
+		{ value: 'auto', label: 'Resolution: auto' },
+		{ value: 1, label: 'Resolution: 100%' },
+		{ value: 0.85, label: 'Resolution: 85%' },
+		{ value: 0.7, label: 'Resolution: 70%' },
+		{ value: 0.5, label: 'Resolution: 50%' }
+	];
+	const msaaOptions: { value: GraphicsSettings['msaa']; label: string }[] = [
+		{ value: 4, label: 'Anti-aliasing: 4×' },
+		{ value: 2, label: 'Anti-aliasing: 2×' },
+		{ value: 0, label: 'Anti-aliasing: off' }
+	];
 	const qualities: { value: TextureQuality; label: string }[] = [
 		{ value: 'auto', label: 'Textures: auto' },
 		{ value: 'high', label: 'Textures: high' },
@@ -102,6 +119,11 @@
 	let hudOn = $state(savedFlag(hudKey, initial.viewer.hud));
 	let xrayOn = $state(savedFlag(xrayKey, initial.viewer.xray));
 	let theater = $state(false);
+	let graphics = $state<GraphicsSettings>(savedGraphics());
+	let perfOpen = $state(perfRequested());
+	let bench = $state.raw<Benchmark | null>(null);
+	let benchStatus = $state<string | null>(null);
+	let renderScale = $state(1);
 	let innerWidth = $state(1280);
 	let idle = $state(false);
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -242,6 +264,140 @@
 		return { position: [center[0], center[1], center[2] + 600], forward: [0, 1, 0], up: [0, 0, 1] };
 	}
 
+	function savedGraphics(): GraphicsSettings {
+		try {
+			const saved = JSON.parse(
+				localStorage.getItem(graphicsKey) ?? '{}'
+			) as Partial<GraphicsSettings>;
+			return {
+				resolution:
+					resolutions.find((r) => r.value === saved.resolution)?.value ??
+					defaultGraphics.resolution,
+				msaa: msaaOptions.find((m) => m.value === saved.msaa)?.value ?? defaultGraphics.msaa
+			};
+		} catch {
+			return { ...defaultGraphics };
+		}
+	}
+
+	function setGraphics(next: Partial<GraphicsSettings>) {
+		graphics = { ...graphics, ...next };
+		try {
+			localStorage.setItem(graphicsKey, JSON.stringify(graphics));
+		} catch {
+			return;
+		}
+	}
+
+	function perfRequested(): boolean {
+		try {
+			return new URLSearchParams(location.search).has('perf');
+		} catch {
+			return false;
+		}
+	}
+
+	function togglePerf() {
+		perfOpen = !perfOpen;
+	}
+
+	$effect(() => {
+		profiler.setEnabled(perfOpen);
+		if (!perfOpen) {
+			bench?.cancel();
+			bench = null;
+			benchStatus = null;
+		}
+	});
+
+	function startBench() {
+		if (!scene3d || view !== '3d') {
+			benchStatus = 'needs the 3D view';
+			return;
+		}
+		profiler.clear();
+		const run = new Benchmark(scene3d, $state.snapshot(graphics));
+		const from = tick;
+		const benchRound = round;
+		run.onCase = () => {
+			if (round === benchRound) tick = from;
+			playing = true;
+		};
+		run.onProgress = (text) => {
+			benchStatus = text;
+			if (text === 'done') {
+				saveReport('benchmark', run);
+				bench = null;
+			}
+		};
+		bench = run;
+		if (!playing) playing = true;
+	}
+
+	function saveReport(kind: string, run: Benchmark | null = null) {
+		const report = buildReport(kind, run);
+		const blob = new Blob([JSON.stringify(report, null, 1)], { type: 'application/json' });
+		const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+		const link = document.createElement('a');
+		link.href = URL.createObjectURL(blob);
+		link.download = `cs-demo-cloud-perf-${kind}-${stamp}.json`;
+		document.body.append(link);
+		link.click();
+		link.remove();
+		setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+	}
+
+	function buildReport(kind: string, run: Benchmark | null) {
+		const frames = profiler.frames.filter((f) => f.interval > 0);
+		const nav = navigator as Navigator & { deviceMemory?: number };
+		const memory = (
+			performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }
+		).memory;
+		return {
+			kind,
+			createdAt: new Date().toISOString(),
+			browser: {
+				userAgent: navigator.userAgent,
+				platform: navigator.platform,
+				cores: navigator.hardwareConcurrency,
+				memoryGb: nav.deviceMemory ?? null,
+				heapMb: memory ? Math.round(memory.usedJSHeapSize / 1e6) : null,
+				screen: { width: screen.width, height: screen.height, dpr: window.devicePixelRatio },
+				gpuTimers: profiler.gpuAvailable
+			},
+			gpu: scene3d?.gpuName ?? null,
+			viewer: {
+				map,
+				mapPack,
+				playerPack,
+				skinsPack,
+				packState: packStatus.state,
+				view,
+				cameraMode,
+				speed,
+				playing,
+				theater,
+				fullscreen: Boolean(document.fullscreenElement),
+				hud: hudOn,
+				xray: xrayOn,
+				textures: textureQuality,
+				graphics: $state.snapshot(graphics),
+				stage: { width: stageWidth, height: stageHeight, pixelRatio },
+				drawing: scene3d?.drawingSize ?? null,
+				renderScale: scene3d?.renderScale ?? null,
+				scene: scene3d?.stats ?? null,
+				round,
+				tick: Math.round(tick)
+			},
+			config: $state.snapshot(config),
+			summary: summarize(frames),
+			benchmark: run?.results ?? null,
+			longFrames: profiler.longFrames,
+			events: profiler.events,
+			frames: frames.slice(-3600)
+		};
+	}
+
 	function savedQuality(): TextureQuality {
 		try {
 			const saved = localStorage.getItem(qualityKey);
@@ -338,7 +494,8 @@
 		import('./three/scene.ts')
 			.then(({ ReplayScene }) => {
 				if (disposed) return;
-				created = new ReplayScene(canvas, overlay);
+				created = new ReplayScene(canvas, overlay, { antialias: !mapPack });
+				created.setGraphics($state.snapshot(graphics));
 				created.onPick = (index) => (focus = focus === index ? null : index);
 				created.onCycle = cycleFocus;
 				created.onPackStatus = (status) => (packStatus = status);
@@ -414,6 +571,11 @@
 	});
 
 	$effect(() => {
+		const next = $state.snapshot(graphics);
+		if (!bench) untrack(() => scene3d)?.setGraphics(next);
+	});
+
+	$effect(() => {
 		scene3d?.setSize(stageWidth, stageHeight, pixelRatio);
 	});
 
@@ -426,6 +588,8 @@
 		let lastCanvas: HTMLCanvasElement | null = null;
 
 		const loop = (now: number) => {
+			profiler.beginFrame(now);
+			bench?.step(now);
 			const elapsed = Math.min(0.1, (now - previous) / 1000);
 			previous = now;
 			const current = replay;
@@ -448,12 +612,24 @@
 				lastHud = now;
 			}
 
+			profiler.begin('audio');
 			if (audio && current)
 				audio.update(current, tick, playing && !loading, speed, listener(current));
+			profiler.end('audio');
 
 			if (view === '3d') {
-				if (scene3d && current)
-					scene3d.render({ replay: current, tick, focus, mode: cameraMode, roofs, xray: xrayOn });
+				if (scene3d && current) {
+					const drawn = scene3d.render({
+						replay: current,
+						tick,
+						focus,
+						mode: cameraMode,
+						roofs,
+						xray: xrayOn
+					});
+					scene3d.frameDone(now, drawn && playing);
+					if (perfOpen && renderScale !== scene3d.renderScale) renderScale = scene3d.renderScale;
+				}
 			} else if (canvas && current) {
 				const image = level === 'lower' && lowerRadar ? lowerRadar : radar;
 				const key = `${tick}|${canvasPx}|${level}|${image?.src}|${current.meta.round}|${focus}`;
@@ -476,6 +652,7 @@
 				}
 			}
 
+			profiler.endFrame();
 			frame = requestAnimationFrame(loop);
 		};
 
@@ -500,6 +677,7 @@
 		else if (event.key === 'm' || event.key === 'M') toggleSound();
 		else if (event.key === 'f' || event.key === 'F') setTheater(!theater);
 		else if (event.key === 'h' || event.key === 'H') toggleHud();
+		else if (event.key === 'p' || event.key === 'P') togglePerf();
 		else if ((event.key === 'x' || event.key === 'X') && view === '3d') toggleXray();
 		else if (event.key === 'Escape' && theater) setTheater(false);
 		else if (event.key === 'v' || event.key === 'V') setView(view === '3d' ? '2d' : '3d');
@@ -678,6 +856,15 @@
 						onSelect={(index) => (focus = focus === index ? null : index)}
 					/>
 				{/if}
+				{#if perfOpen}
+					<PerfPanel
+						{benchStatus}
+						scale={renderScale}
+						onBench={startBench}
+						onSave={(kind) => saveReport(kind)}
+						onClose={() => (perfOpen = false)}
+					/>
+				{/if}
 			{:else}
 				<canvas
 					bind:this={canvas}
@@ -829,7 +1016,38 @@
 								<option value={option.value}>{option.label}</option>
 							{/each}
 						</select>
+						<select
+							aria-label="Render resolution"
+							value={String(graphics.resolution)}
+							onchange={(e) => {
+								const value = e.currentTarget.value;
+								setGraphics({
+									resolution: value === 'auto' ? 'auto' : (Number(value) as Resolution)
+								});
+							}}
+						>
+							{#each resolutions as option (option.value)}
+								<option value={String(option.value)}>{option.label}</option>
+							{/each}
+						</select>
+						<select
+							aria-label="Anti-aliasing"
+							value={String(graphics.msaa)}
+							onchange={(e) =>
+								setGraphics({ msaa: Number(e.currentTarget.value) as GraphicsSettings['msaa'] })}
+						>
+							{#each msaaOptions as option (option.value)}
+								<option value={String(option.value)}>{option.label}</option>
+							{/each}
+						</select>
 					{/if}
+					<button
+						type="button"
+						class:active={perfOpen}
+						aria-pressed={perfOpen}
+						title="Performance stats and reports (P)"
+						onclick={togglePerf}>Stats</button
+					>
 					<button
 						type="button"
 						class:active={xrayOn}
