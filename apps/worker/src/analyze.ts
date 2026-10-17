@@ -306,12 +306,17 @@ export function analyzeDemo(
 
 	const grenadeRows = parseGrenades(path);
 	timings('grenades');
-	const views = buildViews(
-		path,
-		spans,
-		playerIndex,
-		roundPlayers.map((list) => list.length)
-	);
+	let views: ({ grid: Grid; columns: ViewColumns } | null)[] = spans.map(() => null);
+	try {
+		views = buildViews(
+			path,
+			spans,
+			playerIndex,
+			roundPlayers.map((list) => list.length)
+		);
+	} catch (error) {
+		console.warn(`No view stream: ${error instanceof Error ? error.message : error}`);
+	}
 	timings('view');
 	const grenadesByRound = buildGrenades(grenadeRows, events, roundIndexForTick, indexOf);
 
@@ -418,6 +423,7 @@ export function analyzeDemo(
 			}))
 			.filter((b) => b.player >= 0);
 
+		const view = views[r];
 		const hurts: number[] = [];
 		for (const e of roundEvents) {
 			if (e.event_name !== 'player_hurt') continue;
@@ -481,14 +487,18 @@ export function analyzeDemo(
 				inventory: inventories[r]!,
 				hurts,
 				places: [...placeTables[r]!.keys()],
-				view: {
-					tickStep: VIEW_STEP,
-					startTick: views[r]!.grid.first,
-					frameCount: views[r]!.grid.count
-				}
+				...(view
+					? {
+							view: {
+								tickStep: VIEW_STEP,
+								startTick: view.grid.first,
+								frameCount: view.grid.count
+							}
+						}
+					: {})
 			},
 			columns: columns[r]!,
-			view: views[r]!.columns
+			...(view ? { view: view.columns } : {})
 		};
 	});
 

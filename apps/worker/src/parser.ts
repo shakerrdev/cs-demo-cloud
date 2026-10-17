@@ -117,12 +117,20 @@ export function parseEvents(path: string): RawEvent[] {
 	) as RawEvent[];
 }
 
+export function completeColumns<T>(result: unknown, props: readonly string[]): T {
+	const columns = (result && typeof result === 'object' ? result : {}) as Record<string, unknown>;
+	const rows = Array.isArray(columns.tick) ? columns.tick.length : 0;
+	for (const key of ['tick', 'steamid', 'name', ...props])
+		if (!Array.isArray(columns[key])) columns[key] = new Array(rows).fill(null);
+	return columns as T;
+}
+
 export function parseTicks(path: string, ticks: number[]): TickColumns {
-	return demoparser.parseTicks(path, [...tickProps], ticks, null, true) as TickColumns;
+	return completeColumns(demoparser.parseTicks(path, [...tickProps], ticks, null, true), tickProps);
 }
 
 export function parseView(path: string, ticks: number[]): ViewRows {
-	return demoparser.parseTicks(path, [...viewProps], ticks, null, true) as ViewRows;
+	return completeColumns(demoparser.parseTicks(path, [...viewProps], ticks, null, true), viewProps);
 }
 
 export function parseGrenades(path: string): RawGrenade[] {

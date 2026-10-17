@@ -55,7 +55,7 @@ while (!shutdown.signal.aborted) {
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		failDemo(db, demo.id, message);
-		console.error(`Failed ${demo.fileName}: ${message}`);
+		console.error(`Failed ${demo.fileName}:`, error);
 	} finally {
 		clearInterval(heartbeat);
 	}
