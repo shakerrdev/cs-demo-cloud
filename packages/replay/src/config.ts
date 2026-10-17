@@ -64,7 +64,7 @@ export interface AppConfig {
 		crosshairDot: boolean;
 	};
 	parsing: {
-		viewStream: boolean;
+		viewRate: number;
 	};
 }
 
@@ -127,7 +127,7 @@ export const defaultConfig: AppConfig = {
 		crosshairDot: false
 	},
 	parsing: {
-		viewStream: true
+		viewRate: 32
 	}
 };
 
@@ -347,10 +347,15 @@ export const configSections: ConfigSection[] = [
 		title: 'Parsing',
 		fields: [
 			{
-				path: 'parsing.viewStream',
-				label: 'Record the 32 Hz first-person view',
-				help: 'Smoother POV and recoil. Makes replays about three times bigger and parsing slower. Applies to demos parsed from now on.',
-				kind: 'toggle'
+				path: 'parsing.viewRate',
+				label: 'First-person view samples',
+				help: 'Smoother POV and recoil. 32 per second makes replays about three times bigger, 64 (every tick on 64-tick demos) about five times, and parsing slower. Applies to demos parsed from now on.',
+				kind: 'select',
+				options: [
+					{ value: '0', label: 'Off' },
+					{ value: '32', label: '32 per second' },
+					{ value: '64', label: '64 per second' }
+				]
 			}
 		]
 	}
@@ -399,7 +404,16 @@ function cleanValue(field: ConfigField, value: unknown, fallback: unknown): unkn
 	}
 }
 
+function upgradeRaw(raw: unknown): unknown {
+	const parsing = readPath(raw, 'parsing') as Record<string, unknown> | undefined;
+	if (parsing && parsing.viewRate === undefined && typeof parsing.viewStream === 'boolean') {
+		return { ...(raw as object), parsing: { ...parsing, viewRate: parsing.viewStream ? 32 : 0 } };
+	}
+	return raw;
+}
+
 export function normalizeConfig(raw: unknown): AppConfig {
+	raw = upgradeRaw(raw);
 	const config = structuredClone(defaultConfig) as unknown as Record<string, unknown>;
 	for (const field of configFields) {
 		const fallback = readPath(defaultConfig, field.path);

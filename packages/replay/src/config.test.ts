@@ -39,7 +39,14 @@ test('reads a submitted form, with unchecked toggles as off', () => {
 	assert.equal(config.pov.crosshairColor, '#ff0000');
 	assert.equal(config.audio.groups.guns.enabled, true);
 	assert.equal(config.audio.groups.footsteps.enabled, false);
-	assert.equal(config.parsing.viewStream, false);
+	assert.equal(config.parsing.viewRate, 32);
+});
+
+test('reads the old view stream switch as a sample rate', () => {
+	assert.equal(normalizeConfig({ parsing: { viewStream: false } }).parsing.viewRate, 0);
+	assert.equal(normalizeConfig({ parsing: { viewStream: true } }).parsing.viewRate, 32);
+	assert.equal(normalizeConfig({ parsing: { viewRate: '64' } }).parsing.viewRate, 64);
+	assert.equal(normalizeConfig({ parsing: { viewRate: 48 } }).parsing.viewRate, 32);
 });
 
 test('sorts sound keys into groups and converts the game fov', () => {
