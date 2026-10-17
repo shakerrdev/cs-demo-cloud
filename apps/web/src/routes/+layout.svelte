@@ -112,7 +112,7 @@
 		cursor: pointer;
 	}
 
-	:global(button.primary) {
+	:global(button.primary, a.button.primary) {
 		border-color: var(--accent);
 		background: var(--accent);
 		color: #1a1206;

@@ -91,6 +91,55 @@
 	</form>
 </section>
 
+{#if data.tls.mode === 'local-ca'}
+	<section class="panel">
+		<h2>HTTPS</h2>
+		<p class="hint">
+			This server signs its own certificates. Install its certificate authority once on each device
+			and the browser stops warning. Check that the fingerprint matches when you install it.
+		</p>
+		<div class="row">
+			<a class="button primary" href="/ca.crt" download>Download certificate</a>
+			<span class="muted"
+				>{data.tls.name} · valid until {formatDate(new Date(data.tls.expires))}</span
+			>
+		</div>
+		<p class="fingerprint">
+			<span class="muted">SHA-256</span> <code>{data.tls.fingerprint}</code>
+		</p>
+		<details>
+			<summary>How to install it</summary>
+			<ul class="steps">
+				<li>
+					<strong>Windows (Chrome, Edge, Firefox, Zen):</strong> open the downloaded file → Install Certificate
+					→ Current User → Place all certificates in the following store → Browse → Trusted Root Certification
+					Authorities → Finish. Restart the browser.
+				</li>
+				<li>
+					<strong>Firefox or Zen if it still warns:</strong> Settings → Privacy &amp; Security → Certificates
+					→ View Certificates → Authorities → Import, then tick “Trust this CA to identify websites”.
+				</li>
+				<li>
+					<strong>macOS:</strong> open the file, add it to the System keychain, then in Keychain Access
+					open it and set Trust → Always Trust.
+				</li>
+				<li>
+					<strong>Android:</strong> Settings → Security → Encryption &amp; credentials → Install a certificate
+					→ CA certificate.
+				</li>
+				<li>
+					<strong>iPhone/iPad:</strong> open the file in Safari, install the profile in Settings, then
+					enable it under General → About → Certificate Trust Settings.
+				</li>
+			</ul>
+			<p class="hint">
+				Names like <code>obelix</code> or <code>nas.local</code> work automatically. To open the app
+				by IP address, add the address to <code>TLS_HOSTS</code> in the compose file.
+			</p>
+		</details>
+	</section>
+{/if}
+
 <section class="panel">
 	<h2>API tokens</h2>
 	<p class="hint">
@@ -287,6 +336,29 @@
 {/if}
 
 <style>
+	.fingerprint {
+		margin: 12px 0 0;
+		font-size: 13px;
+		overflow-wrap: anywhere;
+	}
+
+	details {
+		margin-top: 12px;
+	}
+
+	summary {
+		cursor: pointer;
+		font-weight: 600;
+	}
+
+	.steps {
+		margin: 10px 0;
+		padding-left: 18px;
+		display: grid;
+		gap: 8px;
+		font-size: 14px;
+		line-height: 1.45;
+	}
 	h1 {
 		margin: 0 0 18px;
 		font-size: 22px;

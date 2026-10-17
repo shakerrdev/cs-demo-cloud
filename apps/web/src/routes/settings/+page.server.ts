@@ -18,6 +18,7 @@ import { listMapPacks } from '@cs-demo-cloud/shared';
 import { db } from '#lib/server/db.ts';
 import { SESSION_COOKIE } from '#lib/server/session.ts';
 import { storage } from '#lib/server/storage.ts';
+import { tlsInfo } from '#lib/server/tls.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 function requireAdmin(user: SessionUser | null): SessionUser {
@@ -31,7 +32,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		users: admin ? listUsers(db) : [],
 		invites: admin ? listOpenInvites(db) : [],
 		tokens: listApiTokens(db, locals.user!.id),
-		mapPacks: await listMapPacks(storage)
+		mapPacks: await listMapPacks(storage),
+		tls: await tlsInfo()
 	};
 };
 

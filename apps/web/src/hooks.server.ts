@@ -12,7 +12,13 @@ import {
 import { db } from '#lib/server/db.ts';
 import { SESSION_COOKIE, clearSessionCookie, setSessionCookie } from '#lib/server/session.ts';
 
-const publicPaths = [/^\/login\/?$/, /^\/invite\/[^/]+\/?$/, /^\/healthz\/?$/, /^\/robots\.txt$/];
+const publicPaths = [
+	/^\/login\/?$/,
+	/^\/invite\/[^/]+\/?$/,
+	/^\/healthz\/?$/,
+	/^\/robots\.txt$/,
+	/^\/ca\.crt$/
+];
 
 export const init: ServerInit = () => {
 	if (building) return;
@@ -21,7 +27,10 @@ export const init: ServerInit = () => {
 
 	removeBootstrapInvites(db);
 	const { token } = createInvite(db, { role: 'admin' });
-	const fallback = dev ? 'http://localhost:5173' : `http://localhost:${process.env.PORT || 3000}`;
+	const scheme = !dev && process.env.TLS_MODE && process.env.TLS_MODE !== 'off' ? 'https' : 'http';
+	const fallback = dev
+		? 'http://localhost:5173'
+		: `${scheme}://localhost:${process.env.PORT || 3000}`;
 	const origin = (process.env.ORIGIN || fallback).replace(/\/$/, '');
 	const hint =
 		process.env.ORIGIN || dev
