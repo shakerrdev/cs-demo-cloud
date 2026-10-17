@@ -77,11 +77,13 @@ vec2 boxHit(vec3 ro, vec3 rd) {
 	return vec2(max(max(lo.x, lo.y), lo.z), min(min(hi.x, hi.y), hi.z));
 }
 float density(vec3 q) {
+	float shape = length(q * vec3(1.0, 1.0, 0.95) - vec3(0.0, 0.0, -0.12));
+	if (shape >= uGrowth || q.z < -0.92) return 0.0;
 	vec3 p = q * uRadii;
 	vec3 drift = vec3(uSeed, uSeed * 1.7, uTime * 0.05);
-	float shape = length(q * vec3(1.0, 1.0, 0.95) - vec3(0.0, 0.0, -0.12));
 	float lumps = fbm(p * 0.011 + drift);
 	float edge = uGrowth * (0.55 + 0.45 * lumps) - shape;
+	if (edge <= 0.0) return 0.0;
 	float body = smoothstep(0.0, 0.1, edge);
 	float detail = fbm(p * 0.032 - drift * 2.3);
 	float floorCut = smoothstep(-0.92, -0.8, q.z);
@@ -97,7 +99,7 @@ void main() {
 	float t = max(hit.x, 0.0);
 	float tEnd = hit.y;
 	if (tEnd <= t) discard;
-	const int STEPS = 36;
+	const int STEPS = 28;
 	float stepLength = (tEnd - t) / float(STEPS);
 	float jitter = hash3(vec3(gl_FragCoord.xy, uTime));
 	t += stepLength * jitter;
