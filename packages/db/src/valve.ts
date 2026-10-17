@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, lt } from 'drizzle-orm';
 import type { Db } from './client.ts';
+import { getSetting, setSetting } from './settings.ts';
 import {
 	demos,
 	settings,
@@ -23,24 +24,6 @@ export interface ValveStatus {
 	lastRunAt: number | null;
 	lastError: string | null;
 	botError: string | null;
-}
-
-function getSetting(db: Db, key: string): string | null {
-	return (
-		db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get()?.value ??
-		null
-	);
-}
-
-function setSetting(db: Db, key: string, value: string | null): void {
-	if (value === null) {
-		db.delete(settings).where(eq(settings.key, key)).run();
-		return;
-	}
-	db.insert(settings)
-		.values({ key, value, updatedAt: new Date() })
-		.onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: new Date() } })
-		.run();
 }
 
 function readJson<T>(db: Db, key: string): T | null {
