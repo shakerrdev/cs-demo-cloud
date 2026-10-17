@@ -91,6 +91,7 @@ test('round trip keeps the extra columns and the view stream', () => {
 	columns.clip!.set([30, 29, 28, 27, 26, 7, 7, 7, 6, 5]);
 	columns.reserve!.set([90, 90, 90, 90, 90, 21, 21, 21, 21, 21]);
 	columns.zoom!.set([0, 0, 1, 2, 0, 0, 0, 0, 0, 0]);
+	columns.place!.set([1, 1, 1, 2, 2, 0, 3, 3, 3, 3]);
 	const view = createViewColumns(18);
 	for (let i = 0; i < 18; i++) {
 		view.x[i] = -60000 + i * 7919;
@@ -106,7 +107,7 @@ test('round trip keeps the extra columns and the view stream', () => {
 	const decoded = decodeRound(encodeRound({ meta: m, columns, view }));
 
 	assert.deepEqual(decoded.meta, m);
-	for (const key of ['clip', 'reserve', 'zoom'] as const)
+	for (const key of ['clip', 'reserve', 'zoom', 'place'] as const)
 		assert.deepEqual(Array.from(decoded.columns[key]!), Array.from(columns[key]!), key);
 	for (const key of Object.keys(view) as (keyof typeof view)[])
 		assert.deepEqual(Array.from(decoded.view![key]), Array.from(view[key]), key);

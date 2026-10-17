@@ -40,6 +40,7 @@ export interface PlayerState extends ReplayPlayer {
 	clip: number | null;
 	reserve: number | null;
 	zoom: number;
+	place: string;
 }
 
 export function lastTick(replay: RoundReplay): number {
@@ -94,6 +95,7 @@ export function playerStates(replay: RoundReplay, tick: number): PlayerState[] {
 			clip: columns.clip ? columns.clip[c]! : null,
 			reserve: columns.reserve ? columns.reserve[c]! : null,
 			zoom: columns.zoom ? columns.zoom[c]! : 0,
+			place: columns.place ? (meta.places?.[columns.place[c]!] ?? '') : '',
 			kills: meta.kills.filter(
 				(kill) => kill.attacker === p && kill.tick <= tick && kill.victim !== p
 			).length

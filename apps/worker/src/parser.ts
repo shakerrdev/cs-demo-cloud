@@ -76,7 +76,8 @@ export const tickProps = [
 	'active_weapon_ammo',
 	'total_ammo_left',
 	'zoom_lvl',
-	'inventory'
+	'inventory',
+	'last_place_name'
 ] as const;
 
 export const viewProps = ['X', 'Y', 'Z', 'yaw', 'pitch', 'aim_punch_angle', 'duck_amount'] as const;

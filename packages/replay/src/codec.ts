@@ -27,6 +27,8 @@ const EXTRA_COLUMNS: ColumnSpec<keyof RoundColumns>[] = [
 	['zoom', Uint8Array, false]
 ];
 
+const PLACE_COLUMNS: ColumnSpec<keyof RoundColumns>[] = [['place', Uint8Array, false]];
+
 const VIEW_COLUMNS: ColumnSpec<keyof ViewColumns>[] = [
 	['x', Int32Array, true],
 	['y', Int32Array, true],
@@ -53,7 +55,12 @@ export function createColumns(size: number, extra = true): RoundColumns {
 		weapon: new Uint8Array(size),
 		flags: new Uint8Array(size),
 		...(extra
-			? { clip: new Uint8Array(size), reserve: new Uint8Array(size), zoom: new Uint8Array(size) }
+			? {
+					clip: new Uint8Array(size),
+					reserve: new Uint8Array(size),
+					zoom: new Uint8Array(size),
+					place: new Uint8Array(size)
+				}
 			: {})
 	};
 }
@@ -83,6 +90,8 @@ function sections(replay: { meta: RoundMeta }) {
 	];
 	if (hasExtra(meta))
 		list.push({ specs: EXTRA_COLUMNS, size, frames: meta.frameCount, view: false });
+	if (meta.version >= 3)
+		list.push({ specs: PLACE_COLUMNS, size, frames: meta.frameCount, view: false });
 	if (meta.view)
 		list.push({
 			specs: VIEW_COLUMNS,

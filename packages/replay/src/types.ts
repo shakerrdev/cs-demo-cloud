@@ -1,4 +1,4 @@
-export const REPLAY_VERSION = 2;
+export const REPLAY_VERSION = 3;
 export const VIEW_POSITION_SCALE = 16;
 export const PUNCH_SCALE = 100;
 
@@ -108,6 +108,7 @@ export interface RoundMeta {
 	bomb: ReplayBombEvent[];
 	blinds: ReplayBlind[];
 	inventory?: number[];
+	places?: string[];
 	view?: RoundViewGrid;
 }
 
@@ -131,6 +132,7 @@ export interface RoundColumns {
 	clip?: Uint8Array;
 	reserve?: Uint8Array;
 	zoom?: Uint8Array;
+	place?: Uint8Array;
 }
 
 export interface ViewColumns {

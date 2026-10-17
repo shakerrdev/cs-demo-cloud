@@ -86,11 +86,11 @@ const clamp16 = (value: number) => Math.max(-32768, Math.min(32767, Math.round(v
 const clampU8 = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
 const clamp32 = (value: number) => Math.max(-2147483648, Math.min(2147483647, Math.round(value)));
 
-function weaponIndex(weapons: Map<string, number>, name: string): number {
-	let index = weapons.get(name);
+function indexIn(table: Map<string, number>, name: string): number {
+	let index = table.get(name);
 	if (index === undefined) {
-		index = weapons.size;
-		if (index < 256) weapons.set(name, index);
+		index = table.size;
+		if (index < 256) table.set(name, index);
 		else index = 0;
 	}
 	return index;
@@ -214,6 +214,7 @@ export function analyzeDemo(
 	const lastSkins = spans.map(() => new Map<number, number>());
 	const agents = spans.map(() => new Map<number, string>());
 	const inventories = spans.map(() => [] as number[]);
+	const placeTables = spans.map(() => new Map<string, number>([['', 0]]));
 	const lastInventories = spans.map(() => new Map<number, string>());
 
 	for (let i = 0; i < ticks.tick.length; i++) {
@@ -228,7 +229,7 @@ export function analyzeDemo(
 			const at = p * grid.count + (ticks.tick[i]! - grid.first) / STEP;
 			const weapons = weaponTables[r]!;
 			const weaponName = str(ticks.active_weapon_name[i]) ?? '';
-			const weapon = weaponIndex(weapons, weaponName);
+			const weapon = indexIn(weapons, weaponName);
 
 			cols.x[at] = clamp16(num(ticks.X[i]));
 			cols.y[at] = clamp16(num(ticks.Y[i]));
@@ -242,10 +243,11 @@ export function analyzeDemo(
 			cols.clip![at] = clampU8(num(ticks.active_weapon_ammo[i]));
 			cols.reserve![at] = clampU8(num(ticks.total_ammo_left[i]));
 			cols.zoom![at] = clampU8(num(ticks.zoom_lvl[i]));
+			cols.place![at] = indexIn(placeTables[r]!, str(ticks.last_place_name[i]) ?? '');
 			const owned = ticks.inventory[i];
 			if (Array.isArray(owned)) {
 				const items = owned
-					.map((name) => (typeof name === 'string' ? weaponIndex(weapons, name) : 0))
+					.map((name) => (typeof name === 'string' ? indexIn(weapons, name) : 0))
 					.filter((index) => index > 0);
 				const key = items.join(',');
 				if (lastInventories[r]!.get(p) !== key) {
@@ -462,6 +464,7 @@ export function analyzeDemo(
 				bomb,
 				blinds,
 				inventory: inventories[r]!,
+				places: [...placeTables[r]!.keys()],
 				view: {
 					tickStep: VIEW_STEP,
 					startTick: views[r]!.grid.first,
