@@ -192,7 +192,7 @@ pnpm build
 pnpm start
 ```
 
-Open http://localhost:3000; the first start prints the admin invite link. Other devices on your network use `http://<this machine's IP>:3000`. Ctrl+C stops it. After `git pull`, run `pnpm install && pnpm build` again.
+Open https://localhost:3000; the first start prints the admin invite link. Other devices on your network use `https://<this machine's name or IP>:3000` (see [HTTPS](#https)). Ctrl+C stops it. After `git pull`, run `pnpm install && pnpm build` again.
 
 To bring in demos you already have, import CS2's replays folder (where in-game downloads end up) or any other folder:
 
@@ -200,13 +200,16 @@ To bring in demos you already have, import CS2's replays folder (where in-game d
 pnpm demos:import "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\replays"
 ```
 
-| Variable        | Default             | What it does                                           |
-| --------------- | ------------------- | ------------------------------------------------------ |
-| `DATA_DIR`      | `./data`            | Demos, replays, radar images, 3D maps and temp files   |
-| `DATABASE_PATH` | `<DATA_DIR>/app.db` | The SQLite database                                    |
-| `PORT`          | `3000`              | Port                                                   |
-| `HOST`          | `0.0.0.0`           | `127.0.0.1` keeps it to this machine                   |
-| `ORIGIN`        | empty               | Only needed behind a reverse proxy or a public address |
+| Variable             | Default             | What it does                                                |
+| -------------------- | ------------------- | ----------------------------------------------------------- |
+| `DATA_DIR`           | `./data`            | Demos, replays, radar images, 3D maps and temp files        |
+| `DATABASE_PATH`      | `<DATA_DIR>/app.db` | The SQLite database                                         |
+| `PORT`               | `3000`              | Port                                                        |
+| `HOST`               | `0.0.0.0`           | `127.0.0.1` keeps it to this machine                        |
+| `ORIGIN`             | empty               | Only needed behind a reverse proxy or a public address      |
+| `HTTPS`              | `on`                | `off` serves plain HTTP (default when `ORIGIN` is set)      |
+| `TLS_HOSTS`          | empty               | Extra names or IPs for the certificate, e.g. `192.168.1.20` |
+| `TLS_CERT`/`TLS_KEY` | empty               | Use your own certificate (PEM files) instead                |
 
 ### Raspberry Pi with a NAS
 
@@ -281,18 +284,27 @@ docker compose logs web # the admin invite link
 
 To build the image yourself instead: `docker build -t ghcr.io/shakerrdev/cs-demo-cloud:latest .` before `docker compose up -d`.
 
-| Variable      | Default   | What it does                                                                                                                |
-| ------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`        | `3000`    | Port on the host                                                                                                            |
-| `BIND`        | `0.0.0.0` | Interface the port is published on. `127.0.0.1` when a reverse proxy on the same host is the only way in                    |
-| `ORIGIN`      | empty     | The public address when it runs behind a reverse proxy, e.g. `https://demos.example.com`. Leave empty on your local network |
-| `DATA_PATH`   | `./data`  | Host folder for demos, replays, radar images and 3D maps                                                                    |
-| `DB_PATH`     | `./db`    | Host folder for the database. Keep it on a local disk of the machine running the containers, never on a network share       |
-| `PUID`/`PGID` | `1000`    | User and group the app runs as and that owns the files                                                                      |
+| Variable             | Default   | What it does                                                                                                                |
+| -------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`               | `3000`    | Port on the host                                                                                                            |
+| `BIND`               | `0.0.0.0` | Interface the port is published on. `127.0.0.1` when a reverse proxy on the same host is the only way in                    |
+| `ORIGIN`             | empty     | The public address when it runs behind a reverse proxy, e.g. `https://demos.example.com`. Leave empty on your local network |
+| `HTTPS`              | `on`      | `off` serves plain HTTP. Off by default when `ORIGIN` is set (the proxy does TLS)                                           |
+| `TLS_HOSTS`          | empty     | IP addresses (or extra names) to put in the certificate, e.g. `192.168.1.20`; plain names like `obelix` work without it     |
+| `TLS_CERT`/`TLS_KEY` | empty     | Paths (inside the container, e.g. under `/data`) to your own certificate and key; reloaded when the files change            |
+| `DATA_PATH`          | `./data`  | Host folder for demos, replays, radar images and 3D maps                                                                    |
+| `DB_PATH`            | `./db`    | Host folder for the database. Keep it on a local disk of the machine running the containers, never on a network share       |
+| `PUID`/`PGID`        | `1000`    | User and group the app runs as and that owns the files                                                                      |
 
 Put them in a `.env` file next to `compose.yaml` (see [`.env.example`](.env.example)) or in the project's environment settings.
 
-HTTPS via a reverse proxy, for example Caddy (with `BIND=127.0.0.1` and `ORIGIN=https://demos.example.com`):
+### HTTPS
+
+The app serves HTTPS on its port; plain `http://` requests to the same port are redirected. With no certificate of your own it creates a small certificate authority in `<data>/tls` and signs a certificate for every local name you open it by (`obelix`, `nas.local`, `localhost`, and the addresses in `TLS_HOSTS`). Browsers trust it after you install that authority once per device: **Settings → HTTPS → Download certificate** (or `/ca.crt`) has the steps for Windows, Firefox, macOS, Android and iOS. The authority's key never leaves `<data>/tls`; only names that look local (no dot, or `.local`, `.lan`, `.home.arpa`, `.internal`, `.ts.net`) get certificates.
+
+With a real certificate (for example `tailscale cert` or one from Let's Encrypt), set `TLS_CERT` and `TLS_KEY` instead.
+
+HTTPS via a reverse proxy instead, for example Caddy (with `BIND=127.0.0.1` and `ORIGIN=https://demos.example.com`):
 
 ```
 demos.example.com {
