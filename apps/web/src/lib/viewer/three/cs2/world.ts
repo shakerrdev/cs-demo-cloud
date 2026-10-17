@@ -163,7 +163,7 @@ export function createWorldShading(
 	if (manifest.fog?.cubemap && manifest.sky) defines.FOG_CUBE = 1;
 	if (manifest.fog?.gradient) defines.FOG_GRADIENT = 1;
 
-	const mask = new THREE.Vector4();
+	const mask = new THREE.Vector4(0, 0, 0, 0);
 	if (sun && sun.shadowChannel >= 0 && sun.shadowChannel < 4)
 		mask.setComponent(sun.shadowChannel, 1);
 	const scale = world.skyCamera?.scale ?? 1;
