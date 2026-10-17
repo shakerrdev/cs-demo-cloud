@@ -25,10 +25,11 @@ export interface DrawOptions {
 	radar: HTMLImageElement | null;
 	level: 'upper' | 'lower';
 	focus: number | null;
+	labels?: boolean;
 }
 
 export function drawFrame(options: DrawOptions): PlayerState[] {
-	const { ctx, size, pixelRatio, replay, tick, map, radar, level, focus } = options;
+	const { ctx, size, pixelRatio, replay, tick, map, radar, level, focus, labels = true } = options;
 	const { meta } = replay;
 	const radarSize = radar?.naturalWidth || 1024;
 	const scale = map?.scale ?? 5;
@@ -253,6 +254,7 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 			ctx.setLineDash([]);
 		}
 
+		if (!labels) continue;
 		const fontSize = Math.round(Math.max(10 * pixelRatio, radius * 1.05));
 		ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
 		ctx.textAlign = 'center';
