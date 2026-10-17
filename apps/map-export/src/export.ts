@@ -165,6 +165,11 @@ export class PackBuilder {
 		return this.addEntry(name, content, true);
 	}
 
+	copyEntry(name: string, data: Uint8Array, compress: boolean): Promise<string> {
+		this.names.add(name);
+		return this.addEntry(name, data, compress);
+	}
+
 	private addGzipped(name: string, data: Uint8Array): Promise<string> {
 		return this.addEntry(`${name}.gz`, data, false);
 	}

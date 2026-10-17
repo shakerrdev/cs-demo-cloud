@@ -14,6 +14,7 @@ import {
 	viewmodelClipNames,
 	weaponClass
 } from '@cs-demo-cloud/replay';
+import { openZipFile } from '@cs-demo-cloud/shared/zip';
 import { EXPORTER_VERSION, forEachLimit, PackBuilder } from './export.ts';
 import { processModelGltf, type Gltf, type ModelGltfOptions, type ModelResult } from './gltf.ts';
 import { gameBuild } from './steam.ts';
@@ -151,6 +152,9 @@ const WEAPON_SOUNDS: Record<string, [string, string | null]> = {
 	xm1014: ['Weapon_XM1014.Single', 'Weapon_XM1014.SingleDistant']
 };
 
+const MUSIC = 'sounds/music/valve_cs2_01';
+const ANNOUNCER = 'sounds/vo/announcer/cs2_classic';
+
 const SOUNDS: Record<string, { event?: string; files?: string[]; loop?: boolean }> = {
 	'step:CT': { event: 'CT_Concrete.StepLeft' },
 	'step:T': { event: 'T_Concrete.StepLeft' },
@@ -179,7 +183,51 @@ const SOUNDS: Record<string, { event?: string; files?: string[]; loop?: boolean 
 	'bomb:plant': { event: 'c4.plant' },
 	'bomb:defuse_start': { files: ['sounds/weapons/c4/c4_disarmstart.vsnd'] },
 	'bomb:defused': { files: ['sounds/weapons/c4/c4_disarmfinish.vsnd'] },
-	'bomb:explode': { event: 'c4.explode' }
+	'bomb:explode': { event: 'c4.explode' },
+	'hit:body': { files: numbered('sounds/player/player_damagebody_0', 8) },
+	'hit:kevlar': { files: numbered('sounds/player/kevlar', 5, '') },
+	'hit:helmet': { files: ['sounds/player/headshot_armor_01.vsnd'] },
+	'hit:head': { files: numbered('sounds/player/headshot_noarmor_0', 5) },
+	'zoom:sniper': { files: ['sounds/weapons/awp/zoom.vsnd'] },
+	'zoom:rifle': { files: ['sounds/weapons/aug/aug_zoom_in.vsnd'] },
+	'music:start': { files: [`${MUSIC}/startround_01.vsnd`] },
+	'music:action': { files: [`${MUSIC}/startaction_01.vsnd`, `${MUSIC}/startaction_02.vsnd`] },
+	'music:won': { files: [`${MUSIC}/wonround.vsnd`] },
+	'music:lost': { files: [`${MUSIC}/lostround.vsnd`] },
+	'music:bomb': { files: [`${MUSIC}/bombplanted.vsnd`] },
+	'music:bomb10': { files: [`${MUSIC}/bombtenseccount.vsnd`] },
+	'music:round10': { files: [`${MUSIC}/roundtenseccount.vsnd`] },
+	'radio:bombpl': { files: [`${ANNOUNCER}/bombpl.vsnd`] },
+	'radio:bombdef': { files: [`${ANNOUNCER}/bombdef.vsnd`] },
+	'radio:ctwin': { files: [`${ANNOUNCER}/ctwin.vsnd`] },
+	'radio:terwin': { files: [`${ANNOUNCER}/terwin.vsnd`] },
+	'radio:rounddraw': { files: [`${ANNOUNCER}/rounddraw.vsnd`] }
+};
+
+const STEREO = /^sounds\/(music|vo)\//;
+
+function drawSounds(vpk: Vpk): Record<string, { files: string[] }> {
+	const found: Record<string, { files: string[] }> = {};
+	for (const weapon of Object.keys(WEAPON_SOUNDS)) {
+		const folder = DRAW_FOLDERS[weapon] ?? weapon;
+		const files = vpk
+			.list(`sounds/weapons/${folder}/`)
+			.filter((path) => /_draw[0-9_]*\.vsnd_c$/.test(path) && !path.includes('/inspect'))
+			.map((path) => path.replace(/_c$/, ''));
+		if (files.length) found[`draw:${weapon}`] = { files: files.slice(0, 2) };
+	}
+	return found;
+}
+
+function numbered(prefix: string, count: number, suffix = ''): string[] {
+	return Array.from({ length: count }, (_, i) => `${prefix}${i + 1}${suffix}.vsnd`);
+}
+
+const DRAW_FOLDERS: Record<string, string> = {
+	m4a1_silencer: 'm4a1',
+	m4a4: 'm4a1',
+	usp_silencer: 'usp',
+	mp5sd: 'mp5'
 };
 
 const SOUND_SCRIPTS = [
@@ -360,9 +408,12 @@ async function exportSounds(
 		}
 	}
 	const events = collectSoundEvents(scripts);
+	const vpk = await Vpk.open(vpkPath);
 	const wanted: Record<string, { event?: string; files?: string[]; loop?: boolean }> = {
-		...SOUNDS
+		...SOUNDS,
+		...drawSounds(vpk)
 	};
+	await vpk.close();
 	for (const [weapon, [near, far]] of Object.entries(WEAPON_SOUNDS)) {
 		wanted[`shot:${weapon}`] = { event: near };
 		if (far) wanted[`far:${weapon}`] = { event: far };
@@ -412,7 +463,11 @@ async function exportSounds(
 			.replace(/^sounds\//, '')
 			.replace(/\.vsnd$/, '')
 			.replaceAll('/', '_');
-		entries.set(file, await pack.addFile(`sounds/${name}.wav`, monoWav(await readFile(wav)), true));
+		const data = await readFile(wav);
+		entries.set(
+			file,
+			await pack.addFile(`sounds/${name}.wav`, STEREO.test(file) ? data : monoWav(data), true)
+		);
 	});
 
 	const sounds: Record<string, PlayerPackSound> = {};
@@ -594,5 +649,66 @@ export async function exportPlayers(
 		await vpk.close();
 		if (!options.keepWork && !options.reuseWork)
 			await rm(options.workDir, { recursive: true, force: true });
+	}
+}
+
+export async function updatePlayerSounds(options: {
+	csgo: string;
+	source: string;
+	outDir: string;
+	workDir: string;
+	tools: Tools;
+	log: (message: string) => void;
+}): Promise<{ pack: string; bytes: number }> {
+	const { csgo, log, tools } = options;
+	const vpkPath = join(csgo, 'pak01_dir.vpk');
+	await mkdir(options.workDir, { recursive: true });
+	await mkdir(options.outDir, { recursive: true });
+	const packPath = join(options.outDir, `${PLAYER_PACK_NAME}.zip`);
+	const partPath = join(options.workDir, `${PLAYER_PACK_NAME}.zip`);
+	const source = await openZipFile(options.source);
+	const pack = new PackBuilder(partPath, log);
+	try {
+		const manifestEntry = source.entries.get(PLAYER_PACK_MANIFEST);
+		if (!manifestEntry) throw new Error(`${options.source} is not a player pack`);
+		const manifest = JSON.parse(
+			new TextDecoder().decode(await source.read(manifestEntry))
+		) as PlayerPackManifest;
+		for (const entry of source.entries.values()) {
+			if (entry.name === PLAYER_PACK_MANIFEST || entry.name.startsWith('sounds/')) continue;
+			await pack.copyEntry(entry.name, await source.read(entry), entry.method === 8);
+		}
+		log('players: exporting sounds');
+		const sounds = await exportSounds(
+			new Vrf(tools.vrf, join(csgo, 'gameinfo.gi')),
+			tools,
+			vpkPath,
+			options.workDir,
+			pack,
+			log
+		);
+		const updated: PlayerPackManifest = {
+			...manifest,
+			exportedAt: new Date().toISOString(),
+			tools: { ...tools.versions, exporter: EXPORTER_VERSION },
+			sounds
+		};
+		await pack.addFile(
+			PLAYER_PACK_MANIFEST,
+			new TextEncoder().encode(JSON.stringify(updated)),
+			false
+		);
+		await pack.close();
+		await source.close();
+		log(`Moving the pack to ${packPath}`);
+		await rename(partPath, packPath).catch(async (error: NodeJS.ErrnoException) => {
+			if (error.code !== 'EXDEV') throw error;
+			await copyFile(partPath, packPath);
+		});
+		return { pack: packPath, bytes: pack.bytes };
+	} catch (error) {
+		await pack.close().catch(() => {});
+		await source.close().catch(() => {});
+		throw error;
 	}
 }

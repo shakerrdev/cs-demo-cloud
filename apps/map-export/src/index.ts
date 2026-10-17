@@ -2,7 +2,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { exportMap } from './export.ts';
-import { exportPlayers } from './players.ts';
+import { exportPlayers, updatePlayerSounds } from './players.ts';
 import { exportSkins, fetchCosmetics } from './skins.ts';
 import { findCsgo } from './steam.ts';
 import { defaultToolsDir, ensureTools } from './tools.ts';
@@ -11,6 +11,7 @@ const usage = `Exports CS2 maps as 3D map packs for cs-demo-cloud.
 
 Usage: node apps/map-export/src/index.ts [options] <map> [map...]
        node apps/map-export/src/index.ts --players
+       node apps/map-export/src/index.ts --player-sounds <players.zip>
        node apps/map-export/src/index.ts --skins <cosmetics.json | server url> [--token <api token>]
 
   --game <folder>   CS2 install folder (found through Steam if left out)
@@ -23,6 +24,8 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --low-memory      Run Source 2 Viewer on one thread with less memory (slower, for 4 GB machines)
   --all             Every map in the game's maps folder
   --players         Player models, animations and weapons (players.zip)
+  --player-sounds <players.zip>  Export only the sounds again into a copy of an existing
+                    players.zip (written to --out)
   --skins <source>  Agents and weapon skins (skins.zip): "all" for every skin and agent in
                     the game, or only those your demos use, from the list in Settings or
                     straight from your server with --token
@@ -44,6 +47,7 @@ const { values, positionals } = parseArgs({
 		'low-memory': { type: 'boolean', default: false },
 		all: { type: 'boolean', default: false },
 		players: { type: 'boolean', default: false },
+		'player-sounds': { type: 'string' },
 		skins: { type: 'string' },
 		token: { type: 'string' },
 		'skin-texture-size': { type: 'string' },
@@ -51,7 +55,14 @@ const { values, positionals } = parseArgs({
 	}
 });
 
-if (values.help || (!positionals.length && !values.all && !values.players && !values.skins)) {
+if (
+	values.help ||
+	(!positionals.length &&
+		!values.all &&
+		!values.players &&
+		!values.skins &&
+		!values['player-sounds'])
+) {
 	console.log(usage);
 	process.exit(values.help ? 0 : 1);
 }
@@ -96,6 +107,23 @@ if (values.players) {
 	} catch (error) {
 		failed++;
 		console.error(`players failed: ${error instanceof Error ? error.message : error}`);
+	}
+}
+if (values['player-sounds']) {
+	log('\n== player sounds');
+	try {
+		const { pack, bytes } = await updatePlayerSounds({
+			csgo,
+			source: resolve(values['player-sounds']),
+			outDir: resolve(values.out!),
+			workDir: join(resolve(values.work ?? tmpdir()), 'cs-demo-cloud-player-sounds'),
+			tools,
+			log
+		});
+		log(`players: ${pack} (${(bytes / 1024 / 1024).toFixed(1)} MB)`);
+	} catch (error) {
+		failed++;
+		console.error(`player sounds failed: ${error instanceof Error ? error.message : error}`);
 	}
 }
 if (values.skins) {
