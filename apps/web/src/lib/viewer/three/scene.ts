@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
-import { FLAG_PRESENT, type MapInfo, type MapMesh, type RoundReplay } from '@cs-demo-cloud/replay';
+import {
+	FLAG_PRESENT,
+	weaponKey,
+	type MapInfo,
+	type MapMesh,
+	type RoundReplay
+} from '@cs-demo-cloud/replay';
 import type { Listener } from '../audio.ts';
 import { playerMotion, playerStates, viewState, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
@@ -38,6 +44,28 @@ const VIEW_RECOIL = 0.9;
 const STAND_EYE = 64;
 const CROUCH_EYE = 46;
 const DEG = Math.PI / 180;
+const ZOOM_FOVS: Record<string, [number, number]> = {
+	awp: [40, 10],
+	ssg08: [40, 15],
+	scar20: [40, 15],
+	g3sg1: [40, 15],
+	aug: [45, 45],
+	sg556: [45, 45]
+};
+const SNIPERS = new Set(['awp', 'ssg08', 'scar20', 'g3sg1']);
+
+function verticalFov(horizontal43: number): number {
+	return (2 * Math.atan(Math.tan((horizontal43 * DEG) / 2) * 0.75)) / DEG;
+}
+
+export function scopeOf(player: PlayerState | undefined): { fov: number; sniper: boolean } | null {
+	if (!player?.alive || !player.scoped) return null;
+	const key = weaponKey(player.weapon);
+	const fovs = key ? ZOOM_FOVS[key] : undefined;
+	if (!fovs || !key) return null;
+	const level = Math.max(1, Math.min(2, player.zoom || 1));
+	return { fov: verticalFov(fovs[level - 1]!), sniper: SNIPERS.has(key) };
+}
 
 export class ReplayScene {
 	onPick: ((index: number) => void) | null = null;
@@ -67,6 +95,8 @@ export class ReplayScene {
 	private players: PlayerState[] = [];
 	private pov: number | null = null;
 	private povPose: PovPose | null = null;
+	private scope: { fov: number; sniper: boolean } | null = null;
+	private blind = 0;
 	private pointer = { x: 0, y: 0, down: false };
 	private raycaster = new THREE.Raycaster();
 	private projected = new THREE.Vector3();
@@ -360,6 +390,15 @@ export class ReplayScene {
 		if (mode === 'follow' && focused?.alive) this.follow(focused);
 		else this.followAnchor = null;
 		this.povPose = mode === 'pov' && focused ? this.placePov(replay, tick, focused) : null;
+		this.scope = this.pov !== null ? scopeOf(focused) : null;
+		this.blind = this.pov !== null ? (focused?.blind ?? 0) : 0;
+		if (mode === 'pov') {
+			const fov = this.scope?.fov ?? POV_FOV;
+			if (this.camera.fov !== fov) {
+				this.camera.fov = fov;
+				this.camera.updateProjectionMatrix();
+			}
+		}
 
 		const cutZ = roofs ? 1e9 : this.cutHeight(focused) + ROOF_CUT;
 		this.mapMaterial.uniforms.uCutZ!.value = cutZ;
@@ -371,7 +410,7 @@ export class ReplayScene {
 		if (this.effects) this.models?.updateProps(replay, tick);
 		this.camera.updateMatrixWorld();
 		const viewmodel =
-			this.pov !== null
+			this.pov !== null && !this.scope?.sniper
 				? (this.models?.updateViewmodel(
 						replay,
 						tick,
@@ -570,7 +609,9 @@ export class ReplayScene {
 		const height = ctx.canvas.height;
 		ctx.clearRect(0, 0, width, height);
 
-		if (this.pov !== null) {
+		if (this.pov !== null && this.scope) {
+			this.drawScope(ctx, width, height, this.scope.sniper);
+		} else if (this.pov !== null) {
 			const cx = width / 2;
 			const cy = height / 2;
 			const arm = 7 * ratio;
@@ -594,7 +635,7 @@ export class ReplayScene {
 		ctx.textBaseline = 'bottom';
 
 		const labels = this.players
-			.filter((p) => p.alive && p.present && p.index !== this.pov)
+			.filter((p) => p.alive && p.present && this.pov === null)
 			.map((player) => {
 				const lift = (player.ducking ? 66 : 84) * this.sizeOf(player);
 				this.projected.set(player.x, player.y, player.z + lift).project(this.camera);
@@ -627,6 +668,43 @@ export class ReplayScene {
 			ctx.fillText(label, x, barY - 3 * ratio);
 		}
 		ctx.globalAlpha = 1;
+
+		if (this.blind > 0) {
+			ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, this.blind * 1.05)})`;
+			ctx.fillRect(0, 0, width, height);
+		}
+	}
+
+	private drawScope(ctx: CanvasRenderingContext2D, width: number, height: number, sniper: boolean) {
+		const ratio = this.pixelRatio;
+		const cx = width / 2;
+		const cy = height / 2;
+		const radius = height * (sniper ? 0.42 : 0.38);
+		ctx.fillStyle = '#000';
+		ctx.beginPath();
+		ctx.rect(0, 0, width, height);
+		ctx.arc(cx, cy, radius, 0, Math.PI * 2, true);
+		ctx.fill();
+		const edge = ctx.createRadialGradient(cx, cy, radius * 0.6, cx, cy, radius);
+		edge.addColorStop(0, 'rgba(0, 0, 0, 0)');
+		edge.addColorStop(0.65, 'rgba(36, 22, 10, 0.3)');
+		edge.addColorStop(0.9, 'rgba(18, 11, 5, 0.8)');
+		edge.addColorStop(1, 'rgba(0, 0, 0, 1)');
+		ctx.fillStyle = edge;
+		ctx.beginPath();
+		ctx.arc(cx, cy, radius + 1, 0, Math.PI * 2);
+		ctx.fill();
+		if (sniper) {
+			ctx.fillStyle = '#000';
+			const thin = Math.max(1, ratio);
+			ctx.fillRect(0, cy - thin / 2, width, thin);
+			ctx.fillRect(cx - thin / 2, 0, thin, height);
+		} else {
+			ctx.fillStyle = 'rgba(255, 40, 30, 0.95)';
+			ctx.beginPath();
+			ctx.arc(cx, cy, 2.2 * ratio, 0, Math.PI * 2);
+			ctx.fill();
+		}
 	}
 }
 
