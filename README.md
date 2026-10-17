@@ -25,17 +25,20 @@ Running a real CS2 client per viewer and streaming video needs a GPU server, a S
 ### Replay format
 
 - One gzipped binary file per round (`packages/replay`): a JSON header with the round's events, then one column per player field
-- Player state sampled every 4 ticks (16 Hz at 64 tick): position as int16, view angles, health, armor, money, active weapon and flags (alive, helmet, kit, defusing, scoped, ducking, bomb), delta-encoded per player so gzip shrinks it well
+- Player state sampled every 4 ticks (16 Hz at 64 tick): position as int16, view angles, health, armor, money, active weapon, ammo in the magazine and in reserve, zoom level, map location and flags (alive, helmet, kit, defusing, scoped, ducking, bomb), delta-encoded per player so gzip shrinks it well
+- A view stream every 2 ticks (32 Hz, every snapshot a GOTV demo has) for the first-person camera: precise position, view angles, aim punch and crouch amount
+- Inventories when they change and every hit with its damage and hit group
 - Events at full tick precision: kills, shots, blinds, bomb pickups/drops/plants/defuses, grenade flight paths and smoke/fire/flash/HE effects
 - The browser interpolates between samples (lerp, shortest-path for angles)
-- In practice about 30 KB per round and under 1 MB per match; a round loads in ~10 ms and the next one is prefetched
+- In practice about 150 KB per round and 3 MB per match; a round loads in ~10 ms and the next one is prefetched
 
 ### Viewer
 
 Both views share the same playback, HUD, kill feed and timeline; **V** switches between them.
 
 - **2D radar**: players with view cones, health, bomb and kit, grenades in flight, smokes, fires, flashes, shots, kill markers, upper/lower level for Nuke, Vertigo and co. Plain Canvas 2D: ten players and some grenades don't need a WebGL engine.
-- **3D**: the map's collision geometry rendered with three.js, floors coloured with the radar image, players as capsules facing where they aim, smokes, fires, flash and HE bursts, grenade trails, shots, the bomb and kill markers. Players, smokes and trails behind walls show through faintly. Cameras: **Free** (drag to pan, right-drag to rotate, scroll to zoom), **Follow** (orbits the selected player) and **POV** (the player's eye position and view angles). **Cut roofs** hides everything above the players. three.js only loads when you open the 3D view.
+- **3D**: the map's collision geometry rendered with three.js, floors coloured with the radar image, players as capsules facing where they aim, smokes, fires, flash and HE bursts, grenade trails, shots, the bomb and kill markers. Players, smokes and trails behind walls show through faintly. Cameras: **Free** (drag to pan, right-drag to rotate, scroll to zoom), **Follow** (orbits the selected player) and **POV** (the player's eye position and view angles). **Cut roofs** hides everything above the players. In Follow and POV, left and right click switch to the next and previous player, like spectating in CS2. three.js only loads when you open the 3D view.
+- **Game HUD** (3D, **H**): CS2's spectator HUD over the 16:9 view: the top bar with both teams' players, money, guns, utility, armor and kit, the round timer, score and players alive, the radar with the location's name, the kill feed, and for the followed player health, armor, name, gun, ammo, money and the weapons they carry. **Full screen** (**F**) fills the screen with it and hides the controls while playing. **X-ray** (**X**) turns the see-through players on and off.
 
 Map assets come from Valve's game files, which is fine for a private instance but not something to redistribute publicly, so none are committed here. The worker downloads them the first time it parses a demo on a map (and on start for maps it already has demos of) into `data/maps`:
 
@@ -70,13 +73,16 @@ With a player pack installed as well, players in game-look maps are CS2's agents
 - it holds both agents with their first-person arms, the world-model animations (idle, walk, run and crouch in eight directions for rifles, pistols and knives, jumps, defusing, planting, weapon poses and shooting) and every weapon model, with textures capped at 1024 px (weapons 512 px)
 - the viewer blends the clips from each player's speed, direction and stance, with the walk and run cycles following the distance covered so feet don't slide; weapon poses and recoil are layered on top, the upper body turns to the aim pitch, and the dead fall over where they died
 - players behind walls still show through faintly in their team colour
-- in **POV** you see the player's own arms and weapon with the game's first-person animations: drawing after a switch, idle, shooting, reloading, knife swings, grenade throws and planting
+- in **POV** you see the player's own arms and weapon with the game's first-person animations: drawing after a switch, idle, shooting, reloading, knife swings, grenade throws and planting, placed like CS2's classic viewmodel (FOV 68, offset 2.5 / 0 / -1.5) with bob while moving and sway while turning
+- the POV camera follows the 32 Hz view stream, kicks with the aim punch while spraying (like `view_recoil_tracking`), and crouches smoothly; scoped snipers zoom to the game's FOVs with the scope overlay, the AUG and SG 553 show their sight, flashes white the screen out and hits flash it red
 
 On game-look maps the effects are drawn to match: smokes are lit, noisy volumes that bloom over about a second and thin out at the end, molotovs burn as flickering flames with a glow on the ground, flashes and HEs burst brightly into the map's bloom, guns show muzzle flashes and tracers, and grenades and the bomb are their game models. Without a map pack the simple shapes stay.
 
-The pack also carries the game's sounds (about 20 MB): every gun near and far, footsteps, landings, kills and headshots, flash, HE, smoke and molotov detonations with the fire loop, grenade bounces, and the bomb's plant, beeps, defuse and explosion. They play in both views with CS2's own volume-by-distance curves, positioned around you: in 3D from the followed player's head or near where the camera looks, in 2D from the selected player. **Sound on/off** (or **M**) toggles them; at 4× and faster footsteps and bounces are left out. Footsteps always use the concrete set, since replays don't know the surface.
+The pack also carries the game's sounds (about 20 MB): every gun near and far, footsteps, landings, kills and headshots, flash, HE, smoke and molotov detonations with the fire loop, grenade bounces, and the bomb's plant, beeps, defuse and explosion. They play in both views with CS2's own volume-by-distance curves, positioned around you: in 3D from the followed player's head or near where the camera looks, in 2D from the selected player. On top of that come the round: the default music kit (round start, action, ten seconds left, bomb planted, round won or lost from the followed player's side), the announcer (bomb planted, bomb defused, CTs or Terrorists win), hits on helmets, kevlar and bodies, and for the POV player the scope zoom and weapon draw sounds. **Sound on/off** (or **M**) toggles them; at 4× and faster footsteps and bounces are left out. Footsteps always use the concrete set, since replays don't know the surface.
 
 Death animations can't be read by Source 2 Viewer yet, so deaths are a simple fall.
+
+To add newer sounds to a player pack without exporting the models again, run `node apps/map-export/src/index.ts --player-sounds map-packs/players.zip --out map-packs-new` and upload the new `players.zip`. Demos parsed before the view stream existed play without it (16 Hz POV, no HUD ammo or hits) until you press **Parse again** on their match page.
 
 ### Skins and agents
 
