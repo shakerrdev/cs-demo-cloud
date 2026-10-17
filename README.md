@@ -235,6 +235,17 @@ WantedBy=multi-user.target
 
 `journalctl -u cs-demo-cloud` shows the log, including the first admin invite link.
 
+## Admin settings
+
+Admins get an **Admin** page with server-wide settings, stored in the database and applied the next time a match page opens:
+
+- **Sound**: sound on or off for everyone, master volume, from which speed footsteps and bounces are left out, and for each kind of sound (gunshots, distant gunshots, footsteps, grenades, fire, bomb, kills, hits, POV weapon, music kit, announcer) whether it plays and how loud
+- **Viewer**: default view, 3D camera, speed and texture quality, playing the next round automatically, how long before freeze time ends a round starts, round and bomb time for the clock, and whether the game HUD, X-ray and names over players are on by default
+- **First person**: FOV, viewmodel on or off, viewmodel FOV and offsets, bob, sway, camera kick while spraying, scope overlay, flash and hit effects, and the crosshair (colour, size, gap, thickness, dot)
+- **Parsing**: whether to record the 32 Hz first-person view stream
+
+What someone picks in the viewer itself (view, textures, HUD, X-ray, sound on/off) is remembered on their device and wins over the defaults. **Reset to defaults** puts everything back.
+
 ## Accounts
 
 Everything requires signing in, and accounts only come from invite links.
