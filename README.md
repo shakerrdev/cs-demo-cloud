@@ -26,7 +26,7 @@ Running a real CS2 client per viewer and streaming video needs a GPU server, a S
 
 - One gzipped binary file per round (`packages/replay`): a JSON header with the round's events, then one column per player field
 - Player state sampled every 4 ticks (16 Hz at 64 tick): position as int16, view angles, health, armor, money, active weapon, ammo in the magazine and in reserve, zoom level, map location and flags (alive, helmet, kit, defusing, scoped, ducking, bomb), delta-encoded per player so gzip shrinks it well
-- A view stream every 2 ticks (32 Hz, every snapshot a GOTV demo has) for the first-person camera: precise position, view angles, aim punch and crouch amount
+- A view stream for the first-person camera, 32 or 64 samples per second (admin setting; 64 only when the demo has a snapshot every tick, as HLTV/FACEIT demos do, otherwise it falls back to 32): precise position, view angles, aim punch and crouch amount
 - Inventories when they change and every hit with its damage and hit group
 - Events at full tick precision: kills, shots, blinds, bomb pickups/drops/plants/defuses, grenade flight paths and smoke/fire/flash/HE effects
 - The browser interpolates between samples (lerp, shortest-path for angles)
@@ -74,7 +74,7 @@ With a player pack installed as well, players in game-look maps are CS2's agents
 - the viewer blends the clips from each player's speed, direction and stance, with the walk and run cycles following the distance covered so feet don't slide; weapon poses and recoil are layered on top, the upper body turns to the aim pitch, and the dead fall over where they died
 - players behind walls still show through faintly in their team colour
 - in **POV** you see the player's own arms and weapon with the game's first-person animations: drawing after a switch, idle, shooting, reloading, knife swings, grenade throws and planting, placed like CS2's classic viewmodel (FOV 68, offset 2.5 / 0 / -1.5) with bob while moving and sway while turning
-- the POV camera follows the 32 Hz view stream, kicks with the aim punch while spraying (like `view_recoil_tracking`), and crouches smoothly; scoped snipers zoom to the game's FOVs with the scope overlay, the AUG and SG 553 show their sight, flashes white the screen out and hits flash it red
+- the POV camera follows the view stream, kicks with the aim punch while spraying (like `view_recoil_tracking`), and crouches smoothly; scoped snipers zoom to the game's FOVs with the scope overlay, the AUG and SG 553 show their sight, flashes white the screen out and hits flash it red
 
 On game-look maps the effects are drawn to match: smokes are lit, noisy volumes that bloom over about a second and thin out at the end, molotovs burn as flickering flames with a glow on the ground, flashes and HEs burst brightly into the map's bloom, guns show muzzle flashes and tracers, and grenades and the bomb are their game models. Without a map pack the simple shapes stay.
 
@@ -245,7 +245,7 @@ Admins get an **Admin** page with server-wide settings, stored in the database a
 - **Sound**: sound on or off for everyone, master volume, from which speed footsteps and bounces are left out, and for each kind of sound (gunshots, distant gunshots, footsteps, grenades, fire, bomb, kills, hits, POV weapon, music kit, announcer) whether it plays and how loud
 - **Viewer**: default view, 3D camera, speed and texture quality, playing the next round automatically, how long before freeze time ends a round starts, round and bomb time for the clock, and whether the game HUD, X-ray and names over players are on by default
 - **First person**: FOV, viewmodel on or off, viewmodel FOV and offsets, bob, sway, camera kick while spraying, scope overlay, flash and hit effects, and the crosshair (colour, size, gap, thickness, dot)
-- **Parsing**: whether to record the 32 Hz first-person view stream
+- **Parsing**: first-person view samples per second: off, 32 or 64 (64 roughly doubles that pass: ~2 min and ~2.5 GB RAM for a 540 MB demo)
 
 What someone picks in the viewer itself (view, textures, HUD, X-ray, sound on/off) is remembered on their device and wins over the defaults. **Reset to defaults** puts everything back.
 
