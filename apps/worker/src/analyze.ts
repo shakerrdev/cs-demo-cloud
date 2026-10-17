@@ -8,8 +8,11 @@ import {
 	FLAG_HELMET,
 	FLAG_PRESENT,
 	FLAG_SCOPED,
+	PUNCH_SCALE,
 	REPLAY_VERSION,
+	VIEW_POSITION_SCALE,
 	createColumns,
+	createViewColumns,
 	packPitch,
 	packYaw,
 	type BombEventType,
@@ -23,6 +26,7 @@ import {
 	type RoundReplay,
 	type Side,
 	type TeamKey,
+	type ViewColumns,
 	itemWeaponKey,
 	weaponKey
 } from '@cs-demo-cloud/replay';
@@ -33,6 +37,7 @@ import {
 	parseGrenades,
 	parseHeader,
 	parseTicks,
+	parseView,
 	str,
 	type RawEvent,
 	type RawGrenade,
@@ -42,6 +47,7 @@ import { detectRounds, type RoundSpan } from './rounds.ts';
 import { assignTeams } from './teams.ts';
 
 const STEP = 4;
+const VIEW_STEP = 2;
 const CT = 3;
 const T = 2;
 
@@ -78,6 +84,23 @@ interface PlayerEntry {
 
 const clamp16 = (value: number) => Math.max(-32768, Math.min(32767, Math.round(value)));
 const clampU8 = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+const clamp32 = (value: number) => Math.max(-2147483648, Math.min(2147483647, Math.round(value)));
+
+function weaponIndex(weapons: Map<string, number>, name: string): number {
+	let index = weapons.get(name);
+	if (index === undefined) {
+		index = weapons.size;
+		if (index < 256) weapons.set(name, index);
+		else index = 0;
+	}
+	return index;
+}
+
+function gridFor(span: RoundSpan, step: number): Grid {
+	const first = Math.ceil(span.startTick / step) * step;
+	const last = Math.max(first, Math.floor(span.lastTick / step) * step);
+	return { first, count: (last - first) / step + 1 };
+}
 
 export function playerKey(steamid: unknown, name: unknown): string {
 	const id = str(steamid);
@@ -112,11 +135,7 @@ export function analyzeDemo(
 	const spans = detectRounds(events, demoLastTick, 64);
 	if (spans.length === 0) throw new Error('No completed rounds found in this demo');
 
-	const grids: Grid[] = spans.map((span) => {
-		const first = Math.ceil(span.startTick / STEP) * STEP;
-		const last = Math.max(first, Math.floor(span.lastTick / STEP) * STEP);
-		return { first, count: (last - first) / STEP + 1 };
-	});
+	const grids: Grid[] = spans.map((span) => gridFor(span, STEP));
 	const wanted = new Set<number>();
 	for (const grid of grids) for (let f = 0; f < grid.count; f++) wanted.add(grid.first + f * STEP);
 
@@ -194,6 +213,8 @@ export function analyzeDemo(
 	const skinChanges = spans.map(() => [] as number[]);
 	const lastSkins = spans.map(() => new Map<number, number>());
 	const agents = spans.map(() => new Map<number, string>());
+	const inventories = spans.map(() => [] as number[]);
+	const lastInventories = spans.map(() => new Map<number, string>());
 
 	for (let i = 0; i < ticks.tick.length; i++) {
 		const rounds = rowRounds[i];
@@ -207,12 +228,7 @@ export function analyzeDemo(
 			const at = p * grid.count + (ticks.tick[i]! - grid.first) / STEP;
 			const weapons = weaponTables[r]!;
 			const weaponName = str(ticks.active_weapon_name[i]) ?? '';
-			let weapon = weapons.get(weaponName);
-			if (weapon === undefined) {
-				weapon = weapons.size;
-				if (weapon < 256) weapons.set(weaponName, weapon);
-				else weapon = 0;
-			}
+			const weapon = weaponIndex(weapons, weaponName);
 
 			cols.x[at] = clamp16(num(ticks.X[i]));
 			cols.y[at] = clamp16(num(ticks.Y[i]));
@@ -223,6 +239,20 @@ export function analyzeDemo(
 			cols.health[at] = clampU8(num(ticks.health[i]));
 			cols.armor[at] = clampU8(num(ticks.armor_value[i]));
 			cols.weapon[at] = weapon;
+			cols.clip![at] = clampU8(num(ticks.active_weapon_ammo[i]));
+			cols.reserve![at] = clampU8(num(ticks.total_ammo_left[i]));
+			cols.zoom![at] = clampU8(num(ticks.zoom_lvl[i]));
+			const owned = ticks.inventory[i];
+			if (Array.isArray(owned)) {
+				const items = owned
+					.map((name) => (typeof name === 'string' ? weaponIndex(weapons, name) : 0))
+					.filter((index) => index > 0);
+				const key = items.join(',');
+				if (lastInventories[r]!.get(p) !== key) {
+					lastInventories[r]!.set(p, key);
+					inventories[r]!.push(ticks.tick[i]!, p, items.length, ...items);
+				}
+			}
 
 			const agent = agentName(ticks.agent_skin[i]);
 			if (agent && !agents[r]!.has(p)) agents[r]!.set(p, agent);
@@ -274,6 +304,13 @@ export function analyzeDemo(
 
 	const grenadeRows = parseGrenades(path);
 	timings('grenades');
+	const views = buildViews(
+		path,
+		spans,
+		playerIndex,
+		roundPlayers.map((list) => list.length)
+	);
+	timings('view');
 	const grenadesByRound = buildGrenades(grenadeRows, events, roundIndexForTick, indexOf);
 
 	const siteOf = (round: number, event: RawEvent): string | null => {
@@ -423,9 +460,16 @@ export function analyzeDemo(
 					tickRate
 				),
 				bomb,
-				blinds
+				blinds,
+				inventory: inventories[r]!,
+				view: {
+					tickStep: VIEW_STEP,
+					startTick: views[r]!.grid.first,
+					frameCount: views[r]!.grid.count
+				}
 			},
-			columns: columns[r]!
+			columns: columns[r]!,
+			view: views[r]!.columns
 		};
 	});
 
@@ -487,6 +531,67 @@ function isGun(weapon: string | null): boolean {
 	return !/^(knife|bayonet|c4|flashbang|smokegrenade|hegrenade|molotov|incgrenade|decoy)/.test(
 		name
 	);
+}
+
+function buildViews(
+	path: string,
+	spans: RoundSpan[],
+	playerIndex: Map<string, number>[],
+	playerCounts: number[]
+): { grid: Grid; columns: ViewColumns }[] {
+	const grids = spans.map((span) => gridFor(span, VIEW_STEP));
+	const views = grids.map((grid, r) => ({
+		grid,
+		columns: createViewColumns(playerCounts[r]! * grid.count),
+		present: new Uint8Array(playerCounts[r]! * grid.count)
+	}));
+	const wanted = new Set<number>();
+	for (const grid of grids)
+		for (let f = 0; f < grid.count; f++) wanted.add(grid.first + f * VIEW_STEP);
+	const rows = parseView(
+		path,
+		[...wanted].sort((a, b) => a - b)
+	);
+
+	for (let i = 0; i < rows.tick.length; i++) {
+		const tick = rows.tick[i]!;
+		const key = playerKey(rows.steamid[i], rows.name[i]);
+		for (let r = 0; r < views.length; r++) {
+			const { grid, columns, present } = views[r]!;
+			if (tick < grid.first || tick > grid.first + (grid.count - 1) * VIEW_STEP) continue;
+			const p = playerIndex[r]!.get(key);
+			if (p === undefined) continue;
+			const at = p * grid.count + (tick - grid.first) / VIEW_STEP;
+			const punch = Array.isArray(rows.aim_punch_angle[i])
+				? (rows.aim_punch_angle[i] as unknown[])
+				: [];
+			columns.x[at] = clamp32(num(rows.X[i]) * VIEW_POSITION_SCALE);
+			columns.y[at] = clamp32(num(rows.Y[i]) * VIEW_POSITION_SCALE);
+			columns.z[at] = clamp32(num(rows.Z[i]) * VIEW_POSITION_SCALE);
+			columns.yaw[at] = packYaw(num(rows.yaw[i]));
+			columns.pitch[at] = clamp16(packPitch(num(rows.pitch[i])));
+			columns.punchPitch[at] = clamp16(num(punch[0]) * PUNCH_SCALE);
+			columns.punchYaw[at] = clamp16(num(punch[1]) * PUNCH_SCALE);
+			columns.duck[at] = clampU8(num(rows.duck_amount[i]) * 255);
+			present[at] = 1;
+		}
+	}
+
+	for (const { grid, columns, present } of views) {
+		const keys = Object.keys(columns) as (keyof ViewColumns)[];
+		for (let p = 0; p < present.length / grid.count; p++) {
+			const start = p * grid.count;
+			let source = -1;
+			for (let f = 0; f < grid.count && source < 0; f++) if (present[start + f]) source = start + f;
+			if (source < 0) continue;
+			for (let f = 0; f < grid.count; f++) {
+				const at = start + f;
+				if (present[at]) source = at;
+				else for (const key of keys) columns[key][at] = columns[key][source]!;
+			}
+		}
+	}
+	return views.map(({ grid, columns }) => ({ grid, columns }));
 }
 
 function fillGaps(cols: RoundColumns, playerCount: number, frames: number) {

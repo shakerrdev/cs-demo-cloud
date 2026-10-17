@@ -72,8 +72,22 @@ export const tickProps = [
 	'weapon_float',
 	'm_iItemDefinitionIndex',
 	'm_iItemIDLow',
-	'm_iItemIDHigh'
+	'm_iItemIDHigh',
+	'active_weapon_ammo',
+	'total_ammo_left',
+	'zoom_lvl',
+	'inventory'
 ] as const;
+
+export const viewProps = ['X', 'Y', 'Z', 'yaw', 'pitch', 'aim_punch_angle', 'duck_amount'] as const;
+
+export type ViewProp = (typeof viewProps)[number];
+
+export type ViewRows = { [K in ViewProp]: unknown[] } & {
+	tick: number[];
+	steamid: string[];
+	name: string[];
+};
 
 export type TickProp = (typeof tickProps)[number];
 
@@ -103,6 +117,10 @@ export function parseEvents(path: string): RawEvent[] {
 
 export function parseTicks(path: string, ticks: number[]): TickColumns {
 	return demoparser.parseTicks(path, [...tickProps], ticks, null, true) as TickColumns;
+}
+
+export function parseView(path: string, ticks: number[]): ViewRows {
+	return demoparser.parseTicks(path, [...viewProps], ticks, null, true) as ViewRows;
 }
 
 export function parseGrenades(path: string): RawGrenade[] {
