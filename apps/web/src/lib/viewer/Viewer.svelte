@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import {
+		defaultConfig,
 		maps,
+		type AppConfig,
 		weaponTitle,
 		type MapMesh,
 		type RoundReplay,
@@ -34,6 +37,7 @@
 		skinsPack?: string | null;
 		rounds: RoundInfo[];
 		teamNames: Record<TeamKey, string>;
+		config?: AppConfig;
 	}
 
 	let {
@@ -44,11 +48,12 @@
 		playerPack,
 		skinsPack = null,
 		rounds,
-		teamNames
+		teamNames,
+		config = defaultConfig
 	}: Props = $props();
 
-	const ROUND_SECONDS = 115;
-	const BOMB_SECONDS = 40;
+	const ROUND_SECONDS = $derived(config.viewer.roundSeconds);
+	const BOMB_SECONDS = $derived(config.viewer.bombSeconds);
 	const speeds = [0.5, 1, 2, 4, 8];
 	const teamKeys: TeamKey[] = ['a', 'b'];
 	const cameraModes: { mode: CameraMode; label: string }[] = [
@@ -77,11 +82,12 @@
 	let tick = $state(0);
 	let hudTick = $state(0);
 	let playing = $state(false);
-	let speed = $state(1);
+	const initial = untrack(() => config);
+	let speed = $state(initial.viewer.speed);
 	let level = $state<'upper' | 'lower'>('upper');
 	let focus = $state<number | null>(null);
 	let view = $state<'2d' | '3d'>(savedView());
-	let cameraMode = $state<CameraMode>('free');
+	let cameraMode = $state<CameraMode>(initial.viewer.camera);
 	let roofs = $state(true);
 	let scene3d = $state.raw<ReplayScene | null>(null);
 	let canvas3d = $state<HTMLCanvasElement | null>(null);
@@ -93,8 +99,8 @@
 	let textureQuality = $state<TextureQuality>(savedQuality());
 	let audio = $state.raw<ReplayAudio | null>(null);
 	let soundOn = $state(savedSound());
-	let hudOn = $state(savedFlag(hudKey, true));
-	let xrayOn = $state(savedFlag(xrayKey, true));
+	let hudOn = $state(savedFlag(hudKey, initial.viewer.hud));
+	let xrayOn = $state(savedFlag(xrayKey, initial.viewer.xray));
 	let theater = $state(false);
 	let innerWidth = $state(1280);
 	let idle = $state(false);
@@ -126,9 +132,10 @@
 
 	function savedView(): '2d' | '3d' {
 		try {
-			return localStorage.getItem(viewKey) === '3d' ? '3d' : '2d';
+			const saved = localStorage.getItem(viewKey);
+			return saved === '3d' || saved === '2d' ? saved : config.viewer.view;
 		} catch {
-			return '2d';
+			return config.viewer.view;
 		}
 	}
 
@@ -238,9 +245,9 @@
 	function savedQuality(): TextureQuality {
 		try {
 			const saved = localStorage.getItem(qualityKey);
-			return qualities.find((q) => q.value === saved)?.value ?? 'auto';
+			return qualities.find((q) => q.value === saved)?.value ?? config.viewer.textures;
 		} catch {
-			return 'auto';
+			return config.viewer.textures;
 		}
 	}
 
@@ -274,7 +281,9 @@
 
 	function startOf(next: RoundReplay): number {
 		const { freezeEndTick, startTick, tickRate } = next.meta;
-		return freezeEndTick ? Math.max(startTick, freezeEndTick - 3 * tickRate) : startTick;
+		return freezeEndTick
+			? Math.max(startTick, freezeEndTick - config.viewer.leadIn * tickRate)
+			: startTick;
 	}
 
 	function goToRound(number: number) {
@@ -393,7 +402,15 @@
 	});
 
 	$effect(() => {
-		audio?.setVolume(0.7, !soundOn);
+		audio?.setVolume(config.audio.master, !soundOn || !config.audio.enabled);
+	});
+
+	$effect(() => {
+		audio?.setConfig(config);
+	});
+
+	$effect(() => {
+		scene3d?.setConfig(config);
 	});
 
 	$effect(() => {
@@ -418,7 +435,8 @@
 				const next = tick + elapsed * current.meta.tickRate * speed;
 				if (next >= last) {
 					tick = last;
-					if (rounds.some((r) => r.number === round + 1)) goToRound(round + 1);
+					if (config.viewer.autoAdvance && rounds.some((r) => r.number === round + 1))
+						goToRound(round + 1);
 					else playing = false;
 				} else {
 					tick = next;
@@ -772,7 +790,7 @@
 						<option value={option}>{option}×</option>
 					{/each}
 				</select>
-				{#if audio}
+				{#if audio && config.audio.enabled}
 					<button
 						type="button"
 						class="sound"

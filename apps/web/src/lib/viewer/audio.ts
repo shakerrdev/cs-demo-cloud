@@ -1,7 +1,10 @@
 import {
 	FLAG_ALIVE,
 	FLAG_SCOPED,
+	defaultConfig,
+	soundGroupOf,
 	weaponKey,
+	type AppConfig,
 	type PlayerPackManifest,
 	type PlayerPackSound,
 	type RoundReplay,
@@ -14,10 +17,7 @@ const RUNNING = 150;
 const LANDING = -260;
 const MAX_VOICES = 28;
 const MAX_GAP_SECONDS = 0.75;
-const ROUND_SECONDS = 115;
-const BOMB_SECONDS = 40;
-const MUSIC_VOLUME = 0.45;
-const RADIO_VOLUME = 0.9;
+const LOCAL_VOLUME = 0.6;
 const SNIPERS = new Set(['awp', 'ssg08', 'scar20', 'g3sg1']);
 const SCOPED_RIFLES = new Set(['aug', 'sg556']);
 export const EAR_HEIGHT = 64;
@@ -56,7 +56,7 @@ interface Loop {
 	z: number;
 }
 
-const cueCache = new WeakMap<RoundReplay, Cue[]>();
+const cueCache = new WeakMap<RoundReplay, { key: string; cues: Cue[] }>();
 
 function frameIndex(replay: RoundReplay, player: number, tick: number): number {
 	const { meta } = replay;
@@ -84,9 +84,10 @@ function bounces(path: number[]): number[] {
 	return out;
 }
 
-export function soundCues(replay: RoundReplay): Cue[] {
+export function soundCues(replay: RoundReplay, roundSeconds = 115, bombSeconds = 40): Cue[] {
+	const cacheKey = `${roundSeconds}:${bombSeconds}`;
 	const cached = cueCache.get(replay);
-	if (cached) return cached;
+	if (cached?.key === cacheKey) return cached.cues;
 	const { meta, columns } = replay;
 	const cues: Cue[] = [];
 	const add = (tick: number, key: string, x: number, y: number, z: number, priority = 1) =>
@@ -115,12 +116,12 @@ export function soundCues(replay: RoundReplay): Cue[] {
 	const finish = meta.bomb.find((event) => event.type === 'defuse' || event.type === 'explode');
 	announce(meta.startTick, 'music:start', 'music');
 	if (meta.freezeEndTick) announce(meta.freezeEndTick, 'music:action', 'music');
-	const roundTen = live + (ROUND_SECONDS - 10) * meta.tickRate;
+	const roundTen = live + (roundSeconds - 10) * meta.tickRate;
 	if (!plant || plant.tick > roundTen) announce(roundTen, 'music:round10', 'music');
 	if (plant) {
 		announce(plant.tick, 'radio:bombpl', 'radio');
 		announce(plant.tick, 'music:bomb', 'music');
-		const bombTen = plant.tick + (BOMB_SECONDS - 10) * meta.tickRate;
+		const bombTen = plant.tick + (bombSeconds - 10) * meta.tickRate;
 		if (!finish || finish.tick > bombTen) announce(bombTen, 'music:bomb10', 'music');
 	}
 	if (finish?.type === 'defuse') announce(finish.tick, 'radio:bombdef', 'radio');
@@ -188,12 +189,12 @@ export function soundCues(replay: RoundReplay): Cue[] {
 		}
 	}
 	if (planted) {
-		const end = Math.min(stopped, meta.endTick, planted.tick + 40 * meta.tickRate);
+		const end = Math.min(stopped, meta.endTick, planted.tick + bombSeconds * meta.tickRate);
 		let t = planted.tick + meta.tickRate;
 		while (t < end) {
 			add(Math.round(t), 'bomb:beep', planted.x, planted.y, planted.z + 10, 2);
-			const left = Math.max(0, (planted.tick + 40 * meta.tickRate - t) / meta.tickRate);
-			t += Math.max(0.12, Math.min(1, 0.1 + left / 40)) * meta.tickRate;
+			const left = Math.max(0, (planted.tick + bombSeconds * meta.tickRate - t) / meta.tickRate);
+			t += Math.max(0.12, Math.min(1, 0.1 + left / bombSeconds)) * meta.tickRate;
 		}
 	}
 
@@ -250,7 +251,7 @@ export function soundCues(replay: RoundReplay): Cue[] {
 	});
 
 	cues.sort((a, b) => a.tick - b.tick);
-	cueCache.set(replay, cues);
+	cueCache.set(replay, { key: cacheKey, cues });
 	return cues;
 }
 
@@ -282,6 +283,7 @@ export class ReplayAudio {
 	private muted = false;
 	private listener: Listener | null = null;
 	private music: AudioBufferSourceNode | null = null;
+	private config: AppConfig = defaultConfig;
 
 	constructor(manifest: PlayerPackManifest, version: string) {
 		this.sounds = manifest.sounds ?? {};
@@ -307,6 +309,15 @@ export class ReplayAudio {
 			for (const key of ['shot:ak47', 'shot:m4a1_silencer', 'step:CT', 'step:T']) this.preload(key);
 		}
 		if (this.context.state === 'suspended') void this.context.resume();
+	}
+
+	setConfig(config: AppConfig) {
+		this.config = config;
+	}
+
+	private groupGain(key: string): number {
+		const group = this.config.audio.groups[soundGroupOf(key)];
+		return group.enabled ? group.volume : 0;
 	}
 
 	setVolume(volume: number, muted: boolean) {
@@ -344,7 +355,11 @@ export class ReplayAudio {
 		if (!continuous) this.stopMusic();
 
 		if (continuous) {
-			const cues = soundCues(replay);
+			const cues = soundCues(
+				replay,
+				this.config.viewer.roundSeconds,
+				this.config.viewer.bombSeconds
+			);
 			let lo = 0;
 			let hi = cues.length;
 			while (lo < hi) {
@@ -354,7 +369,7 @@ export class ReplayAudio {
 			}
 			for (let i = lo; i < cues.length && cues[i]!.tick <= tick; i++) {
 				const cue = cues[i]!;
-				if (speed > 2 && cue.priority < 2) continue;
+				if (speed >= this.config.audio.quietSpeed && cue.priority < 2) continue;
 				if (cue.owner !== undefined && cue.owner !== listener.player) continue;
 				if (cue.global) {
 					if (speed > 2) continue;
@@ -430,7 +445,10 @@ export class ReplayAudio {
 		const sound = this.sounds[cue.key];
 		const context = this.context;
 		if (!sound || !context || !this.master) return;
-		const gain = sound.volume * curveGain(sound.curve, this.distance(cue.x, cue.y, cue.z));
+		const gain =
+			sound.volume *
+			this.groupGain(cue.key) *
+			curveGain(sound.curve, this.distance(cue.x, cue.y, cue.z));
 		if (gain < 0.01) return;
 		const file = sound.files[Math.floor(Math.random() * sound.files.length)]!;
 		const scheduled = context.currentTime;
@@ -480,7 +498,8 @@ export class ReplayAudio {
 		}
 		const sound = this.sounds[key];
 		const context = this.context;
-		if (!sound || !context || !this.master) return;
+		const volume = this.groupGain(key);
+		if (!sound || !context || !this.master || volume <= 0) return;
 		const file = sound.files[Math.floor(Math.random() * sound.files.length)]!;
 		const scheduled = context.currentTime;
 		const music = cue.global === 'music';
@@ -490,8 +509,7 @@ export class ReplayAudio {
 			const source = context.createBufferSource();
 			source.buffer = buffer;
 			const node = context.createGain();
-			node.gain.value =
-				sound.volume * (music ? MUSIC_VOLUME : cue.global === 'radio' ? RADIO_VOLUME : 0.6);
+			node.gain.value = sound.volume * volume * (cue.global ? 1 : LOCAL_VOLUME);
 			source.connect(node).connect(this.master!);
 			if (music) {
 				this.stopMusic();
@@ -505,7 +523,8 @@ export class ReplayAudio {
 		const context = this.context!;
 		const wanted = new Set<string>();
 		const sound = this.sounds.fire;
-		if (active && sound) {
+		const fireVolume = this.groupGain('fire');
+		if (active && sound && fireVolume > 0) {
 			for (const effect of replay.meta.effects) {
 				if (effect.type !== 'molotov' || tick < effect.startTick || tick > effect.endTick) continue;
 				const key = `${replay.meta.round}:${effect.startTick}:${effect.x}`;
@@ -536,7 +555,10 @@ export class ReplayAudio {
 				}
 				const fade = Math.min(1, (effect.endTick - tick) / replay.meta.tickRate);
 				const target =
-					sound.volume * fade * curveGain(sound.curve, this.distance(loop.x, loop.y, loop.z));
+					sound.volume *
+					fireVolume *
+					fade *
+					curveGain(sound.curve, this.distance(loop.x, loop.y, loop.z));
 				loop.gain.gain.setTargetAtTime(target, context.currentTime, 0.1);
 			}
 		}

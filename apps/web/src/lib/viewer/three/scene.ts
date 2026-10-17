@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import {
 	FLAG_PRESENT,
+	defaultConfig,
+	horizontalToVerticalFov,
+	type AppConfig,
 	weaponKey,
 	type MapInfo,
 	type MapMesh,
@@ -36,12 +39,10 @@ export interface SceneFrame {
 }
 
 const background = new THREE.Color(0x0b0d10);
-const POV_FOV = 74;
 const ORBIT_FOV = 50;
 const ROOF_CUT = 170;
 const MAX_PLAYER_SCALE = 3;
 const LISTENER_RANGE = 500;
-const VIEW_RECOIL = 0.9;
 const STAND_EYE = 64;
 const CROUCH_EYE = 46;
 const DEG = Math.PI / 180;
@@ -99,6 +100,7 @@ export class ReplayScene {
 	private povPose: PovPose | null = null;
 	private scope: { fov: number; sniper: boolean } | null = null;
 	private blind = 0;
+	private config: AppConfig = defaultConfig;
 	private hurt = 0;
 	private pointer = { x: 0, y: 0, down: false };
 	private raycaster = new THREE.Raycaster();
@@ -301,6 +303,7 @@ export class ReplayScene {
 				this.models = models;
 				models.onChange = this.markDirty;
 				if (models.viewmodel) models.viewmodel.onChange = this.markDirty;
+				models.viewmodel?.setConfig(this.config);
 				models.setShading(this.pack?.characterShading ?? null);
 				this.scene.add(models.root);
 				this.round = -1;
@@ -368,6 +371,20 @@ export class ReplayScene {
 		};
 	}
 
+	setConfig(config: AppConfig) {
+		this.config = config;
+		this.models?.viewmodel?.setConfig(config);
+		if (this.mode === 'pov') {
+			this.camera.fov = this.povFov;
+			this.camera.updateProjectionMatrix();
+		}
+		this.dirty = true;
+	}
+
+	private get povFov(): number {
+		return horizontalToVerticalFov(this.config.pov.fov);
+	}
+
 	resetView() {
 		this.framedMap = null;
 		this.dirty = true;
@@ -402,11 +419,12 @@ export class ReplayScene {
 		if (mode === 'follow' && focused?.alive) this.follow(focused);
 		else this.followAnchor = null;
 		this.povPose = mode === 'pov' && focused ? this.placePov(replay, tick, focused) : null;
-		this.scope = this.pov !== null ? scopeOf(focused) : null;
-		this.blind = this.pov !== null ? (focused?.blind ?? 0) : 0;
-		this.hurt = this.pov !== null ? hurtFlash(replay, this.pov, tick) : 0;
+		const pov = this.config.pov;
+		this.scope = this.pov !== null && pov.scope ? scopeOf(focused) : null;
+		this.blind = this.pov !== null && pov.flash ? (focused?.blind ?? 0) : 0;
+		this.hurt = this.pov !== null && pov.hitFlash ? hurtFlash(replay, this.pov, tick) : 0;
 		if (mode === 'pov') {
-			const fov = this.scope?.fov ?? POV_FOV;
+			const fov = this.scope?.fov ?? this.povFov;
 			if (this.camera.fov !== fov) {
 				this.camera.fov = fov;
 				this.camera.updateProjectionMatrix();
@@ -423,7 +441,7 @@ export class ReplayScene {
 		if (this.effects) this.models?.updateProps(replay, tick);
 		this.camera.updateMatrixWorld();
 		const viewmodel =
-			this.pov !== null && !this.scope?.sniper
+			this.pov !== null && pov.viewmodel && !this.scope?.sniper
 				? (this.models?.updateViewmodel(
 						replay,
 						tick,
@@ -542,7 +560,7 @@ export class ReplayScene {
 			this.orbit.position.copy(this.camera.position);
 			this.orbit.target.copy(this.controls.target);
 			this.controls.enabled = false;
-			this.camera.fov = POV_FOV;
+			this.camera.fov = this.povFov;
 		} else if (this.mode === 'pov') {
 			this.camera.position.copy(this.orbit.position);
 			this.controls.target.copy(this.orbit.target);
@@ -575,8 +593,8 @@ export class ReplayScene {
 	private placePov(replay: RoundReplay, tick: number, player: PlayerState): PovPose {
 		const view = viewState(replay, player.index, tick);
 		const before = view ? viewState(replay, player.index, tick - replay.meta.tickRate / 16) : null;
-		const yaw = (view?.yaw ?? player.yaw) + (view?.punchYaw ?? 0) * VIEW_RECOIL;
-		const pitch = (view?.pitch ?? player.pitch) + (view?.punchPitch ?? 0) * VIEW_RECOIL;
+		const yaw = (view?.yaw ?? player.yaw) + (view?.punchYaw ?? 0) * this.config.pov.recoil;
+		const pitch = (view?.pitch ?? player.pitch) + (view?.punchPitch ?? 0) * this.config.pov.recoil;
 		const eye = view ? STAND_EYE + (CROUCH_EYE - STAND_EYE) * view.duck : eyeHeight(player);
 		this.camera.position.set(view?.x ?? player.x, view?.y ?? player.y, (view?.z ?? player.z) + eye);
 		const look = new THREE.Vector3(
@@ -624,22 +642,8 @@ export class ReplayScene {
 
 		if (this.pov !== null && this.scope) {
 			this.drawScope(ctx, width, height, this.scope.sniper);
-		} else if (this.pov !== null) {
-			const cx = width / 2;
-			const cy = height / 2;
-			const arm = 7 * ratio;
-			ctx.strokeStyle = 'rgba(120, 255, 140, 0.9)';
-			ctx.lineWidth = 2 * ratio;
-			ctx.beginPath();
-			ctx.moveTo(cx - arm * 2, cy);
-			ctx.lineTo(cx - arm, cy);
-			ctx.moveTo(cx + arm, cy);
-			ctx.lineTo(cx + arm * 2, cy);
-			ctx.moveTo(cx, cy - arm * 2);
-			ctx.lineTo(cx, cy - arm);
-			ctx.moveTo(cx, cy + arm);
-			ctx.lineTo(cx, cy + arm * 2);
-			ctx.stroke();
+		} else if (this.pov !== null && this.config.pov.crosshair) {
+			this.drawCrosshair(ctx, width / 2, height / 2);
 		}
 
 		const fontSize = Math.round(11.5 * ratio);
@@ -648,7 +652,7 @@ export class ReplayScene {
 		ctx.textBaseline = 'bottom';
 
 		const labels = this.players
-			.filter((p) => p.alive && p.present && this.pov === null)
+			.filter((p) => p.alive && p.present && this.pov === null && this.config.viewer.nameplates)
 			.map((player) => {
 				const lift = (player.ducking ? 66 : 84) * this.sizeOf(player);
 				this.projected.set(player.x, player.y, player.z + lift).project(this.camera);
@@ -700,6 +704,29 @@ export class ReplayScene {
 		if (this.blind > 0) {
 			ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, this.blind * 1.05)})`;
 			ctx.fillRect(0, 0, width, height);
+		}
+	}
+
+	private drawCrosshair(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+		const { crosshairColor, crosshairSize, crosshairGap, crosshairThickness, crosshairDot } =
+			this.config.pov;
+		const ratio = this.pixelRatio;
+		const size = crosshairSize * ratio;
+		const gap = crosshairGap * ratio;
+		const thick = crosshairThickness * ratio;
+		ctx.fillStyle = crosshairColor;
+		ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+		ctx.lineWidth = Math.max(1, ratio);
+		const bars: [number, number, number, number][] = [
+			[cx - gap - size, cy - thick / 2, size, thick],
+			[cx + gap, cy - thick / 2, size, thick],
+			[cx - thick / 2, cy - gap - size, thick, size],
+			[cx - thick / 2, cy + gap, thick, size]
+		];
+		if (crosshairDot) bars.push([cx - thick / 2, cy - thick / 2, thick, thick]);
+		for (const [x, y, w, h] of bars) {
+			ctx.strokeRect(x, y, w, h);
+			ctx.fillRect(x, y, w, h);
 		}
 	}
 

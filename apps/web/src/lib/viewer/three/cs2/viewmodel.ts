@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import {
+	defaultConfig,
+	horizontalToVerticalFov,
 	viewmodelClips,
+	type AppConfig,
 	weaponKey,
 	weaponModelKey,
 	type ReplaySkin,
@@ -20,7 +23,6 @@ import {
 
 const DEG = Math.PI / 180;
 const FOV = 54;
-const OFFSET = { right: 2.5, forward: 0, up: -1.5 };
 const BOB_STRIDE = 245;
 const BOB_LATERAL = 0.33;
 const BOB_VERTICAL = 0.14;
@@ -68,6 +70,7 @@ export class Viewmodel {
 	private rigs = new Map<string, THREE.Object3D>();
 	private actions = new Map<string, THREE.AnimationAction>();
 	onChange: (() => void) | null = null;
+	private config: AppConfig = defaultConfig;
 
 	constructor(pack: PlayerPack) {
 		this.pack = pack;
@@ -78,6 +81,12 @@ export class Viewmodel {
 			this.rigs = animations.rigs;
 			this.onChange?.();
 		});
+	}
+
+	setConfig(config: AppConfig) {
+		this.config = config;
+		this.camera.fov = horizontalToVerticalFov(config.pov.viewmodelFov);
+		this.camera.updateProjectionMatrix();
 	}
 
 	setShading() {
@@ -156,12 +165,15 @@ export class Viewmodel {
 	}
 
 	private place(camera: THREE.PerspectiveCamera, view: PovPose) {
-		const pace = Math.min(1, view.speed / RUN_SPEED);
+		const { bob, sway: swaying, offsetX, offsetY, offsetZ } = this.config.pov;
+		const pace = bob ? Math.min(1, view.speed / RUN_SPEED) : 0;
 		const phase = (view.distance / BOB_STRIDE) * Math.PI * 2;
 		const swing = pace * 0.005 * RUN_SPEED;
 		const lateral = swing * (0.3 + 0.7 * Math.sin(phase)) * BOB_LATERAL;
 		const vertical = swing * (0.3 + 0.7 * Math.sin(phase * 2)) * BOB_VERTICAL;
-		const sway = Math.max(-MAX_SWAY, Math.min(MAX_SWAY, -view.turn * SWAY_PER_DEGREE));
+		const sway = swaying
+			? Math.max(-MAX_SWAY, Math.min(MAX_SWAY, -view.turn * SWAY_PER_DEGREE))
+			: 0;
 		const yaw = (view.yaw + sway) * DEG;
 		const pitch = view.pitch * DEG;
 		const forward = new THREE.Vector3(
@@ -173,9 +185,9 @@ export class Viewmodel {
 		const up = new THREE.Vector3().crossVectors(right, forward);
 		this.root.position
 			.copy(camera.position)
-			.addScaledVector(right, OFFSET.right + lateral)
-			.addScaledVector(forward, OFFSET.forward)
-			.addScaledVector(up, OFFSET.up + vertical - pace * BOB_LOWER);
+			.addScaledVector(right, offsetX + lateral)
+			.addScaledVector(forward, offsetY)
+			.addScaledVector(up, offsetZ + vertical - pace * BOB_LOWER);
 		this.root.rotation.set(-lateral * 0.5 * DEG, pitch, yaw);
 	}
 
