@@ -7,6 +7,8 @@ import {
 	FLAG_HELMET,
 	FLAG_PRESENT,
 	FLAG_SCOPED,
+	PUNCH_SCALE,
+	VIEW_POSITION_SCALE,
 	lerpAngle,
 	unpackPitch,
 	unpackYaw,
@@ -35,6 +37,9 @@ export interface PlayerState extends ReplayPlayer {
 	money: number;
 	blind: number;
 	kills: number;
+	clip: number | null;
+	reserve: number | null;
+	zoom: number;
 }
 
 export function lastTick(replay: RoundReplay): number {
@@ -86,6 +91,9 @@ export function playerStates(replay: RoundReplay, tick: number): PlayerState[] {
 			weapon: meta.weapons[columns.weapon[c]!] ?? '',
 			money: columns.money[c]!,
 			blind,
+			clip: columns.clip ? columns.clip[c]! : null,
+			reserve: columns.reserve ? columns.reserve[c]! : null,
+			zoom: columns.zoom ? columns.zoom[c]! : 0,
 			kills: meta.kills.filter(
 				(kill) => kill.attacker === p && kill.tick <= tick && kill.victim !== p
 			).length
@@ -187,4 +195,53 @@ export function playerMotion(replay: RoundReplay, index: number, tick: number): 
 		vertical: Math.abs(dz) > 1200 ? 0 : dz,
 		distance: d0 + (d1 - d0) * t
 	};
+}
+
+export interface ViewState {
+	x: number;
+	y: number;
+	z: number;
+	yaw: number;
+	pitch: number;
+	punchPitch: number;
+	punchYaw: number;
+	duck: number;
+}
+
+export function viewState(replay: RoundReplay, index: number, tick: number): ViewState | null {
+	const { meta, view } = replay;
+	if (!view || !meta.view || index < 0 || index >= meta.players.length) return null;
+	const { startTick, tickStep, frameCount } = meta.view;
+	const position = Math.max(0, Math.min(frameCount - 1, (tick - startTick) / tickStep));
+	const i0 = Math.floor(position);
+	const i1 = Math.min(frameCount - 1, i0 + 1);
+	const t = position - i0;
+	const a = index * frameCount + i0;
+	const b = index * frameCount + i1;
+	const lerp = (column: ArrayLike<number>) => column[a]! + (column[b]! - column[a]!) * t;
+	return {
+		x: lerp(view.x) / VIEW_POSITION_SCALE,
+		y: lerp(view.y) / VIEW_POSITION_SCALE,
+		z: lerp(view.z) / VIEW_POSITION_SCALE,
+		yaw: lerpAngle(unpackYaw(view.yaw[a]!), unpackYaw(view.yaw[b]!), t),
+		pitch: unpackPitch(lerp(view.pitch)),
+		punchPitch: lerp(view.punchPitch) / PUNCH_SCALE,
+		punchYaw: lerp(view.punchYaw) / PUNCH_SCALE,
+		duck: lerp(view.duck) / 255
+	};
+}
+
+export function inventoryAt(replay: RoundReplay, index: number, tick: number): string[] {
+	const list = replay.meta.inventory;
+	if (!list) return [];
+	let found: number[] = [];
+	for (let i = 0; i < list.length;) {
+		const at = list[i]!;
+		const player = list[i + 1]!;
+		const count = list[i + 2]!;
+		if (at > tick) break;
+		if (player === index) found = list.slice(i + 3, i + 3 + count);
+		i += 3 + count;
+	}
+	return found.map((weapon) => replay.meta.weapons[weapon] ?? '').filter(Boolean);
 }

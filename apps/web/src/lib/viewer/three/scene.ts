@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { FLAG_PRESENT, type MapInfo, type MapMesh, type RoundReplay } from '@cs-demo-cloud/replay';
 import type { Listener } from '../audio.ts';
-import { playerStates, type PlayerState } from '../frame.ts';
+import { playerMotion, playerStates, viewState, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
 import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
 import type { MapPack, PackProgress, TextureQuality } from './cs2/pack.ts';
 import type { GameEffects } from './cs2/effects.ts';
 import type { PlayerModels } from './cs2/players.ts';
-import type { Viewmodel } from './cs2/viewmodel.ts';
+import type { PovPose, Viewmodel } from './cs2/viewmodel.ts';
 
 export type { TextureQuality };
 
@@ -34,6 +34,10 @@ const ORBIT_FOV = 50;
 const ROOF_CUT = 170;
 const MAX_PLAYER_SCALE = 3;
 const LISTENER_RANGE = 500;
+const VIEW_RECOIL = 0.9;
+const STAND_EYE = 64;
+const CROUCH_EYE = 46;
+const DEG = Math.PI / 180;
 
 export class ReplayScene {
 	onPick: ((index: number) => void) | null = null;
@@ -62,6 +66,7 @@ export class ReplayScene {
 	private followAnchor: THREE.Vector3 | null = null;
 	private players: PlayerState[] = [];
 	private pov: number | null = null;
+	private povPose: PovPose | null = null;
 	private pointer = { x: 0, y: 0, down: false };
 	private raycaster = new THREE.Raycaster();
 	private projected = new THREE.Vector3();
@@ -354,7 +359,7 @@ export class ReplayScene {
 
 		if (mode === 'follow' && focused?.alive) this.follow(focused);
 		else this.followAnchor = null;
-		if (mode === 'pov' && focused) this.placePov(focused);
+		this.povPose = mode === 'pov' && focused ? this.placePov(replay, tick, focused) : null;
 
 		const cutZ = roofs ? 1e9 : this.cutHeight(focused) + ROOF_CUT;
 		this.mapMaterial.uniforms.uCutZ!.value = cutZ;
@@ -371,7 +376,8 @@ export class ReplayScene {
 						replay,
 						tick,
 						this.players[this.pov] ?? null,
-						this.camera
+						this.camera,
+						this.povPose
 					) ?? null)
 				: null;
 		this.effects?.update(
@@ -514,10 +520,22 @@ export class ReplayScene {
 		this.controls.update();
 	}
 
-	private placePov(player: PlayerState) {
-		this.camera.position.set(player.x, player.y, player.z + eyeHeight(player));
-		const look = aimDirection(player).add(this.camera.position);
+	private placePov(replay: RoundReplay, tick: number, player: PlayerState): PovPose {
+		const view = viewState(replay, player.index, tick);
+		const before = view ? viewState(replay, player.index, tick - replay.meta.tickRate / 16) : null;
+		const yaw = (view?.yaw ?? player.yaw) + (view?.punchYaw ?? 0) * VIEW_RECOIL;
+		const pitch = (view?.pitch ?? player.pitch) + (view?.punchPitch ?? 0) * VIEW_RECOIL;
+		const eye = view ? STAND_EYE + (CROUCH_EYE - STAND_EYE) * view.duck : eyeHeight(player);
+		this.camera.position.set(view?.x ?? player.x, view?.y ?? player.y, (view?.z ?? player.z) + eye);
+		const look = new THREE.Vector3(
+			Math.cos(pitch * DEG) * Math.cos(yaw * DEG),
+			Math.cos(pitch * DEG) * Math.sin(yaw * DEG),
+			-Math.sin(pitch * DEG)
+		).add(this.camera.position);
 		this.camera.lookAt(look);
+		const motion = playerMotion(replay, player.index, tick);
+		const turn = view && before ? ((((view.yaw - before.yaw) % 360) + 540) % 360) - 180 : 0;
+		return { yaw, pitch, speed: motion.speed, distance: motion.distance, turn: turn * 16 };
 	}
 
 	private cutHeight(focused: PlayerState | undefined): number {
