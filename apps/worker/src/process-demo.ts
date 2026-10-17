@@ -39,7 +39,7 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 	step('open');
 	try {
 		const config = normalizeConfig(getAppConfigJson(db));
-		const analyzed = analyzeDemo(file.path, step, { viewStream: config.parsing.viewStream });
+		const analyzed = analyzeDemo(file.path, step, { viewRate: config.parsing.viewRate });
 		step('build');
 
 		const replayDir = storage.replayDir(demo.id);

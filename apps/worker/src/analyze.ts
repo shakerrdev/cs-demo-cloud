@@ -41,13 +41,13 @@ import {
 	str,
 	type RawEvent,
 	type RawGrenade,
-	type TickColumns
+	type TickColumns,
+	type ViewRows
 } from './parser.ts';
 import { detectRounds, type RoundSpan } from './rounds.ts';
 import { assignTeams } from './teams.ts';
 
 const STEP = 4;
-const VIEW_STEP = 2;
 const CT = 3;
 const T = 2;
 
@@ -126,7 +126,7 @@ function measureTickRate(ticks: TickColumns): number {
 export function analyzeDemo(
 	path: string,
 	timings: (step: string) => void = () => {},
-	options: { viewStream?: boolean } = {}
+	options: { viewRate?: number } = {}
 ): AnalyzedDemo {
 	const header = parseHeader(path);
 	const events = parseEvents(path);
@@ -308,13 +308,17 @@ export function analyzeDemo(
 	const grenadeRows = parseGrenades(path);
 	timings('grenades');
 	let views: ({ grid: Grid; columns: ViewColumns } | null)[] = spans.map(() => null);
-	if (options.viewStream !== false) {
+	const viewRate = options.viewRate ?? 32;
+	let viewStep = Math.max(1, Math.round(tickRate / Math.max(1, viewRate)));
+	if (viewRate > 0) {
 		try {
+			if (viewStep === 1) viewStep = probeSnapshotStep(path, spans);
 			views = buildViews(
 				path,
 				spans,
 				playerIndex,
-				roundPlayers.map((list) => list.length)
+				roundPlayers.map((list) => list.length),
+				viewStep
 			);
 		} catch (error) {
 			console.warn(`No view stream: ${error instanceof Error ? error.message : error}`);
@@ -493,7 +497,7 @@ export function analyzeDemo(
 				...(view
 					? {
 							view: {
-								tickStep: VIEW_STEP,
+								tickStep: viewStep,
 								startTick: view.grid.first,
 								frameCount: view.grid.count
 							}
@@ -565,21 +569,47 @@ function isGun(weapon: string | null): boolean {
 	);
 }
 
+export function snapshotStep(
+	rows: Pick<ViewRows, 'tick' | 'steamid' | 'name' | 'X' | 'Y' | 'yaw'>
+): number {
+	const last = new Map<string, string>();
+	const changes = [0, 0];
+	const order = rows.tick.map((_, i) => i).sort((a, b) => rows.tick[a]! - rows.tick[b]!);
+	for (const i of order) {
+		const key = playerKey(rows.steamid[i], rows.name[i]);
+		const value = `${num(rows.X[i])},${num(rows.Y[i])},${num(rows.yaw[i])}`;
+		const previous = last.get(key);
+		if (previous !== undefined && previous !== value) changes[rows.tick[i]! % 2]!++;
+		last.set(key, value);
+	}
+	const [even, odd] = changes as [number, number];
+	return even > 20 && odd * 8 < even ? 2 : 1;
+}
+
+function probeSnapshotStep(path: string, spans: RoundSpan[]): number {
+	const span = spans.reduce((a, b) =>
+		b.lastTick - b.startTick > a.lastTick - a.startTick ? b : a
+	);
+	const middle = Math.floor((span.startTick + span.lastTick) / 2);
+	const ticks = Array.from({ length: 64 }, (_, i) => middle + i);
+	return snapshotStep(parseView(path, ticks));
+}
+
 function buildViews(
 	path: string,
 	spans: RoundSpan[],
 	playerIndex: Map<string, number>[],
-	playerCounts: number[]
+	playerCounts: number[],
+	step: number
 ): { grid: Grid; columns: ViewColumns }[] {
-	const grids = spans.map((span) => gridFor(span, VIEW_STEP));
+	const grids = spans.map((span) => gridFor(span, step));
 	const views = grids.map((grid, r) => ({
 		grid,
 		columns: createViewColumns(playerCounts[r]! * grid.count),
 		present: new Uint8Array(playerCounts[r]! * grid.count)
 	}));
 	const wanted = new Set<number>();
-	for (const grid of grids)
-		for (let f = 0; f < grid.count; f++) wanted.add(grid.first + f * VIEW_STEP);
+	for (const grid of grids) for (let f = 0; f < grid.count; f++) wanted.add(grid.first + f * step);
 	const rows = parseView(
 		path,
 		[...wanted].sort((a, b) => a - b)
@@ -590,10 +620,10 @@ function buildViews(
 		const key = playerKey(rows.steamid[i], rows.name[i]);
 		for (let r = 0; r < views.length; r++) {
 			const { grid, columns, present } = views[r]!;
-			if (tick < grid.first || tick > grid.first + (grid.count - 1) * VIEW_STEP) continue;
+			if (tick < grid.first || tick > grid.first + (grid.count - 1) * step) continue;
 			const p = playerIndex[r]!.get(key);
 			if (p === undefined) continue;
-			const at = p * grid.count + (tick - grid.first) / VIEW_STEP;
+			const at = p * grid.count + (tick - grid.first) / step;
 			const punch = Array.isArray(rows.aim_punch_angle[i])
 				? (rows.aim_punch_angle[i] as unknown[])
 				: [];
