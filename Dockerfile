@@ -35,7 +35,7 @@ COPY --from=runtime-deps /app ./
 COPY packages ./packages
 COPY apps/worker ./apps/worker
 COPY --from=build /app/apps/web/build ./apps/web/build
-COPY apps/web/server.js ./apps/web/
+COPY apps/web/server.js apps/web/tls.ts ./apps/web/
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
 RUN mkdir -p /data /db && chown node:node /data /db
 VOLUME ["/data", "/db"]

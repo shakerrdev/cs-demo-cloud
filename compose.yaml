@@ -3,6 +3,10 @@ x-app: &app
   restart: unless-stopped
   environment:
     ORIGIN: ${ORIGIN:-}
+    HTTPS: ${HTTPS:-}
+    TLS_HOSTS: ${TLS_HOSTS:-}
+    TLS_CERT: ${TLS_CERT:-}
+    TLS_KEY: ${TLS_KEY:-}
     PUID: ${PUID:-1000}
     PGID: ${PGID:-1000}
   volumes:
