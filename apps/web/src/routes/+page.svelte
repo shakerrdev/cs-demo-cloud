@@ -17,21 +17,37 @@
 		return () => clearInterval(timer);
 	});
 
+	let confirmAll = $state(false);
+
 	const statusText = { queued: 'Queued', processing: 'Parsing…', ready: 'Ready', failed: 'Failed' };
 </script>
 
 <Uploader />
 
-<h1>Matches</h1>
+<div class="heading">
+	<h1>Matches</h1>
+	{#if data.isAdmin && data.demos.length}
+		{#if confirmAll}
+			<form method="POST" action="?/reparseAll" class="confirm">
+				<span>Parse all {data.demos.length} demos again?</span>
+				<button type="submit">Parse all</button>
+				<button type="button" onclick={() => (confirmAll = false)}>Cancel</button>
+			</form>
+		{:else}
+			<button type="button" class="button small" onclick={() => (confirmAll = true)}
+				>Parse all again</button
+			>
+		{/if}
+	{/if}
+</div>
 
 {#if data.demos.length === 0}
 	<p class="empty">No demos yet. Drop a few .dem files here to get started.</p>
 {:else}
 	<ul class="matches">
 		{#each data.demos as { demo, match } (demo.id)}
-			{@const ready = demo.status === 'ready' && match}
 			<li>
-				<a href={ready ? `/demos/${demo.id}` : undefined} class:disabled={!ready}>
+				<a href="/demos/{demo.id}">
 					<span class="thumb">
 						{#if match}
 							<img
@@ -52,7 +68,11 @@
 							{#if !match}· {formatBytes(demo.fileSize)}{/if}
 						</span>
 					</span>
-					{#if match}
+					{#if match && demo.status !== 'ready'}
+						<span class="status {demo.status}" title={demo.error ?? undefined}>
+							{statusText[demo.status]}
+						</span>
+					{:else if match}
 						<span class="score">
 							<span class:win={match.scoreA > match.scoreB}>{match.scoreA}</span>
 							<span class="sep">:</span>
@@ -73,6 +93,22 @@
 {/if}
 
 <style>
+	.heading {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px 16px;
+	}
+
+	.confirm {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		font-size: 14px;
+	}
+
 	h1 {
 		margin: 32px 0 14px;
 		font-size: 20px;
@@ -110,10 +146,6 @@
 	a[href]:hover {
 		border-color: var(--border);
 		background: var(--surface-2);
-	}
-
-	a.disabled {
-		cursor: default;
 	}
 
 	.thumb {

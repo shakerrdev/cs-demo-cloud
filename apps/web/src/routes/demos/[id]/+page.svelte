@@ -41,9 +41,25 @@
 		{#if data.demo.error}<br /><span class="error">{data.demo.error}</span>{/if}
 	</p>
 	<a href="/">Back to matches</a>
-	<div class="actions">{@render deleteForm()}</div>
+	<div class="actions">
+		{#if data.demo.status !== 'processing'}
+			<form method="POST" action="?/reparse">
+				<button type="submit">Parse again</button>
+			</form>
+		{/if}
+		{@render deleteForm()}
+	</div>
 {:else}
 	{@const { match, players, rounds } = details}
+	{#if data.demo.status !== 'ready'}
+		<p class="stale" class:failed={data.demo.status === 'failed'}>
+			{#if data.demo.status === 'failed'}
+				Parsing again failed: {data.demo.error ?? 'unknown error'}. Showing the previous parse.
+			{:else}
+				Being parsed again; this shows the previous parse until it's done.
+			{/if}
+		</p>
+	{/if}
 	<header class="match">
 		<div>
 			<h1>{mapTitle(match.map)}</h1>
@@ -154,6 +170,19 @@
 {/snippet}
 
 <style>
+	.stale {
+		margin: 0 0 14px;
+		padding: 8px 12px;
+		border-radius: 8px;
+		background: var(--surface);
+		color: var(--muted);
+		font-size: 13.5px;
+	}
+
+	.stale.failed {
+		color: var(--danger);
+	}
+
 	.match {
 		display: flex;
 		flex-wrap: wrap;
