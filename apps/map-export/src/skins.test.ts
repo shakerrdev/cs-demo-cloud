@@ -19,7 +19,8 @@ test('reads paint kits from items_game', () => {
 		style: 7,
 		legacy: true,
 		wear: [0, 0.65],
-		composite: null
+		composite: null,
+		vmat: null
 	});
 	assert.equal(kits.get(1266)?.composite, 'weapons/paints/timed_drops/hye_blue_m4a4.vcompmat');
 	assert.equal(kits.get(1266)?.legacy, false);
@@ -102,7 +103,8 @@ test('finds every weapon and paint kit pair from the generated icons', () => {
 				style: 7,
 				legacy: true,
 				wear: [0, 1] as [number, number],
-				composite: null
+				composite: null,
+				vmat: null
 			}
 		],
 		[
@@ -112,7 +114,8 @@ test('finds every weapon and paint kit pair from the generated icons', () => {
 				style: 6,
 				legacy: true,
 				wear: [0, 0.08] as [number, number],
-				composite: null
+				composite: null,
+				vmat: null
 			}
 		]
 	]);

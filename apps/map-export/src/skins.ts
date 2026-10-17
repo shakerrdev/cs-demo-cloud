@@ -7,9 +7,11 @@ import {
 	SKINS_PACK_VERSION,
 	decodePackTexture,
 	encodePackTexture,
+	isGlovesItem,
 	itemWeaponKey,
 	skinWeaponKey,
 	type Cosmetics,
+	type SkinGlove,
 	type SkinPaint,
 	type SkinWeapon,
 	type PackTexture,
@@ -60,6 +62,7 @@ export interface PaintKit {
 	legacy: boolean;
 	wear: [number, number];
 	composite: string | null;
+	vmat: string | null;
 }
 
 const PAINT_TEXTURES = new Set([
@@ -105,7 +108,8 @@ export function paintKits(itemsGame: string): Map<number, PaintKit> {
 			legacy: value.use_legacy_model === '1',
 			wear: [number('wear_remap_min', 0.06), number('wear_remap_max', 0.8)],
 			composite:
-				typeof value.composite_material_path === 'string' ? value.composite_material_path : null
+				typeof value.composite_material_path === 'string' ? value.composite_material_path : null,
+			vmat: typeof value.vmt_path === 'string' ? value.vmt_path : null
 		});
 	}
 	return kits;
@@ -331,6 +335,57 @@ export function trimParams(params: MaterialParams) {
 	};
 }
 
+const GLOVE_TEXTURES: Record<string, 'mask' | 'detail'> = {
+	g_tLayerMask: 'mask',
+	g_tSurface: 'mask',
+	g_tNormal: 'mask',
+	g_tPattern: 'detail',
+	g_tDetail1: 'detail',
+	g_tDetail2: 'detail',
+	g_tDetail3: 'detail',
+	g_tDetail4: 'detail',
+	g_tDetailNormal1: 'detail',
+	g_tDetailNormal2: 'detail',
+	g_tDetailNormal3: 'detail',
+	g_tDetailNormal4: 'detail'
+};
+const GLOVE_INTS = new Set([
+	'F_PATTERN',
+	'g_bFlipFixup',
+	'g_nPatternMode',
+	'g_nPatternReplaceIndex'
+]);
+const GLOVE_FLOATS =
+	/^g_f(ColorMaskBlur|PaintThickness|PaintDurability|PatternDetailInfluence|PatternTexCoord(Scale|Rotation)|PatternRoughnessBrightness|PatternMetalness)$|^g_f(Detail(Scale|BlackPoint|RoughnessContrast|RoughnessBrightness|Metalness|NormalContrast)|CurvaturePower)[1-4]$/;
+const GLOVE_VECTORS = /^g_vColorTint[1-8]$|^g_vPatternPaletteIndices$|^g_fPatternTexCoordOffset$/;
+const GLOVE_MASK_SIZE = 1024;
+
+export function gloveParams(params: MaterialParams) {
+	return {
+		ints: Object.fromEntries(Object.entries(params.ints).filter(([name]) => GLOVE_INTS.has(name))),
+		floats: Object.fromEntries(
+			Object.entries(params.floats).filter(([name]) => GLOVE_FLOATS.test(name))
+		),
+		vectors: Object.fromEntries(
+			Object.entries(params.vectors).filter(([name]) => GLOVE_VECTORS.test(name))
+		)
+	};
+}
+
+export function gloveItems(itemsGame: string): Map<number, { name: string; model: string }> {
+	const root = parseKv1(itemsGame).items_game as Kv1Object | undefined;
+	const items = new Map<number, { name: string; model: string }>();
+	const block = root?.items;
+	if (!block || typeof block !== 'object') return items;
+	for (const [index, value] of Object.entries(block)) {
+		if (typeof value !== 'object' || typeof value.name !== 'string') continue;
+		const model = value.model_player;
+		if (isGlovesItem(Number(index)) && typeof model === 'string')
+			items.set(Number(index), { name: value.name, model });
+	}
+	return items;
+}
+
 export function weaponItems(itemsGame: string): Map<string, number> {
 	const root = parseKv1(itemsGame).items_game as Kv1Object | undefined;
 	const items = new Map<string, number>();
@@ -381,9 +436,11 @@ function allCosmetics(vpk: Vpk, itemsGame: string, kits: Map<number, PaintKit>):
 				.pop()!
 				.replace(/_light_png\.vtex_c$/, '')
 		);
+	const items = weaponItems(itemsGame);
+	for (const [index, glove] of gloveItems(itemsGame)) items.set(glove.name, index);
 	return {
 		agents: [...new Set(agents)].sort(),
-		paints: iconCosmetics(icons, weaponItems(itemsGame), kits)
+		paints: iconCosmetics(icons, items, kits)
 	};
 }
 
@@ -541,7 +598,71 @@ export async function exportSkins(
 			return result;
 		};
 
-		const used = [...new Set(cosmetics.paints.map(({ paint }) => paint))].flatMap((paint) => {
+		const gloveModels = gloveItems(itemsGame);
+		const gloves: Record<string, SkinGlove> = {};
+		const pendingGloves = new Map<number, Promise<boolean>>();
+		const gloveModel = (item: number): Promise<boolean> => {
+			let promise = pendingGloves.get(item);
+			if (!promise) {
+				promise = (async () => {
+					const entry = gloveModels.get(item);
+					if (!entry) return false;
+					log(`skins: exporting gloves ${entry.name}`);
+					const exported = await exportModel(
+						tools,
+						vpkPath,
+						gameinfo,
+						entry.model,
+						join(options.workDir, 'gloves', String(item)),
+						['--gltf_export_animations'],
+						{
+							part: (name) => (name.endsWith('.viewmodel') ? 'firstperson' : null),
+							textureParams: TEXTURE_PARAMS
+						},
+						options.reuseWork
+					).catch((error: Error) => {
+						log(`  ${entry.name} failed: ${error.message.split('\n')[0]}`);
+						return null;
+					});
+					if (!exported) return false;
+					for (const texture of exported.textures) want(texture, AGENT_TEXTURE_SIZE);
+					gloves[item] = { model: await pack.addFile(`gloves/${item}.glb`, exported.glb, true) };
+					return true;
+				})();
+				pendingGloves.set(item, promise);
+			}
+			return promise;
+		};
+		const glovePaint = async (item: number, paint: number) => {
+			const kit = kits.get(paint);
+			if (!kit || !(await gloveModel(item)) || paints[paint]) return;
+			const candidates = [kit.vmat, `gloves/paints/${kit.name}.vmat`].filter(
+				(path): path is string => Boolean(path) && vpk.has(`${path}_c`)
+			);
+			const data = candidates[0] ? await blocks.read(candidates[0]) : null;
+			if (!data) {
+				log(`  no material for glove paint ${kit.name}`);
+				return;
+			}
+			const params = materialParams(data);
+			const picked = Object.fromEntries(
+				Object.entries(params.textures).filter(([name]) => name in GLOVE_TEXTURES)
+			);
+			for (const [name, texture] of Object.entries(picked))
+				want(texture, GLOVE_TEXTURES[name] === 'mask' ? GLOVE_MASK_SIZE : DETAIL_SIZE);
+			paints[paint] = {
+				name: kit.name,
+				style: 0,
+				legacy: false,
+				wear: kit.wear,
+				glove: true,
+				...gloveParams(params),
+				textures: picked
+			};
+		};
+
+		const weaponPaints = cosmetics.paints.filter(({ item }) => !isGlovesItem(item));
+		const used = [...new Set(weaponPaints.map(({ paint }) => paint))].flatMap((paint) => {
 			const kit = kits.get(paint);
 			return kit ? [kit] : [];
 		});
@@ -563,6 +684,10 @@ export async function exportSkins(
 
 		let done = 0;
 		await forEachLimit(cosmetics.paints, 2, async ({ item, paint }) => {
+			if (isGlovesItem(item)) {
+				await glovePaint(item, paint);
+				return;
+			}
 			const key = itemWeaponKey(item);
 			const kit = kits.get(paint);
 			if (!key || !kit) {
@@ -686,6 +811,7 @@ export async function exportSkins(
 			agents,
 			weapons,
 			paints,
+			gloves,
 			textures: pack.textures
 		};
 		await pack.addFile(
