@@ -1,4 +1,6 @@
-export const REPLAY_VERSION = 1;
+export const REPLAY_VERSION = 2;
+export const VIEW_POSITION_SCALE = 16;
+export const PUNCH_SCALE = 100;
 
 export type Side = 'CT' | 'T';
 export type TeamKey = 'a' | 'b';
@@ -105,6 +107,14 @@ export interface RoundMeta {
 	effects: ReplayEffect[];
 	bomb: ReplayBombEvent[];
 	blinds: ReplayBlind[];
+	inventory?: number[];
+	view?: RoundViewGrid;
+}
+
+export interface RoundViewGrid {
+	tickStep: number;
+	startTick: number;
+	frameCount: number;
 }
 
 export interface RoundColumns {
@@ -118,9 +128,24 @@ export interface RoundColumns {
 	armor: Uint8Array;
 	weapon: Uint8Array;
 	flags: Uint8Array;
+	clip?: Uint8Array;
+	reserve?: Uint8Array;
+	zoom?: Uint8Array;
+}
+
+export interface ViewColumns {
+	x: Int32Array;
+	y: Int32Array;
+	z: Int32Array;
+	yaw: Uint16Array;
+	pitch: Int16Array;
+	punchPitch: Int16Array;
+	punchYaw: Int16Array;
+	duck: Uint8Array;
 }
 
 export interface RoundReplay {
 	meta: RoundMeta;
 	columns: RoundColumns;
+	view?: ViewColumns;
 }

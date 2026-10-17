@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { packYaw, unpackYaw, lerpAngle } from './angles.ts';
-import { createColumns, decodeRound, encodeRound } from './codec.ts';
+import { createColumns, createViewColumns, decodeRound, encodeRound } from './codec.ts';
 import { REPLAY_VERSION, type RoundMeta } from './types.ts';
 
 function meta(players: number, frameCount: number): RoundMeta {
@@ -54,7 +54,7 @@ test('round trip keeps every column and the metadata', () => {
 
 	assert.deepEqual(decoded.meta, m);
 	for (const key of Object.keys(columns) as (keyof typeof columns)[]) {
-		assert.deepEqual(Array.from(decoded.columns[key]), Array.from(columns[key]), key);
+		assert.deepEqual(Array.from(decoded.columns[key]!), Array.from(columns[key]!), key);
 	}
 });
 
@@ -83,6 +83,46 @@ test('decodes from a pooled Node buffer', () => {
 	assert.deepEqual(Array.from(decoded.columns.x), [1, 2, 3, 4, 5, 6, 7, 8]);
 	assert.deepEqual(Array.from(decoded.columns.health), [100, 90, 80, 70, 60, 50, 40, 30]);
 	assert.deepEqual(Array.from(decoded.columns.y), [0, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+test('round trip keeps the extra columns and the view stream', () => {
+	const m = { ...meta(2, 5), view: { tickStep: 2, startTick: 1000, frameCount: 9 } };
+	const columns = createColumns(10);
+	columns.clip!.set([30, 29, 28, 27, 26, 7, 7, 7, 6, 5]);
+	columns.reserve!.set([90, 90, 90, 90, 90, 21, 21, 21, 21, 21]);
+	columns.zoom!.set([0, 0, 1, 2, 0, 0, 0, 0, 0, 0]);
+	const view = createViewColumns(18);
+	for (let i = 0; i < 18; i++) {
+		view.x[i] = -60000 + i * 7919;
+		view.y[i] = 70000 - i * 3;
+		view.z[i] = i * 16;
+		view.yaw[i] = packYaw(i * 21);
+		view.pitch[i] = -8900 + i * 1000;
+		view.punchPitch[i] = -i * 50;
+		view.punchYaw[i] = i * 3;
+		view.duck[i] = (i * 40) % 256;
+	}
+
+	const decoded = decodeRound(encodeRound({ meta: m, columns, view }));
+
+	assert.deepEqual(decoded.meta, m);
+	for (const key of ['clip', 'reserve', 'zoom'] as const)
+		assert.deepEqual(Array.from(decoded.columns[key]!), Array.from(columns[key]!), key);
+	for (const key of Object.keys(view) as (keyof typeof view)[])
+		assert.deepEqual(Array.from(decoded.view![key]), Array.from(view[key]), key);
+});
+
+test('still reads version 1 replays without the extra columns', () => {
+	const m = { ...meta(1, 3), version: 1 };
+	const columns = createColumns(3, false);
+	columns.x.set([5, -7, 9]);
+	columns.flags.set([64, 65, 66]);
+
+	const decoded = decodeRound(encodeRound({ meta: m, columns }));
+
+	assert.deepEqual(Array.from(decoded.columns.flags), [64, 65, 66]);
+	assert.equal(decoded.columns.clip, undefined);
+	assert.equal(decoded.view, undefined);
 });
 
 test('rejects data that is not a replay', () => {
