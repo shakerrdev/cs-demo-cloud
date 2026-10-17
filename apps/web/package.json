@@ -16,8 +16,10 @@
 		"@cs-demo-cloud/db": "workspace:*",
 		"@cs-demo-cloud/replay": "workspace:*",
 		"@cs-demo-cloud/shared": "workspace:*",
+		"@peculiar/x509": "^2.2.0",
 		"better-sqlite3": "^13.0.3",
 		"drizzle-orm": "^0.45.4",
+		"reflect-metadata": "^0.2.2",
 		"steam-session": "^1.9.4"
 	},
 	"devDependencies": {
