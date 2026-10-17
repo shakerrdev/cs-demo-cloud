@@ -8,6 +8,7 @@ import type {
 } from '@cs-demo-cloud/replay';
 import { defaultTextures, type WorldShading } from './material.ts';
 import { ENV_VOLUME_TEXELS, MAX_ENV_VOLUMES, MAX_PROBE_VOLUMES } from './shader.ts';
+import { buildVolumeGrid } from './volume-grid.ts';
 
 export function anglesToMatrix(angles: Vec3): THREE.Matrix4 {
 	const [pitch, yaw, roll] = angles.map((a) => (a * Math.PI) / 180) as Vec3;
@@ -96,6 +97,52 @@ function envTable(volumes: PackEnvMapVolume[]): THREE.DataTexture {
 	return texture;
 }
 
+interface OrientedVolume {
+	origin: Vec3;
+	angles: Vec3;
+	min: Vec3;
+	max: Vec3;
+}
+
+export interface VolumeGrid {
+	texture: THREE.DataTexture;
+	min: THREE.Vector3;
+	scale: THREE.Vector3;
+	dims: THREE.Vector3;
+}
+
+export function worldBox(volume: OrientedVolume): THREE.Box3 {
+	const toWorld = anglesToMatrix(volume.angles).setPosition(...volume.origin);
+	const box = new THREE.Box3();
+	const corner = new THREE.Vector3();
+	for (let i = 0; i < 8; i++) {
+		corner
+			.set(
+				i & 1 ? volume.max[0] : volume.min[0],
+				i & 2 ? volume.max[1] : volume.min[1],
+				i & 4 ? volume.max[2] : volume.min[2]
+			)
+			.applyMatrix4(toWorld);
+		box.expandByPoint(corner);
+	}
+	return box;
+}
+
+function volumeGrid(volumes: OrientedVolume[]): VolumeGrid {
+	const grid = buildVolumeGrid(volumes.map(worldBox));
+	const texture = new THREE.DataTexture(
+		grid.data,
+		grid.width,
+		grid.height,
+		THREE.RGBAFormat,
+		THREE.FloatType
+	);
+	texture.minFilter = THREE.NearestFilter;
+	texture.magFilter = THREE.NearestFilter;
+	texture.needsUpdate = true;
+	return { texture, min: grid.min, scale: grid.scale, dims: grid.dims };
+}
+
 const emptyArray = (() => {
 	const texture = new THREE.DataArrayTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, 1);
 	texture.needsUpdate = true;
@@ -143,6 +190,7 @@ export function createWorldShading(
 		if (world.probes.shadows) defines.WORLD_PROBE_SHADOWS = 1;
 		table = probeTable(world.probes.volumes);
 	}
+	const probeGrid = volumeGrid((world.probes?.volumes ?? []).slice(0, MAX_PROBE_VOLUMES));
 	const probeDepth = (() => {
 		const ref = world.probes ? manifest.textures[world.probes.irradiance] : undefined;
 		const shadowRef = world.probes?.shadows ? manifest.textures[world.probes.shadows] : undefined;
@@ -159,6 +207,7 @@ export function createWorldShading(
 		defines.WORLD_ENV_MAP = 1;
 		envVolumes = envTable(world.envMaps.volumes);
 	}
+	const envGrid = volumeGrid((world.envMaps?.volumes ?? []).slice(0, MAX_ENV_VOLUMES));
 
 	if (manifest.fog?.cubemap && manifest.sky) defines.FOG_CUBE = 1;
 	if (manifest.fog?.gradient) defines.FOG_GRADIENT = 1;
@@ -185,10 +234,18 @@ export function createWorldShading(
 		uProbeVolumes: { value: table ?? defaultTextures.black },
 		uProbeCount: { value: Math.min(world.probes?.volumes.length ?? 0, MAX_PROBE_VOLUMES) },
 		uProbeDepth: { value: probeDepth },
+		uProbeGrid: { value: probeGrid.texture },
+		uProbeGridMin: { value: probeGrid.min },
+		uProbeGridScale: { value: probeGrid.scale },
+		uProbeGridDims: { value: probeGrid.dims },
 		uEnvMap: envUniforms.texture,
 		uEnvMips: envUniforms.mips,
 		uEnvVolumes: { value: envVolumes ?? defaultTextures.black },
 		uEnvCount: { value: Math.min(world.envMaps?.volumes.length ?? 0, MAX_ENV_VOLUMES) },
+		uEnvGrid: { value: envGrid.texture },
+		uEnvGridMin: { value: envGrid.min },
+		uEnvGridScale: { value: envGrid.scale },
+		uEnvGridDims: { value: envGrid.dims },
 		uSkyOrigin: { value: new THREE.Vector3(...origin) },
 		uWorldScale: { value: scale },
 		uCutZ: world.kind === 'world' ? shared.uCutZ! : { value: 1e9 }
@@ -202,6 +259,8 @@ export function createWorldShading(
 		dispose: () => {
 			table?.dispose();
 			envVolumes?.dispose();
+			probeGrid.texture.dispose();
+			envGrid.texture.dispose();
 		}
 	};
 }

@@ -1,4 +1,5 @@
 import { skinPaintGlsl } from './skin-paint';
+import { GRID_OVERFLOW, GRID_SLOTS, GRID_WIDTH } from './volume-grid.ts';
 
 export const MAX_PROBE_VOLUMES = 128;
 export const MAX_ENV_VOLUMES = 128;
@@ -163,6 +164,10 @@ uniform sampler2DArray uProbeShadows;
 uniform sampler2D uProbeVolumes;
 uniform int uProbeCount;
 uniform float uProbeDepth;
+uniform sampler2D uProbeGrid;
+uniform vec3 uProbeGridMin;
+uniform vec3 uProbeGridScale;
+uniform vec3 uProbeGridDims;
 #endif
 
 #ifdef ENV_MAP
@@ -170,6 +175,23 @@ uniform sampler2DArray uEnvMap;
 uniform sampler2D uEnvVolumes;
 uniform int uEnvCount;
 uniform float uEnvMips;
+uniform sampler2D uEnvGrid;
+uniform vec3 uEnvGridMin;
+uniform vec3 uEnvGridScale;
+uniform vec3 uEnvGridDims;
+#endif
+
+#if defined(PROBES) || defined(ENV_MAP)
+int gridCell(vec3 p, vec3 gridMin, vec3 scale, vec3 dims) {
+	vec3 c = clamp(floor((p - gridMin) * scale), vec3(0.0), dims - 1.0);
+	return int(c.x) + int(c.y) * int(dims.x) + int(c.z) * int(dims.x) * int(dims.y);
+}
+
+int gridSlot(sampler2D grid, int cell, int slot) {
+	int t = cell * ${GRID_SLOTS / 4} + slot / 4;
+	vec4 v = texelFetch(grid, ivec2(t % ${GRID_WIDTH}, t / ${GRID_WIDTH}), 0);
+	return int(v[slot % 4] + 0.5) - 1;
+}
 #endif
 
 #ifdef FOG_CUBE
@@ -243,22 +265,16 @@ vec4 sampleProbe(sampler2DArray atlas, vec3 texel, float layerOffset) {
 	return mix(a, b, f);
 }
 
-void probeLighting(vec3 position, vec3 normal, out vec3 irradiance, out vec4 shadows, out float coverage) {
-	irradiance = vec3(0.0);
-	shadows = vec4(0.0);
-	coverage = 0.0;
-	vec3 normalSquared = normal * normal;
-	for (int i = 0; i < ${MAX_PROBE_VOLUMES}; i++) {
-		if (i >= uProbeCount || coverage > 0.99) break;
+void probeVolume(int i, vec3 position, vec3 normal, vec3 normalSquared, inout vec3 irradiance, inout vec4 shadows, inout float coverage) {
 		vec4 r0 = texelFetch(uProbeVolumes, ivec2(i * 6, 0), 0);
 		vec4 r1 = texelFetch(uProbeVolumes, ivec2(i * 6 + 1, 0), 0);
 		vec4 r2 = texelFetch(uProbeVolumes, ivec2(i * 6 + 2, 0), 0);
 		vec3 local = vec3(dot(r0, vec4(position, 1.0)), dot(r1, vec4(position, 1.0)), dot(r2, vec4(position, 1.0)));
-		if (any(lessThan(local, vec3(0.0))) || any(greaterThan(local, vec3(1.0)))) continue;
+		if (any(lessThan(local, vec3(0.0))) || any(greaterThan(local, vec3(1.0)))) return;
 		vec3 invEdge = texelFetch(uProbeVolumes, ivec2(i * 6 + 3, 0), 0).xyz;
 		vec3 fade = clamp(min(local, 1.0 - local) * invEdge, 0.0, 1.0);
 		float weight = smoothstep(0.0, 1.0, min(fade.x, min(fade.y, fade.z))) * (1.0 - coverage);
-		if (weight <= 0.0) continue;
+		if (weight <= 0.0) return;
 		vec3 size = texelFetch(uProbeVolumes, ivec2(i * 6 + 4, 0), 0).xyz;
 		vec3 offset = texelFetch(uProbeVolumes, ivec2(i * 6 + 5, 0), 0).xyz;
 		vec3 texel = clamp(local, 0.5 / size, 1.0 - 0.5 / size) * size + offset;
@@ -272,6 +288,25 @@ void probeLighting(vec3 position, vec3 normal, out vec3 irradiance, out vec4 sha
 		shadows += sampleProbe(uProbeShadows, texel, 0.0) * weight;
 		#endif
 		coverage += weight;
+}
+
+void probeLighting(vec3 position, vec3 normal, out vec3 irradiance, out vec4 shadows, out float coverage) {
+	irradiance = vec3(0.0);
+	shadows = vec4(0.0);
+	coverage = 0.0;
+	vec3 normalSquared = normal * normal;
+	int cell = gridCell(position, uProbeGridMin, uProbeGridScale, uProbeGridDims);
+	if (gridSlot(uProbeGrid, cell, 0) >= ${GRID_OVERFLOW}) {
+		for (int i = 0; i < ${MAX_PROBE_VOLUMES}; i++) {
+			if (i >= uProbeCount || coverage > 0.99) break;
+			probeVolume(i, position, normal, normalSquared, irradiance, shadows, coverage);
+		}
+		return;
+	}
+	for (int s = 0; s < ${GRID_SLOTS}; s++) {
+		int i = gridSlot(uProbeGrid, cell, s);
+		if (i < 0 || coverage > 0.99) break;
+		probeVolume(i, position, normal, normalSquared, irradiance, shadows, coverage);
 	}
 }
 #endif
@@ -303,17 +338,12 @@ vec4 envTexel(int volume, int row) {
 	return texelFetch(uEnvVolumes, ivec2(volume * ${ENV_VOLUME_TEXELS} + row, 0), 0);
 }
 
-vec3 environment(vec3 position, vec3 reflection, float lod, out vec4 normalizationSh) {
-	vec3 env = vec3(0.0);
-	vec4 sh = vec4(0.0);
-	float total = 0.01;
-	for (int i = 0; i < ${MAX_ENV_VOLUMES}; i++) {
-		if (i >= uEnvCount || total > 0.99) break;
+void envVolume(int i, vec3 position, vec3 reflection, float lod, inout vec3 env, inout vec4 sh, inout float total) {
 		vec4 r0 = envTexel(i, 0);
 		vec4 r1 = envTexel(i, 1);
 		vec4 r2 = envTexel(i, 2);
 		vec3 local = vec3(dot(r0, vec4(position, 1.0)), dot(r1, vec4(position, 1.0)), dot(r2, vec4(position, 1.0)));
-		if (any(lessThan(local, vec3(0.0))) || any(greaterThan(local, vec3(1.0)))) continue;
+		if (any(lessThan(local, vec3(0.0))) || any(greaterThan(local, vec3(1.0)))) return;
 		vec4 minIndex = envTexel(i, 3);
 		vec4 sizeBox = envTexel(i, 4);
 		vec3 direction = vec3(dot(r0.xyz, reflection), dot(r1.xyz, reflection), dot(r2.xyz, reflection));
@@ -321,7 +351,7 @@ vec3 environment(vec3 position, vec3 reflection, float lod, out vec4 normalizati
 		if (sizeBox.w > 0.5) {
 			vec3 fade = clamp(min(local, 1.0 - local) * envTexel(i, 5).xyz, 0.0, 1.0);
 			float edge = min(fade.x, min(fade.y, fade.z));
-			if (edge <= 0.0) continue;
+			if (edge <= 0.0) return;
 			weight = edge * edge * (3.0 - 2.0 * edge) * (1.0 - total);
 			vec3 far = max((vec3(0.0) - local) / direction, (vec3(1.0) - local) / direction);
 			float distance = min(far.x, min(far.y, far.z));
@@ -332,6 +362,24 @@ vec3 environment(vec3 position, vec3 reflection, float lod, out vec4 normalizati
 		total += weight;
 		env += sampleCubeArray(normalize(direction), minIndex.w, lod) * weight;
 		sh += envTexel(i, 6) * weight;
+}
+
+vec3 environment(vec3 position, vec3 reflection, float lod, out vec4 normalizationSh) {
+	vec3 env = vec3(0.0);
+	vec4 sh = vec4(0.0);
+	float total = 0.01;
+	int cell = gridCell(position, uEnvGridMin, uEnvGridScale, uEnvGridDims);
+	if (gridSlot(uEnvGrid, cell, 0) >= ${GRID_OVERFLOW}) {
+		for (int i = 0; i < ${MAX_ENV_VOLUMES}; i++) {
+			if (i >= uEnvCount || total > 0.99) break;
+			envVolume(i, position, reflection, lod, env, sh, total);
+		}
+	} else {
+		for (int s = 0; s < ${GRID_SLOTS}; s++) {
+			int i = gridSlot(uEnvGrid, cell, s);
+			if (i < 0 || total > 0.99) break;
+			envVolume(i, position, reflection, lod, env, sh, total);
+		}
 	}
 	normalizationSh = sh / max(total, 1e-4);
 	return env;
