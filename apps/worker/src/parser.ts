@@ -21,6 +21,7 @@ export const eventNames = [
 	'cs_win_panel_match',
 	'player_death',
 	'player_blind',
+	'player_hurt',
 	'weapon_fire',
 	'weapon_reload',
 	'bomb_pickup',

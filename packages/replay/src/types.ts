@@ -108,6 +108,7 @@ export interface RoundMeta {
 	bomb: ReplayBombEvent[];
 	blinds: ReplayBlind[];
 	inventory?: number[];
+	hurts?: number[];
 	places?: string[];
 	view?: RoundViewGrid;
 }

@@ -418,6 +418,21 @@ export function analyzeDemo(
 			}))
 			.filter((b) => b.player >= 0);
 
+		const hurts: number[] = [];
+		for (const e of roundEvents) {
+			if (e.event_name !== 'player_hurt') continue;
+			const victim = indexOf(r, e.user_steamid, e.user_name);
+			if (victim < 0) continue;
+			hurts.push(
+				e.tick,
+				victim,
+				indexOf(r, e.attacker_steamid, e.attacker_name),
+				Math.round(num(e.dmg_health)),
+				Math.round(num(e.dmg_armor)),
+				e.hitgroup === 'head' ? 1 : 0
+			);
+		}
+
 		const bomb = buildBombEvents(
 			roundEvents,
 			(e) => indexOf(r, e.user_steamid, e.user_name),
@@ -464,6 +479,7 @@ export function analyzeDemo(
 				bomb,
 				blinds,
 				inventory: inventories[r]!,
+				hurts,
 				places: [...placeTables[r]!.keys()],
 				view: {
 					tickStep: VIEW_STEP,
