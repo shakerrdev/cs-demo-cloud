@@ -51,3 +51,7 @@ export function weaponTitle(name: string): string {
 	if (name.startsWith('knife') || name === 'bayonet') return 'Knife';
 	return weaponNames[name] ?? name;
 }
+
+export function isGlovesItem(item: number): boolean {
+	return item === 4725 || (item >= 5027 && item <= 5099);
+}

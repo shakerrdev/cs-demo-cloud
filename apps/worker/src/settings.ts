@@ -1,4 +1,4 @@
-import type { ReplaySkin } from '@cs-demo-cloud/replay';
+import { isGlovesItem, type ReplaySkin } from '@cs-demo-cloud/replay';
 import { num, str, type RawSkin, type SettingRows } from './parser.ts';
 
 export interface PlayerSettings {
@@ -8,10 +8,6 @@ export interface PlayerSettings {
 }
 
 const CROSSHAIR = /^CSGO(-[A-Za-z0-9]{5}){5}$/;
-
-export function isGloves(item: number): boolean {
-	return item === 4725 || (item >= 5027 && item <= 5099);
-}
 
 function wearOf(bits: number): number {
 	const view = new DataView(new ArrayBuffer(4));
@@ -25,7 +21,7 @@ export function glovesBySteamId(skins: RawSkin[]): Map<string, ReplaySkin> {
 	for (const skin of skins) {
 		const item = num(skin.def_index);
 		const paint = num(skin.paint_index);
-		if (!skin.steamid || !isGloves(item) || paint <= 0 || gloves.has(skin.steamid)) continue;
+		if (!skin.steamid || !isGlovesItem(item) || paint <= 0 || gloves.has(skin.steamid)) continue;
 		gloves.set(skin.steamid, {
 			item,
 			paint,

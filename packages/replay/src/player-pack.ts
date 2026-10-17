@@ -395,7 +395,12 @@ export interface SkinsPackManifest {
 	agents: Record<string, string>;
 	weapons: Record<string, SkinWeapon>;
 	paints: Record<string, SkinPaint>;
+	gloves?: Record<string, SkinGlove>;
 	textures: Record<string, PackTextureRef>;
+}
+
+export interface SkinGlove {
+	model: string;
 }
 
 export interface SkinWeapon {
@@ -416,6 +421,7 @@ export interface SkinPaint {
 	floats: Record<string, number>;
 	vectors: Record<string, number[]>;
 	textures: Record<string, string>;
+	glove?: boolean;
 }
 
 export function skinWeaponKey(key: string, legacy: boolean): string {
