@@ -1170,8 +1170,25 @@ export function attachGloves(
 		const mesh = object as THREE.SkinnedMesh;
 		if (mesh.isSkinnedMesh && isFirstPerson(mesh) === firstPerson) candidates.push(mesh);
 	});
+	const extra = new Map<THREE.Bone, THREE.Bone>();
+	const resolve = (bone: THREE.Bone): THREE.Bone | null => {
+		const found = bones.get(bone.name) ?? extra.get(bone);
+		if (found) return found;
+		const parent = (bone.parent as THREE.Bone | null)?.isBone
+			? resolve(bone.parent as THREE.Bone)
+			: null;
+		if (!parent) return null;
+		const copy = new THREE.Bone();
+		copy.name = bone.name;
+		copy.position.copy(bone.position);
+		copy.quaternion.copy(bone.quaternion);
+		copy.scale.copy(bone.scale);
+		parent.add(copy);
+		extra.set(bone, copy);
+		return copy;
+	};
 	for (const mesh of candidates) {
-		const mapped = mesh.skeleton.bones.map((bone) => bones.get(bone.name));
+		const mapped = mesh.skeleton.bones.map(resolve);
 		if (mapped.some((bone) => !bone)) continue;
 		mesh.bind(
 			new THREE.Skeleton(mapped as THREE.Bone[], mesh.skeleton.boneInverses),
