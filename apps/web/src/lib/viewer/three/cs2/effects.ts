@@ -5,7 +5,7 @@ import { ImpactEffects } from './impacts.ts';
 import type { WorldShading } from './material.ts';
 
 const SMOKE_RADIUS = 150;
-const SMOKE_HEIGHT = 140;
+const SMOKE_HEIGHT = 160;
 const SMOKE_BLOOM = 1.2;
 const SMOKE_FADE = 2.5;
 const SMOKE_TINT = new THREE.Vector3(0.93, 0.95, 1);
@@ -111,7 +111,7 @@ void main() {
 		vec3 q = ro + rd * t;
 		float d = density(q) * uFade;
 		if (d > 0.001) {
-			float extinction = d * 0.022 * worldStep;
+			float extinction = d * 0.03 * worldStep;
 			float absorbed = transmittance * (1.0 - exp(-extinction));
 			float height = clamp(q.z * 0.5 + 0.5, 0.0, 1.0);
 			float lit = clamp(pow(height, 0.7) * (1.15 - 0.45 * d), 0.0, 1.0);
@@ -279,8 +279,8 @@ export class GameEffects {
 			const luma = (v: THREE.Vector3) => v.x * 0.2126 + v.y * 0.7152 + v.z * 0.0722;
 			const ambient = luma(sky);
 			const direct = sun ? luma(sun) : 0;
-			this.light.setScalar(ambient * 1.15 + direct * 0.12).multiply(SMOKE_TINT);
-			this.shadow.setScalar(ambient * 0.45).multiply(SMOKE_TINT);
+			this.light.setScalar(ambient * 1.35 + direct * 0.15).multiply(SMOKE_TINT);
+			this.shadow.setScalar(ambient * 0.6).multiply(SMOKE_TINT);
 			this.impacts.setLight(this.light);
 		}
 	}
