@@ -37,6 +37,7 @@ import {
 } from './textures.ts';
 import type { TextureQuality } from './pack.ts';
 import { Viewmodel, type PovPose } from './viewmodel.ts';
+import { PaintBaker, needsBake } from './bake.ts';
 
 const BASE = '/maps/3d/players';
 const SKINS_BASE = '/maps/3d/skins';
@@ -127,6 +128,7 @@ export class PlayerPack {
 	private active = 0;
 	private abort = new AbortController();
 	private materials = new Map<string, THREE.ShaderMaterial>();
+	private baker = new PaintBaker();
 	private shading: WorldShading | null = null;
 	private viewmodelClips: Promise<ViewmodelAnimations> | null = null;
 	private skins: SkinsPackManifest | null;
@@ -295,6 +297,11 @@ export class PlayerPack {
 		this.shading = shading;
 		for (const material of this.materials.values()) material.dispose();
 		this.materials.clear();
+		this.baker.clear();
+	}
+
+	bake(renderer: THREE.WebGLRenderer) {
+		return this.baker.update(renderer);
 	}
 
 	material(extras: MaterialExtras): THREE.ShaderMaterial | null {
@@ -309,6 +316,7 @@ export class PlayerPack {
 			material = createCs2Material(extras, this.shading, (path, srgb, target) =>
 				this.requestTexture(path, srgb, target)
 			);
+			if (needsBake(material)) material = this.baker.add(material);
 			material.stencilWrite = true;
 			material.stencilRef = 1;
 			material.stencilZPass = THREE.ReplaceStencilOp;
@@ -557,6 +565,7 @@ export class PlayerPack {
 	dispose() {
 		this.abort.abort();
 		for (const job of this.jobs.values()) job.texture?.dispose();
+		this.baker.dispose();
 		for (const material of this.materials.values()) material.dispose();
 		for (const template of Object.values(this.templates))
 			template.scene.traverse((object) => (object as THREE.Mesh).geometry?.dispose());
@@ -963,6 +972,10 @@ export class PlayerModels {
 	private players: { side: Side; agent?: string; gloves?: ReplaySkin }[] = [];
 	private colors: Record<Side, number> = { CT: 0xffffff, T: 0xffffff };
 	onChange: (() => void) | null = null;
+
+	bake(renderer: THREE.WebGLRenderer) {
+		return this.pack.bake(renderer);
+	}
 
 	constructor(pack: PlayerPack) {
 		this.pack = pack;

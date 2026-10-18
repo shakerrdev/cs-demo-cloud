@@ -605,6 +605,7 @@ export class ReplayScene {
 
 	private renderPack(pack: MapPack, viewmodel: Viewmodel | null) {
 		const renderer = this.renderer;
+		if (this.models?.bake(renderer).pending) this.dirty = true;
 		this.camera.updateMatrixWorld();
 		pack.update(this.camera, (performance.now() - this.started) / 1000);
 		const background = this.scene.background;

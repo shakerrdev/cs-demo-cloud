@@ -79,6 +79,9 @@ void main() {
 	vBlend = BLEND_ATTR;
 #endif
 	gl_Position = projectionMatrix * viewMatrix * world;
+#ifdef BAKE
+	gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+#endif
 }
 `;
 
@@ -210,6 +213,13 @@ uniform vec2 uGradientCull;
 #endif
 
 out vec4 outColor;
+#ifdef BAKE
+uniform float uBakePass;
+#endif
+#ifdef BAKED
+uniform sampler2D uBakedA;
+uniform sampler2D uBakedB;
+#endif
 
 float saturate1(float x) { return clamp(x, 0.0, 1.0); }
 
@@ -437,7 +447,9 @@ vec3 applyFog(vec3 color) {
 }
 
 void main() {
+#ifndef BAKE
 	if (vWorld.z > uCutZ) discard;
+#endif
 
 	vec2 uv = vUv;
 	vec4 color = texture(uColor, uv);
@@ -498,6 +510,11 @@ void main() {
 
 	vec3 albedo = color.rgb;
 	float opacity = color.a;
+#ifdef BAKED
+	vec4 bakedA = texture(uBakedA, vUv);
+	vec4 bakedB = texture(uBakedB, vUv);
+	albedo = srgbToLinear(bakedA.rgb);
+#endif
 #ifdef GLOVE_PAINT
 	albedo = glove.albedo;
 #endif
@@ -543,6 +560,11 @@ void main() {
 	normalTs = glove.normalTs;
 	roughness = glove.roughness;
 #endif
+#ifdef BAKED
+	vec2 bakedXy = bakedB.xy * 2.0 - 1.0;
+	normalTs = vec3(bakedXy, sqrt(max(0.0, 1.0 - dot(bakedXy, bakedXy))));
+	roughness = bakedA.a;
+#endif
 
 #if DETAIL > 0
 	vec2 detailUv = (uDetailTransform * vec3(DETAIL_UV, 1.0)).xy;
@@ -587,6 +609,16 @@ void main() {
 #ifdef GLOVE_PAINT
 	metalness = glove.metalness;
 	ao *= glove.ao;
+#endif
+#ifdef BAKE
+	outColor = uBakePass < 0.5
+		? vec4(linearToSrgb(albedo), roughness)
+		: vec4(normalTs.xy * 0.5 + 0.5, metalness, ao);
+	return;
+#endif
+#ifdef BAKED
+	metalness = bakedB.z;
+	ao = bakedB.w;
 #endif
 
 	vec3 diffuseColor = albedo * (1.0 - metalness);
