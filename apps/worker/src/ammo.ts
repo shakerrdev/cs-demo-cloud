@@ -37,10 +37,6 @@ const MAX_RESERVE: Record<string, number> = {
 	xm1014: 32
 };
 
-export function reserveIsMissing(columns: RoundColumns[]): boolean {
-	return columns.every((cols) => !cols.reserve || cols.reserve.every((value) => value <= 1));
-}
-
 export function estimateReserve(
 	cols: RoundColumns,
 	players: number,
@@ -49,6 +45,8 @@ export function estimateReserve(
 ): void {
 	if (!cols.reserve || !cols.clip) return;
 	for (let p = 0; p < players; p++) {
+		const known = cols.reserve.subarray(p * frames, (p + 1) * frames).some((value) => value > 1);
+		if (known) continue;
 		const reserves = new Map<number, number>();
 		let lastWeapon = -1;
 		let lastClip = 0;
