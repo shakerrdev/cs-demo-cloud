@@ -83,17 +83,23 @@ export interface PaintExtras {
 	colorAdjustment: number;
 }
 
+const round2 = (value: number) => Math.floor((value + 0.005) * 100) / 100;
+
 export function paintTransform([scale, rotation, x, y]: number[]): THREE.Matrix3 {
-	const angle = ((rotation ?? 0) * Math.PI) / 180;
-	const cos = Math.cos(angle) * (scale ?? 1);
-	const sin = Math.sin(angle) * (scale ?? 1);
+	const s = round2(scale ?? 1);
+	const angle = (round2(rotation ?? 0) * Math.PI) / 180;
+	const cos = Math.cos(angle);
+	const sin = Math.sin(angle);
+	const half = 0.5 / (s !== 0 ? s : 1);
+	const a = half * Math.cos(-angle) - half * Math.sin(-angle);
+	const b = a * Math.sin(-angle) + half * Math.cos(-angle);
 	return new THREE.Matrix3().set(
-		cos,
-		-sin,
-		-0.5 * cos + 0.5 * sin + 0.5 + (x ?? 0),
-		sin,
-		cos,
-		-0.5 * sin - 0.5 * cos + 0.5 + (y ?? 0),
+		cos * s,
+		-sin * s,
+		s * cos * a - s * sin * b + round2(x ?? 0) - 0.5,
+		sin * s,
+		cos * s,
+		s * sin * a + s * cos * b + round2(y ?? 0) - 0.5,
 		0,
 		0,
 		1
