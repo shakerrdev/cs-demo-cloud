@@ -575,6 +575,25 @@
 	});
 
 	$effect(() => {
+		if (!perfRequested()) return;
+		const controls = {
+			state: () => ({ round, tick, focus, cameraMode, view, loading, playing }),
+			round: (number: number) => goToRound(number),
+			tick: (next: number) => (tick = next),
+			focus: (index: number | null) => (focus = index),
+			camera: (mode: CameraMode) => setCameraMode(mode),
+			view: (next: '2d' | '3d') => setView(next),
+			play: (on: boolean) => (playing = on),
+			replay: () => replay
+		};
+		const target = window as unknown as { csdcViewer?: typeof controls };
+		target.csdcViewer = controls;
+		return () => {
+			if (target.csdcViewer === controls) delete target.csdcViewer;
+		};
+	});
+
+	$effect(() => {
 		audio?.setVolume(config.audio.master, !soundOn || !config.audio.enabled);
 	});
 
