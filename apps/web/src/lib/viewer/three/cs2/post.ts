@@ -172,7 +172,7 @@ export class PostProcess {
 		const u = this.material.uniforms;
 		this.exposure = exposure;
 		u.uExposure!.value = exposure * 2 ** t.exposureBias;
-		const white = t.whitePoint * 2.8;
+		const white = 2 ** t.whitePoint;
 		const curve = (x: number) =>
 			(x * (t.shoulderStrength * x + t.linearAngle * t.linearStrength) + t.toeStrength * t.toeNum) /
 				(x * (t.shoulderStrength * x + t.linearStrength) + t.toeStrength * t.toeDenom) -
