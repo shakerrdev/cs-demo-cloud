@@ -14,6 +14,7 @@ import {
 	rollPaint,
 	skinWeaponKey,
 	type PlayerPackManifest,
+	type ReplayKill,
 	type ReplaySkin,
 	type RoundReplay,
 	type Side,
@@ -39,6 +40,7 @@ import {
 import type { TextureQuality } from './pack.ts';
 import { Viewmodel, type PovPose } from './viewmodel.ts';
 import { PaintBaker, needsBake } from './bake.ts';
+import { RAGDOLL_BONES, Ragdoll } from './ragdoll.ts';
 
 const BASE = '/maps/3d/players';
 const SKINS_BASE = '/maps/3d/skins';
@@ -583,6 +585,7 @@ class PlayerModel {
 	private mixer: THREE.AnimationMixer;
 	private actions = new Map<string, THREE.AnimationAction>();
 	private spine: THREE.Bone[] = [];
+	private ragdolls = new Map<string, Ragdoll>();
 	private touched: {
 		bone: THREE.Object3D;
 		quaternion: THREE.Quaternion;
@@ -658,7 +661,8 @@ class PlayerModel {
 		}
 		this.wpn = this.model.getObjectByName('wpn') ?? null;
 		this.handR = this.model.getObjectByName('hand_R') ?? null;
-		for (const bone of [...this.spine, this.wpn]) {
+		const ragdollBones = RAGDOLL_BONES.map((name) => this.model.getObjectByName(name));
+		for (const bone of new Set([...this.spine, this.wpn, ...ragdollBones])) {
 			if (bone)
 				this.touched.push({
 					bone,
@@ -805,7 +809,10 @@ class PlayerModel {
 
 		this.root.rotation.set(0, 0, player.yaw * DEG);
 		this.pose();
-		if (fall > 0) {
+		const ragdoll = kill && !player.alive ? this.ragdoll(kill, player) : null;
+		if (ragdoll && kill) {
+			ragdoll.apply((tick - kill.tick) / meta.tickRate);
+		} else if (fall > 0) {
 			const side = hash(player.index * 31 + meta.round) < 0.5 ? 1 : -1;
 			const eased = fall * fall * (3 - 2 * fall);
 			this.root.rotateY(-eased * 88 * DEG);
@@ -814,6 +821,25 @@ class PlayerModel {
 		}
 		this.root.updateMatrixWorld(true);
 		if (player.alive) this.aim(player);
+	}
+
+	private ragdoll(kill: ReplayKill, player: PlayerState): Ragdoll | null {
+		const key = `${kill.tick}:${kill.victim}`;
+		let ragdoll = this.ragdolls.get(key);
+		if (!ragdoll) {
+			if (this.ragdolls.size > 16) this.ragdolls.clear();
+			this.root.updateMatrixWorld(true);
+			const [yaw, room, floor] = kill.fall ?? [player.yaw + 180, 40, kill.z];
+			ragdoll = new Ragdoll(this.model, {
+				yaw,
+				room,
+				floor,
+				headshot: kill.headshot,
+				seed: kill.tick + kill.victim * 31
+			});
+			this.ragdolls.set(key, ragdoll);
+		}
+		return ragdoll.complete ? ragdoll : null;
 	}
 
 	private pose() {
