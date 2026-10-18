@@ -178,7 +178,7 @@ export class ImpactEffects {
 		this.root.add(this.decals);
 		this.chips = new THREE.InstancedMesh(
 			new THREE.BoxGeometry(1.4, 0.45, 0.45),
-			new THREE.MeshBasicMaterial({ color: 0x1b1814 }),
+			new THREE.MeshBasicMaterial({ color: 0x07080a }),
 			MAX_CHIPS
 		);
 		this.chips.count = 0;
