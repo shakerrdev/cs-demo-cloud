@@ -1,17 +1,22 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { gzip } from 'node:zlib';
+import { gunzipSync, gzip } from 'node:zlib';
 import { getAppConfigJson, saveMatch, type Db, type Demo } from '@cs-demo-cloud/db';
 import {
+	MAP_MESH_VERSION,
 	REPLAY_VERSION,
 	collectCosmetics,
+	decodeMapMesh,
 	encodeRound,
 	normalizeConfig
 } from '@cs-demo-cloud/replay';
 import type { Storage } from '@cs-demo-cloud/shared';
 import { analyzeDemo } from './analyze.ts';
 import { openDemoFile } from './decompress.ts';
+import { computeImpacts } from './impacts.ts';
 import { ensureMapAssets } from './map-assets.ts';
+import { MeshRaycaster } from './raycast.ts';
 
 const compress = promisify(gzip);
 
@@ -41,6 +46,17 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 		const config = normalizeConfig(getAppConfigJson(db));
 		const analyzed = analyzeDemo(file.path, step, { viewRate: config.parsing.viewRate });
 		step('build');
+
+		await ensureMapAssets(storage, analyzed.map, log);
+		const raycaster = await loadRaycaster(storage, analyzed.map).catch((error: Error) => {
+			log(`Bullet impacts for ${analyzed.map}: ${error.message}`);
+			return null;
+		});
+		for (const replay of analyzed.replays) {
+			replay.meta.impacts = computeImpacts(replay, raycaster);
+			delete replay.meta.bullets;
+		}
+		step('impacts');
 
 		const replayDir = storage.replayDir(demo.id);
 		await rm(replayDir, { recursive: true, force: true });
@@ -80,8 +96,6 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 			kills: analyzed.kills.map((kill) => ({ ...kill, demoId: demo.id }))
 		});
 
-		await ensureMapAssets(storage, analyzed.map, log);
-
 		log(
 			`${demo.fileName}: ${analyzed.map} ${analyzed.scoreA}-${analyzed.scoreB}, ${analyzed.rounds.length} rounds, ` +
 				`replays ${(replayBytes / 1048576).toFixed(1)} MB, ${timings.join(', ')}`
@@ -89,4 +103,10 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 	} finally {
 		await file.cleanup();
 	}
+}
+
+async function loadRaycaster(storage: Storage, map: string): Promise<MeshRaycaster | null> {
+	const path = storage.mapMeshPath(map, MAP_MESH_VERSION);
+	if (!existsSync(path)) return null;
+	return new MeshRaycaster(decodeMapMesh(gunzipSync(await readFile(path))));
 }

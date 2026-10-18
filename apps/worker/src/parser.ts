@@ -37,7 +37,9 @@ export const eventNames = [
 	'inferno_expire',
 	'flashbang_detonate',
 	'hegrenade_detonate',
-	'decoy_started'
+	'decoy_started',
+	'fire_bullets',
+	'player_sound'
 ];
 
 export const tickProps = [

@@ -113,6 +113,9 @@ export interface RoundMeta {
 	blinds: ReplayBlind[];
 	inventory?: number[];
 	hurts?: number[];
+	bullets?: number[];
+	impacts?: number[];
+	steps?: number[];
 	places?: string[];
 	view?: RoundViewGrid;
 }
@@ -156,3 +159,11 @@ export interface RoundReplay {
 	columns: RoundColumns;
 	view?: ViewColumns;
 }
+
+export const BULLET_STRIDE = 11;
+export const IMPACT_STRIDE = 9;
+
+export const IMPACT_WALL = 0;
+export const IMPACT_FLESH = 1;
+export const IMPACT_BLOOD = 2;
+export const IMPACT_MISS = 3;

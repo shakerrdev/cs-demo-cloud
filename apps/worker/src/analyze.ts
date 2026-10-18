@@ -51,6 +51,11 @@ import { fillCrosshairs, glovesBySteamId, settingsAt, type PlayerSettings } from
 import { assignTeams } from './teams.ts';
 
 const STEP = 4;
+
+const PELLETS: Record<number, number> = { 25: 6, 27: 8, 29: 8, 35: 9 };
+
+const round1 = (value: number) => Math.round(value * 10) / 10;
+const round3 = (value: number) => Math.round(value * 1000) / 1000;
 const CT = 3;
 const T = 2;
 
@@ -445,6 +450,33 @@ export function analyzeDemo(
 			else if (isKnife(str(e.weapon))) swings.push(e.tick, p);
 		}
 
+		const bullets: number[] = [];
+		const steps: number[] = [];
+		for (const e of roundEvents) {
+			if (e.event_name === 'player_sound') {
+				if (!bool(e.step)) continue;
+				const p = indexOf(r, e.user_steamid, e.user_name);
+				if (p >= 0) steps.push(e.tick, p);
+				continue;
+			}
+			if (e.event_name !== 'fire_bullets') continue;
+			const p = indexOf(r, e.user_steamid, e.user_name);
+			if (p < 0) continue;
+			bullets.push(
+				e.tick,
+				p,
+				round1(num(e.origin_x)),
+				round1(num(e.origin_y)),
+				round1(num(e.origin_z)),
+				round3(num(e.angles_x)),
+				round3(num(e.angles_y)),
+				num(e.inaccuracy),
+				num(e.spread),
+				num(e.seed),
+				PELLETS[num(e.item_def_index)] ?? 1
+			);
+		}
+
 		const blinds = roundEvents
 			.filter((e) => e.event_name === 'player_blind' && num(e.blind_duration) > 0)
 			.map((e) => ({
@@ -520,6 +552,8 @@ export function analyzeDemo(
 				blinds,
 				inventory: inventories[r]!,
 				hurts,
+				bullets,
+				steps,
 				places: [...placeTables[r]!.keys()],
 				...(view
 					? {
