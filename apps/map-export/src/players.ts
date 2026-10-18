@@ -201,7 +201,14 @@ const SOUNDS: Record<string, { event?: string; files?: string[]; loop?: boolean 
 	'radio:bombdef': { files: [`${ANNOUNCER}/bombdef.vsnd`] },
 	'radio:ctwin': { files: [`${ANNOUNCER}/ctwin.vsnd`] },
 	'radio:terwin': { files: [`${ANNOUNCER}/terwin.vsnd`] },
-	'radio:rounddraw': { files: [`${ANNOUNCER}/rounddraw.vsnd`] }
+	'radio:rounddraw': { files: [`${ANNOUNCER}/rounddraw.vsnd`] },
+	'impact:wall': { event: 'Concrete.BulletImpact' },
+	'impact:metal': { event: 'SolidMetal.BulletImpact' },
+	'impact:flesh': { event: 'Flesh.BulletImpact' },
+	'ambient:de_dust2': {
+		files: ['sounds/ambient/common/wind/csgo_dust_wind_lp_02.vsnd'],
+		loop: true
+	}
 };
 
 const STEREO = /^sounds\/(music|vo)\//;
@@ -238,10 +245,20 @@ const DRAW_FOLDERS: Record<string, string> = {
 	mp5sd: 'mp5'
 };
 
+const RELOAD_PREFIX: Record<string, string> = {
+	m4a4: 'Weapon_M4A1',
+	cz75a: 'Weapon_CZ',
+	usp_silencer: 'Weapon_USP',
+	mp5sd: 'Weapon_MP5'
+};
+
+const NO_CLIP = new Set(['m249', 'negev', 'nova', 'sawedoff', 'xm1014', 'taser']);
+
 const SOUND_SCRIPTS = [
 	'soundevents/game_sounds_weapons.vsndevts_c',
 	'soundevents/game_sounds_player.vsndevts_c',
-	'soundevents/game_sounds_footsteps.vsndevts_c'
+	'soundevents/game_sounds_footsteps.vsndevts_c',
+	'soundevents/game_sounds_physics.vsndevts_c'
 ];
 
 const DEFAULT_CURVE = [0, 1, 400, 0.6, 1500, 0.15, 3000, 0];
@@ -425,6 +442,11 @@ async function exportSounds(
 	for (const [weapon, [near, far]] of Object.entries(WEAPON_SOUNDS)) {
 		wanted[`shot:${weapon}`] = { event: near };
 		if (far) wanted[`far:${weapon}`] = { event: far };
+		const prefix = (RELOAD_PREFIX[weapon] ?? near).split('.')[0]!;
+		if (!NO_CLIP.has(weapon)) {
+			wanted[`clipout:${weapon}`] = { event: `${prefix}.Clipout` };
+			wanted[`clipin:${weapon}`] = { event: `${prefix}.Clipin` };
+		}
 	}
 
 	const resolved: Record<string, SoundEvent & { loop?: boolean }> = {};
