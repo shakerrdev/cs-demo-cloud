@@ -244,11 +244,22 @@ export function soundCues(replay: RoundReplay, roundSeconds = 115, bombSeconds =
 				continue;
 			}
 			while (travelled >= next) {
-				add(tick, `step:${player.side}`, columns.x[b]!, columns.y[b]!, columns.z[b]! + 4, 1);
+				if (!meta.steps)
+					add(tick, `step:${player.side}`, columns.x[b]!, columns.y[b]!, columns.z[b]! + 4, 1);
 				next += STRIDE;
 			}
 		}
 	});
+	const steps = meta.steps ?? [];
+	for (let i = 0; i + 1 < steps.length; i += 2) {
+		const tick = steps[i]!;
+		const p = steps[i + 1]!;
+		const player = meta.players[p];
+		const frame = Math.round((tick - meta.startTick) / step);
+		if (!player || frame < 0 || frame >= n) continue;
+		const at = p * n + frame;
+		add(tick, `step:${player.side}`, columns.x[at]!, columns.y[at]!, columns.z[at]! + 4, 1);
+	}
 
 	cues.sort((a, b) => a.tick - b.tick);
 	cueCache.set(replay, { key: cacheKey, cues });
