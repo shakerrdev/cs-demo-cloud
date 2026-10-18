@@ -371,6 +371,15 @@ export class PlayerPack {
 		return this.instantiate(this.template(side, agent));
 	}
 
+	get info() {
+		return {
+			skins: this.skinsVersion,
+			gloveModels: Object.keys(this.skins?.gloves ?? {}).length,
+			glovePaints: Object.values(this.skins?.paints ?? {}).filter((paint) => paint.glove).length,
+			paints: Object.keys(this.skins?.paints ?? {}).length
+		};
+	}
+
 	hasGloves(skin: ReplaySkin | undefined): skin is ReplaySkin {
 		return Boolean(skin && this.skins?.gloves?.[skin.item] && this.skins.paints[skin.paint]?.glove);
 	}
@@ -585,6 +594,11 @@ class PlayerModel {
 	private axis = new THREE.Vector3();
 
 	private hiddenHands = new Set<THREE.BufferGeometry>();
+	private gloveState = 'none';
+
+	get info() {
+		return { gloves: this.gloveState, weapon: this.weaponKey, loading: this.weaponLoading };
+	}
 	private disposed = false;
 
 	constructor(
@@ -645,8 +659,10 @@ class PlayerModel {
 		this.weaponSlot.matrixAutoUpdate = false;
 		(this.wpn ?? this.handR)?.add(this.weaponSlot);
 		this.root.visible = false;
+		this.gloveState = gloves ? (pack.hasGloves(gloves) ? 'loading' : 'not in pack') : 'none';
 		if (pack.hasGloves(gloves))
 			void pack.loadGloves(gloves).then((loaded) => {
+				this.gloveState = loaded ? 'loaded' : 'failed';
 				if (!loaded || this.disposed) return;
 				const { added, hidden } = attachGloves(
 					pack,
@@ -655,6 +671,7 @@ class PlayerModel {
 					loaded.extras,
 					false
 				);
+				this.gloveState = `attached ${added.length}, hid ${hidden.length}`;
 				for (const mesh of hidden) this.hiddenHands.add(mesh.geometry);
 				for (const mesh of added) {
 					this.meshes.push(mesh);
@@ -972,6 +989,14 @@ export class PlayerModels {
 
 	get active(): boolean {
 		return this.shading !== null;
+	}
+
+	get info() {
+		return {
+			active: this.active,
+			...this.pack.info,
+			models: this.models.map((model) => model.info)
+		};
 	}
 
 	setPlayers(

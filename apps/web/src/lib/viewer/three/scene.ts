@@ -239,6 +239,10 @@ export class ReplayScene {
 		);
 	}
 
+	get packInfo() {
+		return this.models?.info ?? null;
+	}
+
 	get stats(): { programs: number; textures: number; geometries: number } {
 		const info = this.renderer.info;
 		return {

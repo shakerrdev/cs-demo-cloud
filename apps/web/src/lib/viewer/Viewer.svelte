@@ -389,6 +389,22 @@
 				round,
 				tick: Math.round(tick)
 			},
+			replay: replay
+				? {
+						version: replay.meta.version,
+						demoVersion: version,
+						view: replay.meta.view ?? null,
+						skins: replay.meta.skins?.length ?? 0,
+						players: replay.meta.players.map((p) => ({
+							name: p.name,
+							agent: p.agent ?? null,
+							crosshair: p.crosshair ?? null,
+							viewmodel: p.viewmodel ?? null,
+							gloves: p.gloves ?? null
+						}))
+					}
+				: null,
+			packs: scene3d?.packInfo ?? null,
 			config: $state.snapshot(config),
 			summary: summarize(frames),
 			benchmark: run?.results ?? null,
