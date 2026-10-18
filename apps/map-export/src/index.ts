@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { exportMap } from './export.ts';
 import { exportPlayers, updatePlayerSounds } from './players.ts';
-import { exportSkins, fetchCosmetics } from './skins.ts';
+import { exportSkins, fetchCosmetics, patchSkinRolls } from './skins.ts';
 import { findCsgo } from './steam.ts';
 import { defaultToolsDir, ensureTools } from './tools.ts';
 
@@ -13,6 +13,7 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
        node apps/map-export/src/index.ts --players
        node apps/map-export/src/index.ts --player-sounds <players.zip>
        node apps/map-export/src/index.ts --skins <cosmetics.json | server url> [--token <api token>]
+       node apps/map-export/src/index.ts --skins-rolls <skins.zip>
 
   --game <folder>   CS2 install folder (found through Steam if left out)
   --out <folder>    Where the packs go (default: ./map-packs)
@@ -31,6 +32,8 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
                     straight from your server with --token
   --skin-texture-size <px>  Size of skin patterns (default 1024)
   --token <token>   API token for --skins <server url>
+  --skins-rolls <skins.zip>  Add how each paint seed places the pattern to an existing
+                    skins.zip without exporting it again (writes skins-patched.zip to --out)
 
 Example: node apps/map-export/src/index.ts de_dust2 de_mirage`;
 
@@ -49,6 +52,7 @@ const { values, positionals } = parseArgs({
 		players: { type: 'boolean', default: false },
 		'player-sounds': { type: 'string' },
 		skins: { type: 'string' },
+		'skins-rolls': { type: 'string' },
 		token: { type: 'string' },
 		'skin-texture-size': { type: 'string' },
 		help: { type: 'boolean', short: 'h', default: false }
@@ -61,6 +65,7 @@ if (
 		!values.all &&
 		!values.players &&
 		!values.skins &&
+		!values['skins-rolls'] &&
 		!values['player-sounds'])
 ) {
 	console.log(usage);
@@ -151,6 +156,23 @@ if (values.skins) {
 	} catch (error) {
 		failed++;
 		console.error(`skins failed: ${error instanceof Error ? error.message : error}`);
+	}
+}
+if (values['skins-rolls']) {
+	log('\n== skin seed rolls');
+	try {
+		const { pack } = await patchSkinRolls({
+			csgo,
+			pack: resolve(values['skins-rolls']),
+			outDir: resolve(values.out!),
+			workDir: join(resolve(values.work ?? tmpdir()), 'cs-demo-cloud-skins'),
+			tools,
+			log
+		});
+		log(`skins: ${pack}`);
+	} catch (error) {
+		failed++;
+		console.error(`skin seed rolls failed: ${error instanceof Error ? error.message : error}`);
 	}
 }
 for (const map of maps) {

@@ -12,11 +12,13 @@ import {
 	skinWeaponKey,
 	type Cosmetics,
 	type SkinGlove,
+	type PaintRoll,
 	type SkinPaint,
 	type SkinWeapon,
 	type PackTexture,
 	type SkinsPackManifest
 } from '@cs-demo-cloud/replay';
+import { openZipFile, ZipWriter } from '@cs-demo-cloud/shared/zip';
 import { EXPORTER_VERSION, forEachLimit, limitTextureSize, PackBuilder } from './export.ts';
 import { kv3Array, kv3Object, type Kv3Object, type Kv3Value } from './kv3.ts';
 import { parseKv1, type Kv1Object } from './kv1.ts';
@@ -190,6 +192,71 @@ export function compositePaint(data: Kv3Value): {
 	return { material, overrides };
 }
 
+export interface CompositeRolls {
+	includes: string[];
+	vars: string[];
+	bounds: Map<string, [number, number][]>;
+}
+
+const COMPONENTS = 'xyzw';
+
+export function compositeRolls(data: Kv3Value | null): CompositeRolls {
+	const out: CompositeRolls = { includes: [], vars: [], bounds: new Map() };
+	const visit = (value: Kv3Value | undefined) => {
+		if (Array.isArray(value)) {
+			for (const item of value) visit(item);
+			return;
+		}
+		const object = kv3Object(value);
+		if (!object) return;
+		for (const include of kv3Array(object.m_vecCompMatIncludes))
+			if (typeof include === 'string') out.includes.push(include);
+		if (object.m_nMutatorCommandType === 'COMP_MAT_PROPERTY_MUTATOR_RANDOM_ROLL_INPUT_VARIABLES')
+			for (const name of kv3Array(object.m_vecRandomRollInputVars_InputVarsToRoll))
+				if (typeof name === 'string') out.vars.push(name);
+		for (const variable of kv3Array(object.m_vecLooseVariables)) {
+			const entry = kv3Object(variable);
+			if (!entry || typeof entry.m_strName !== 'string') continue;
+			const ranges: [number, number][] = [];
+			for (const axis of 'XYZW') {
+				const value = entry[`m_flValueFloat${axis}`];
+				if (typeof value !== 'number') break;
+				const min = entry[`m_flValueFloat${axis}_Min`];
+				const max = entry[`m_flValueFloat${axis}_Max`];
+				ranges.push(
+					entry.m_bHasFloatBounds === true && typeof min === 'number' && typeof max === 'number'
+						? [min, max]
+						: [value, value]
+				);
+			}
+			if (ranges.length) out.bounds.set(entry.m_strName, ranges);
+		}
+		for (const [key, child] of Object.entries(object))
+			if (key !== 'm_vecLooseVariables' && key !== 'm_vecCompMatIncludes') visit(child);
+	};
+	visit(data ?? undefined);
+	return out;
+}
+
+export function paintRolls(recipes: CompositeRolls[]): PaintRoll[] {
+	const rolls: PaintRoll[] = [];
+	const vars = recipes.flatMap((recipe) => recipe.vars);
+	for (const path of vars) {
+		const parts = path.split('.');
+		const swizzle = parts.length >= 3 ? parts.pop()! : 'x';
+		const name = parts[parts.length - 1]!;
+		const ranges = recipes.map((recipe) => recipe.bounds.get(name)).find(Boolean);
+		if (!ranges) continue;
+		for (const letter of swizzle) {
+			const component = COMPONENTS.indexOf(letter);
+			const range = ranges[component];
+			if (component < 0 || !range) continue;
+			rolls.push([name, component, range[0], range[1]]);
+		}
+	}
+	return rolls;
+}
+
 function applyVariable(params: MaterialParams, name: string, entry: Kv3Object) {
 	const num = (key: string) => (typeof entry[key] === 'number' ? (entry[key] as number) : 0);
 	switch (entry.m_nVariableType) {
@@ -244,6 +311,14 @@ export function mergeParams(base: MaterialParams, overrides: MaterialParams): Ma
 		textures: { ...base.textures, ...overrides.textures },
 		strings: { ...base.strings, ...overrides.strings }
 	};
+}
+
+async function recipeRolls(blocks: Blocks, recipe: Kv3Value | null): Promise<PaintRoll[]> {
+	const own = compositeRolls(recipe);
+	const included = await Promise.all(
+		own.includes.map(async (path) => compositeRolls(await blocks.read(path)))
+	);
+	return paintRolls([own, ...included]);
 }
 
 class Blocks {
@@ -676,8 +751,10 @@ export async function exportSkins(
 			kit.composite ?? `weapons/paints/legacy/${kit.name}.vcompmat`;
 		await blocks.prefetch(used.map(recipePath));
 		const recipes = new Map<string, ReturnType<typeof compositePaint>>();
+		const rolls = new Map<string, PaintRoll[]>();
 		for (const kit of used) {
 			const recipe = await blocks.read(recipePath(kit));
+			rolls.set(kit.name, await recipeRolls(blocks, recipe));
 			recipes.set(
 				kit.name,
 				recipe ? compositePaint(recipe) : { material: null, overrides: materialParams({}) }
@@ -721,6 +798,7 @@ export async function exportSkins(
 				legacy: kit.legacy,
 				wear: kit.wear,
 				...trimParams(params),
+				...(rolls.get(kit.name)?.length ? { rolls: rolls.get(kit.name) } : {}),
 				textures: picked
 			};
 			done++;
@@ -841,5 +919,62 @@ export async function exportSkins(
 		await vpk.close();
 		if (!options.keepWork && !options.reuseWork)
 			await rm(options.workDir, { recursive: true, force: true });
+	}
+}
+
+export async function patchSkinRolls(options: {
+	csgo: string;
+	pack: string;
+	outDir: string;
+	workDir: string;
+	tools: Tools;
+	log: (message: string) => void;
+}): Promise<{ pack: string; patched: number }> {
+	const { csgo, log } = options;
+	const vpkPath = join(csgo, 'pak01_dir.vpk');
+	const vpk = await Vpk.open(vpkPath);
+	const vrf = new Vrf(options.tools.vrf, join(csgo, 'gameinfo.gi'));
+	const blocks = new Blocks(vrf, vpkPath, join(options.workDir, 'blocks'), log);
+	const kits = paintKits(new TextDecoder().decode(await vpk.read('scripts/items/items_game.txt')));
+	const source = await openZipFile(options.pack);
+	try {
+		const manifestEntry = source.entries.get(SKINS_PACK_MANIFEST);
+		if (!manifestEntry) throw new Error(`${options.pack} is not a skins pack`);
+		const manifest = JSON.parse(
+			new TextDecoder().decode(await source.read(manifestEntry))
+		) as SkinsPackManifest;
+		const recipePath = (kit: PaintKit) =>
+			kit.composite ?? `weapons/paints/legacy/${kit.name}.vcompmat`;
+		const targets = Object.entries(manifest.paints).flatMap(([id, paint]) => {
+			const kit = kits.get(Number(id));
+			return kit && !paint.glove ? [{ paint, kit }] : [];
+		});
+		await blocks.prefetch(targets.map(({ kit }) => recipePath(kit)));
+		const includes = new Set<string>();
+		for (const { kit } of targets)
+			for (const path of compositeRolls(await blocks.read(recipePath(kit))).includes)
+				includes.add(path);
+		await blocks.prefetch([...includes]);
+		let patched = 0;
+		for (const { paint, kit } of targets) {
+			const rolls = await recipeRolls(blocks, await blocks.read(recipePath(kit)));
+			if (rolls.length) {
+				paint.rolls = rolls;
+				patched++;
+			} else delete paint.rolls;
+		}
+		await mkdir(options.outDir, { recursive: true });
+		const out = join(options.outDir, `${SKINS_PACK_NAME}-patched.zip`);
+		const writer = new ZipWriter(`${out}.partial`);
+		await writer.add(SKINS_PACK_MANIFEST, new TextEncoder().encode(JSON.stringify(manifest)), true);
+		for (const entry of source.entries.values())
+			if (entry.name !== SKINS_PACK_MANIFEST)
+				await writer.add(entry.name, await source.read(entry), entry.method !== 0);
+		await writer.close();
+		await rename(`${out}.partial`, out);
+		log(`skins: seed rolls for ${patched} of ${targets.length} paint kits`);
+		return { pack: out, patched };
+	} finally {
+		await source.close();
 	}
 }

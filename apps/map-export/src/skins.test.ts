@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
 	compositePaint,
+	compositeRolls,
 	iconCosmetics,
 	materialParams,
 	mergeParams,
 	paintKits,
+	paintRolls,
 	trimParams
 } from './skins.ts';
 
@@ -150,4 +152,49 @@ test('finds every weapon and paint kit pair from the generated icons', () => {
 			vectors: { g_vColor0: [1, 1, 1, 1] }
 		}
 	);
+});
+
+test('composite recipes list the seed-rolled variables with their ranges', () => {
+	const shared = compositeRolls({
+		m_vecPropertyMutators: [
+			{
+				m_nMutatorCommandType: 'COMP_MAT_PROPERTY_MUTATOR_RANDOM_ROLL_INPUT_VARIABLES',
+				m_vecRandomRollInputVars_InputVarsToRoll: [
+					'econ_instance.g_vPatternTexCoordOffset.xy',
+					'econ_instance.g_flPatternTexCoordRotation.x',
+					'grunge_wear.g_flWearTexCoordRotation.x'
+				]
+			}
+		],
+		m_vecLooseVariables: [
+			{
+				m_strName: 'g_flWearTexCoordRotation',
+				m_bHasFloatBounds: true,
+				m_flValueFloatX: 0,
+				m_flValueFloatX_Min: 0,
+				m_flValueFloatX_Max: 360
+			}
+		]
+	});
+	const own = compositeRolls({
+		m_vecCompMatIncludes: ['weapons/paints/legacy/_shared_paint_generic.vcompmat'],
+		m_vecLooseVariables: [
+			{
+				m_strName: 'g_vPatternTexCoordOffset',
+				m_bHasFloatBounds: true,
+				m_flValueFloatX: -0.05,
+				m_flValueFloatX_Min: -0.14,
+				m_flValueFloatX_Max: 0.05,
+				m_flValueFloatY: 0,
+				m_flValueFloatY_Min: 0,
+				m_flValueFloatY_Max: 0
+			}
+		]
+	});
+	assert.deepEqual(own.includes, ['weapons/paints/legacy/_shared_paint_generic.vcompmat']);
+	assert.deepEqual(paintRolls([own, shared]), [
+		['g_vPatternTexCoordOffset', 0, -0.14, 0.05],
+		['g_vPatternTexCoordOffset', 1, 0, 0],
+		['g_flWearTexCoordRotation', 0, 0, 360]
+	]);
 });
