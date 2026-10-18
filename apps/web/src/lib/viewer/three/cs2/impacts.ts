@@ -10,6 +10,9 @@ import {
 
 const MAX_DECALS = 768;
 const MAX_PUFFS = 48;
+const MAX_CHIPS = 240;
+const CHIPS = 5;
+const CHIP_SECONDS = 0.45;
 const PUFF_SECONDS = 0.6;
 const HOLE_SIZE = 3.2;
 const BLOOD_SIZE = 34;
@@ -121,6 +124,7 @@ export interface ImpactPoint {
 	tick: number;
 	player: number;
 	position: THREE.Vector3;
+	normal: THREE.Vector3;
 	kind: number;
 }
 
@@ -129,6 +133,13 @@ export class ImpactEffects {
 	private decals: THREE.InstancedMesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
 	private plane = new THREE.PlaneGeometry(1, 1);
 	private puffs: Puff[] = [];
+	private chips: THREE.InstancedMesh;
+	private chipMatrix = new THREE.Matrix4();
+	private chipQuaternion = new THREE.Quaternion();
+	private chipEuler = new THREE.Euler();
+	private chipPosition = new THREE.Vector3();
+	private chipDirection = new THREE.Vector3();
+	private chipScale = new THREE.Vector3(1, 1, 1);
 	private impacts: ImpactPoint[] = [];
 	private decalTicks: number[] = [];
 	private round = -1;
@@ -165,6 +176,14 @@ export class ImpactEffects {
 		this.decals.frustumCulled = false;
 		this.decals.renderOrder = 2;
 		this.root.add(this.decals);
+		this.chips = new THREE.InstancedMesh(
+			new THREE.BoxGeometry(1.4, 0.45, 0.45),
+			new THREE.MeshBasicMaterial({ color: 0x1b1814 }),
+			MAX_CHIPS
+		);
+		this.chips.count = 0;
+		this.chips.frustumCulled = false;
+		this.root.add(this.chips);
 	}
 
 	setLight(light: THREE.Vector3) {
@@ -204,6 +223,38 @@ export class ImpactEffects {
 			puff.mesh.scale.setScalar((flesh ? 14 : 10) + age * (flesh ? 26 : 34));
 		}
 		for (let i = puffs; i < this.puffs.length; i++) this.puffs[i]!.mesh.visible = false;
+		this.updateChips(tick, rate);
+	}
+
+	private updateChips(tick: number, rate: number) {
+		let chips = 0;
+		for (const impact of this.impacts) {
+			if (impact.tick > tick) break;
+			const age = (tick - impact.tick) / rate;
+			if (age >= CHIP_SECONDS || impact.kind !== IMPACT_WALL) continue;
+			for (let c = 0; c < CHIPS && chips < MAX_CHIPS; c++) {
+				const r = (k: number) => {
+					const x = Math.sin(impact.tick * 12.9898 + c * 78.233 + k * 37.719) * 43758.5453;
+					return x - Math.floor(x) - 0.5;
+				};
+				const speed = 140 + 120 * (r(0) + 0.5);
+				this.chipDirection
+					.set(r(1), r(2), r(3) + 0.35)
+					.multiplyScalar(1.6)
+					.add(impact.normal)
+					.normalize();
+				this.chipPosition.copy(impact.position).addScaledVector(this.chipDirection, speed * age);
+				this.chipPosition.z -= 400 * age * age;
+				this.chipQuaternion.setFromEuler(
+					this.chipEuler.set(r(4) * 6 + age * 20, r(5) * 6 + age * 14, r(6) * 6)
+				);
+				this.chipScale.setScalar(1 - age / CHIP_SECONDS);
+				this.chipMatrix.compose(this.chipPosition, this.chipQuaternion, this.chipScale);
+				this.chips.setMatrixAt(chips++, this.chipMatrix);
+			}
+		}
+		this.chips.count = chips;
+		this.chips.instanceMatrix.needsUpdate = true;
 	}
 
 	private load(replay: RoundReplay) {
@@ -226,6 +277,7 @@ export class ImpactEffects {
 				tick: data[i]!,
 				player: data[i + 1]!,
 				position: new THREE.Vector3(data[i + 2], data[i + 3], data[i + 4]),
+				normal: new THREE.Vector3(data[i + 5], data[i + 6], data[i + 7]),
 				kind
 			};
 			this.impacts.push(point);
@@ -286,6 +338,9 @@ export class ImpactEffects {
 		this.decals.geometry.dispose();
 		this.decals.material.dispose();
 		this.decals.dispose();
+		this.chips.geometry.dispose();
+		(this.chips.material as THREE.Material).dispose();
+		this.chips.dispose();
 		for (const puff of this.puffs) puff.mesh.material.dispose();
 		this.plane.dispose();
 	}
