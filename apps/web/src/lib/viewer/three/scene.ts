@@ -4,6 +4,7 @@ import {
 	FLAG_PRESENT,
 	crosshairColor,
 	decodeCrosshair,
+	rgbaCss,
 	defaultConfig,
 	type Crosshair,
 	horizontalToVerticalFov,
@@ -899,23 +900,51 @@ export class ReplayScene {
 		height: number,
 		crosshair: Crosshair
 	) {
-		const scale = height / 480;
-		const ratio = this.pixelRatio;
-		const length = Math.max(1, Math.round(crosshair.size * scale));
-		const thick = Math.max(1, Math.round(crosshair.thickness * scale));
-		const gap = Math.max(0, Math.round((crosshair.gap + 4.5) * scale * 0.5));
+		const scale = height / crosshair.screenHeight;
+		const px = (value: number, min: number) => Math.max(min, Math.round(value * scale));
+		const thick = px(crosshair.thickness, 1);
+		const length = px(crosshair.length, 1);
+		const gap = Math.round(Math.max(0, crosshair.gap) * scale);
 		const half = thick / 2;
-		const bars: [number, number, number, number][] = [
-			[cx - gap - length, cy - half, length, thick],
-			[cx + gap, cy - half, length, thick],
-			[cx - half, cy + gap, thick, length]
-		];
-		if (!crosshair.tStyle) bars.push([cx - half, cy - gap - length, thick, length]);
-		if (crosshair.dot) bars.push([cx - half, cy - half, thick, thick]);
-		if (crosshair.outlineEnabled && crosshair.outline > 0) {
-			const o = Math.max(1, Math.round(crosshair.outline * ratio));
-			ctx.fillStyle = `rgba(0, 0, 0, ${crosshair.alphaEnabled ? crosshair.alpha / 255 : 1})`;
-			for (const [x, y, w, h] of bars) ctx.fillRect(x - o, y - o, w + 2 * o, h + 2 * o);
+		const outline = crosshair.outline;
+		const ow = outline ? px(outline.width, 1) : 0;
+		const style = crosshair.style;
+		const ring = style === 1 || style === 3 || style === 7 || style === 9;
+		if (ring) {
+			const radius = gap + length / 2 + half;
+			const parts = style === 7 || style === 9 ? 4 : 1;
+			const span = parts === 1 ? Math.PI * 2 : (Math.PI / 2) * Math.max(0.1, crosshair.splitRatio);
+			const stroke = (width: number, color: string) => {
+				ctx.lineWidth = width;
+				ctx.strokeStyle = color;
+				for (let i = 0; i < parts; i++) {
+					const mid = parts === 1 ? 0 : (i * Math.PI) / 2;
+					ctx.beginPath();
+					ctx.arc(cx, cy, radius, mid - span / 2, mid + span / 2);
+					ctx.stroke();
+				}
+			};
+			if (outline) stroke(thick + 2 * ow, rgbaCss(outline.color));
+			stroke(thick, crosshairColor(crosshair));
+		}
+		const bars: [number, number, number, number][] = [];
+		if (style === 8) {
+			const side = 2 * (gap + length);
+			const x = cx - side / 2;
+			const y = cy - side / 2;
+			bars.push([x, y, side, thick], [x, y + side - thick, side, thick]);
+			bars.push([x, y, thick, side], [x + side - thick, y, thick, side]);
+		} else if (!ring && style !== 6) {
+			bars.push([cx - gap - length - half, cy - half, length, thick]);
+			bars.push([cx + gap + half, cy - half, length, thick]);
+			bars.push([cx - half, cy + gap + half, thick, length]);
+			if (!crosshair.tStyle) bars.push([cx - half, cy - gap - length - half, thick, length]);
+		}
+		if (crosshair.dot || style === 6) bars.push([cx - half, cy - half, thick, thick]);
+		if (outline) {
+			ctx.fillStyle = rgbaCss(outline.color);
+			const grow = outline.half ? 0 : ow;
+			for (const [x, y, w, h] of bars) ctx.fillRect(x - ow, y - ow, w + ow + grow, h + ow + grow);
 		}
 		ctx.fillStyle = crosshairColor(crosshair);
 		for (const [x, y, w, h] of bars) ctx.fillRect(x, y, w, h);
