@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { ReplayEffect, RoundReplay } from '@cs-demo-cloud/replay';
 import type { PlayerState } from '../../frame.ts';
+import { ImpactEffects } from './impacts.ts';
 import type { WorldShading } from './material.ts';
 
 const SMOKE_RADIUS = 150;
@@ -249,8 +250,10 @@ export class GameEffects {
 	private vector = new THREE.Vector3();
 	private direction = new THREE.Vector3();
 	private time = 0;
+	private impacts = new ImpactEffects();
 
 	constructor() {
+		this.root.add(this.impacts.root);
 		const geometry = new THREE.BufferGeometry();
 		geometry.setAttribute(
 			'position',
@@ -278,6 +281,7 @@ export class GameEffects {
 			const direct = sun ? luma(sun) : 0;
 			this.light.setScalar(ambient * 1.15 + direct * 0.12).multiply(SMOKE_TINT);
 			this.shadow.setScalar(ambient * 0.45).multiply(SMOKE_TINT);
+			this.impacts.setLight(this.light);
 		}
 	}
 
@@ -311,6 +315,7 @@ export class GameEffects {
 			this.fires[i]!.glow.visible = false;
 		}
 		for (let i = blasts; i < this.blasts.length; i++) this.blasts[i]!.visible = false;
+		this.impacts.update(replay, tick);
 		this.updateShots(replay, tick, players, muzzle);
 	}
 
@@ -528,22 +533,35 @@ export class GameEffects {
 			if (!shooter?.alive) continue;
 			const origin = muzzle(index, this.vector);
 			if (!origin) continue;
-			const yaw = shooter.yaw * DEG;
-			const pitch = shooter.pitch * DEG;
-			this.direction.set(
-				Math.cos(pitch) * Math.cos(yaw),
-				Math.cos(pitch) * Math.sin(yaw),
-				-Math.sin(pitch)
-			);
+			const impact = this.impacts.impactFor(shotTick, index, 0);
+			let range = TRACER_RANGE;
+			if (impact) {
+				this.direction.copy(impact.position).sub(origin);
+				range = Math.min(TRACER_RANGE, this.direction.length());
+				this.direction.normalize();
+			} else {
+				const yaw = shooter.yaw * DEG;
+				const pitch = shooter.pitch * DEG;
+				this.direction.set(
+					Math.cos(pitch) * Math.cos(yaw),
+					Math.cos(pitch) * Math.sin(yaw),
+					-Math.sin(pitch)
+				);
+			}
 			const age = (tick - shotTick) / meta.tickRate;
 			if (tick - shotTick <= MUZZLE_TICKS) {
 				const flash = this.muzzle(flashes++);
 				flash.position.copy(origin).addScaledVector(this.direction, 4);
 				flash.scale.setScalar(18 + 10 * hash(shotTick + index));
 			}
-			if (segments < this.tracerPositions.length / 6 && hash(shotTick * 13 + index) < 0.5) {
-				const head = Math.min(TRACER_RANGE, age * TRACER_SPEED);
-				const tail = Math.max(0, head - TRACER_LENGTH);
+			if (
+				segments < this.tracerPositions.length / 6 &&
+				hash(shotTick * 13 + index) < 0.5 &&
+				age * TRACER_SPEED - TRACER_LENGTH < range
+			) {
+				const travelled = age * TRACER_SPEED;
+				const head = Math.min(range, travelled);
+				const tail = Math.min(head, Math.max(0, travelled - TRACER_LENGTH));
 				const o = segments * 6;
 				this.tracerPositions[o] = origin.x + this.direction.x * tail;
 				this.tracerPositions[o + 1] = origin.y + this.direction.y * tail;
@@ -593,6 +611,7 @@ export class GameEffects {
 			fire.glow.material.dispose();
 		}
 		for (const mesh of [...this.blasts, ...this.muzzles]) mesh.material.dispose();
+		this.impacts.dispose();
 		this.tracers.geometry.dispose();
 		(this.tracers.material as THREE.Material).dispose();
 		for (const geometry of [this.box, this.plane, this.flamePlane, this.disc]) geometry.dispose();
