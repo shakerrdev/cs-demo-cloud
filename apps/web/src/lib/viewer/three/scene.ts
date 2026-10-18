@@ -240,7 +240,19 @@ export class ReplayScene {
 	}
 
 	get packInfo() {
-		return this.models?.info ?? null;
+		if (!this.models) return null;
+		const pov = this.pov !== null ? this.replay?.meta.players[this.pov] : undefined;
+		return {
+			...this.models.info,
+			pov: pov
+				? {
+						name: pov.name,
+						weapon: this.players[this.pov!]?.weapon ?? null,
+						crosshair: pov.crosshair ?? null,
+						viewmodel: this.models.viewmodel?.info ?? null
+					}
+				: null
+		};
 	}
 
 	get stats(): { programs: number; textures: number; geometries: number } {

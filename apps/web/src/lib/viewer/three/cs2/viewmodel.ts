@@ -53,6 +53,8 @@ interface Arms {
 	weapon: string | null;
 	loading: string | null;
 	action: THREE.AnimationAction | null;
+	gloves: string;
+	shown: boolean;
 }
 
 interface Pose {
@@ -67,6 +69,20 @@ export class Viewmodel {
 	private root = new THREE.Group();
 	private pack: PlayerPack;
 	private arms = new Map<string, Arms>();
+	private current: string | null = null;
+
+	get info() {
+		const arms = this.current ? this.arms.get(this.current) : undefined;
+		return arms
+			? {
+					arms: this.current,
+					gloves: arms.gloves,
+					weapon: arms.weapon,
+					loading: arms.loading,
+					weaponShown: arms.shown
+				}
+			: null;
+	}
 	private clips: Map<string, THREE.AnimationClip> | null = null;
 	private rigs = new Map<string, THREE.Object3D>();
 	private actions = new Map<string, THREE.AnimationAction>();
@@ -107,6 +123,7 @@ export class Viewmodel {
 		view: PovPose | null = null
 	): boolean {
 		this.root.visible = false;
+		this.current = null;
 		if (!player?.alive || !this.clips) return false;
 		const key = weaponKey(player.weapon);
 		const clips = viewmodelClips(key);
@@ -129,6 +146,7 @@ export class Viewmodel {
 		const armsKey = `${player.side}|${ready ? agent : ''}|${glovesKey}`;
 		const arms = this.armsFor(armsKey, player.side, ready ? agent : undefined, gloves);
 		for (const [id, other] of this.arms) other.model.visible = id === armsKey;
+		this.current = armsKey;
 		const rig = this.rig(arms, clip);
 		this.setWeapon(
 			arms,
@@ -280,15 +298,25 @@ export class Viewmodel {
 			borrowed: [],
 			weapon: null,
 			loading: null,
-			action: null
+			action: null,
+			gloves: gloves ? (this.pack.hasGloves(gloves) ? 'loading' : 'not in pack') : 'none',
+			shown: false
 		};
 		for (const mesh of meshes) this.applyMaterial(mesh);
 		this.arms.set(id, arms);
 		if (this.pack.hasGloves(gloves)) {
 			const target = arms;
 			void this.pack.loadGloves(gloves).then((loaded) => {
+				target.gloves = loaded ? 'loaded' : 'failed';
 				if (!loaded || this.arms.get(id) !== target) return;
-				const { added } = attachGloves(this.pack, root, loaded.template, loaded.extras, true);
+				const { added, hidden } = attachGloves(
+					this.pack,
+					root,
+					loaded.template,
+					loaded.extras,
+					true
+				);
+				target.gloves = `attached ${added.length}, hid ${hidden.length}`;
 				for (const mesh of added) {
 					target.meshes.push(mesh);
 					this.applyMaterial(mesh);
@@ -333,13 +361,16 @@ export class Viewmodel {
 		if (id === arms.weapon) return;
 		arms.weapon = id;
 		arms.slot.clear();
+		arms.shown = false;
 		for (const object of arms.borrowed) object.removeFromParent();
 		arms.borrowed = [];
 		if (!key || !id) return;
 		arms.loading = id;
 		void this.pack.weapon(key, skin).then((template) => {
-			if (arms.loading !== id || arms.weapon !== id || !template) return;
+			if (arms.loading !== id || arms.weapon !== id) return;
 			arms.loading = null;
+			if (!template) return;
+			arms.shown = true;
 			const weapon = cloneSkinned(template.scene);
 			weapon.traverse((object) => {
 				if ((object as THREE.Mesh).isMesh) this.applyMaterial(object as THREE.Mesh);
