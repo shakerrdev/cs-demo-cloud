@@ -18,6 +18,7 @@ import {
 import {
 	anglesToMatrix,
 	createWorldShading,
+	fogBlurMip,
 	fogUniforms,
 	type WorldShadingSetup
 } from './world.ts';
@@ -147,7 +148,7 @@ export class MapPack {
 			uCameraWorld: { value: new THREE.Vector3() },
 			uCutZ: { value: 1e9 },
 			uTime: { value: 0 },
-			...fogUniforms(manifest, 8)
+			...fogUniforms(manifest, fogBlurMip(manifest))
 		};
 		(this.skyboxScene ?? this.main).add(this.sky);
 	}

@@ -647,7 +647,7 @@ void main() {
 	vec3 sunLight = uSunColor * sunVisibility;
 	float nDotL = max(dot(normal, uSunDir), 0.0);
 	vec3 directDiffuse = nDotL * sunLight;
-	vec3 directSpecular = sunSpecular(normal, view, uSunDir, roughness, specularColor) * sunLight * uSunSpecular;
+	vec3 directSpecular = sunSpecular(normal, view, uSunDir, max(roughness, 0.04), specularColor) * sunLight * uSunSpecular;
 
 	vec3 transmissive = vec3(0.0);
 #ifdef TRANSMISSIVE

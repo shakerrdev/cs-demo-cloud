@@ -265,9 +265,15 @@ export function createWorldShading(
 	};
 }
 
+export function fogBlurMip(manifest: MapPackManifest): number {
+	const fog = manifest.fog?.cubemap;
+	const width = fog ? manifest.textures[fog.texture]?.width : undefined;
+	return width ? Math.max(0, Math.log2(width) - 3) : 7;
+}
+
 export function fogUniforms(
 	manifest: MapPackManifest,
-	skyMips: number
+	blurMip: number
 ): Record<string, THREE.IUniform> {
 	const uniforms: Record<string, THREE.IUniform> = {
 		uFogCube: { value: null },
@@ -297,10 +303,10 @@ export function fogUniforms(
 				1 - cube.heightStart * heightScale,
 				heightScale,
 				cube.heightExponent,
-				Math.min(7, skyMips)
+				blurMip
 			);
 		} else {
-			uniforms.uFogHeight!.value = new THREE.Vector4(1, 0.000001, 0, Math.min(7, skyMips));
+			uniforms.uFogHeight!.value = new THREE.Vector4(1, 0.000001, 0, blurMip);
 		}
 		uniforms.uFogMisc!.value = new THREE.Vector4(
 			cube.start * cube.start,
