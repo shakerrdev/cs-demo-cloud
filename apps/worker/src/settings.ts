@@ -1,4 +1,4 @@
-import { isGlovesItem, type ReplaySkin } from '@cs-demo-cloud/replay';
+import { decodeCrosshair, isGlovesItem, type ReplaySkin } from '@cs-demo-cloud/replay';
 import { num, str, type RawSkin, type SettingRows } from './parser.ts';
 
 export interface PlayerSettings {
@@ -6,8 +6,6 @@ export interface PlayerSettings {
 	viewmodel?: [number, number, number, number];
 	musicKit?: number;
 }
-
-const CROSSHAIR = /^CSGO(-[A-Za-z0-9]{5}){5}$/;
 
 function wearOf(bits: number): number {
 	const view = new DataView(new ArrayBuffer(4));
@@ -41,8 +39,8 @@ export function settingsAt(
 	for (let i = 0; i < rows.tick.length; i++) {
 		if (rows.tick[i] !== tick) continue;
 		const settings: PlayerSettings = {};
-		const code = str(rows.crosshair_code[i]);
-		if (code && CROSSHAIR.test(code)) settings.crosshair = code;
+		const code = str(rows.crosshair_code[i])?.trim();
+		if (code && decodeCrosshair(code)) settings.crosshair = code;
 		const fov = num(rows['CCSPlayerPawn.m_flViewmodelFOV'][i]);
 		if (fov >= 40 && fov <= 90) {
 			settings.viewmodel = [
@@ -57,4 +55,17 @@ export function settingsAt(
 		out.set(keyOf(rows.steamid[i], rows.name[i]), settings);
 	}
 	return out;
+}
+
+export function fillCrosshairs(rounds: Map<string, PlayerSettings>[]): void {
+	const known = new Map<string, string>();
+	for (const pass of [rounds, [...rounds].reverse()]) {
+		known.clear();
+		for (const round of pass) {
+			for (const [key, settings] of round) {
+				if (settings.crosshair) known.set(key, settings.crosshair);
+				else if (known.has(key)) settings.crosshair = known.get(key);
+			}
+		}
+	}
 }

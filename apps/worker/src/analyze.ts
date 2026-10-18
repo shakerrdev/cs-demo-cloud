@@ -47,7 +47,7 @@ import {
 	type ViewRows
 } from './parser.ts';
 import { detectRounds, type RoundSpan } from './rounds.ts';
-import { glovesBySteamId, settingsAt, type PlayerSettings } from './settings.ts';
+import { fillCrosshairs, glovesBySteamId, settingsAt, type PlayerSettings } from './settings.ts';
 import { assignTeams } from './teams.ts';
 
 const STEP = 4;
@@ -321,6 +321,12 @@ export function analyzeDemo(
 			[...new Set(settingTicks)].sort((a, b) => a - b)
 		);
 		roundSettings = settingTicks.map((tick) => settingsAt(rows, tick, playerKey));
+		fillCrosshairs(roundSettings);
+		const codes = new Set(
+			roundSettings.flatMap((round) => [...round.values()].map((s) => s.crosshair))
+		);
+		codes.delete(undefined);
+		console.log(`Player settings: ${codes.size} crosshair codes`);
 		gloves = glovesBySteamId(parseSkins(path));
 	} catch (error) {
 		console.warn(`No player settings: ${error instanceof Error ? error.message : error}`);
