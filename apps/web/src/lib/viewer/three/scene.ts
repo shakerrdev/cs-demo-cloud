@@ -53,6 +53,7 @@ export interface SceneFrame {
 
 const background = new THREE.Color(0x0b0d10);
 const ORBIT_FOV = 50;
+const SLOT_COLORS = ['#7fbdff', '#6fe08a', '#ffe066', '#ffa358', '#c99bff'];
 const ROOF_CUT = 170;
 const MAX_PLAYER_SCALE = 3;
 const LISTENER_RANGE = 500;
@@ -113,6 +114,7 @@ export class ReplayScene {
 	private povPose: PovPose | null = null;
 	private scope: { fov: number; sniper: boolean } | null = null;
 	private blind = 0;
+	private xray = true;
 	private config: AppConfig = defaultConfig;
 	private hurt = 0;
 	private pointer = { x: 0, y: 0, down: false };
@@ -507,6 +509,7 @@ export class ReplayScene {
 	render(frame: SceneFrame): boolean {
 		const { replay, tick, focus, mode, roofs, xray = true } = frame;
 		this.replay = replay;
+		this.xray = xray;
 		if (replay.meta.round !== this.round) {
 			this.round = replay.meta.round;
 			this.actors.setPlayers(replay.meta.players);
@@ -799,9 +802,10 @@ export class ReplayScene {
 		const width = ctx.canvas.width;
 		const height = ctx.canvas.height;
 		const names = this.pov === null && this.config.viewer.nameplates;
+		const tags = this.pov !== null && this.xray && this.config.viewer.nameplates;
 		const crosshair = this.pov !== null && (this.scope !== null || this.config.pov.crosshair);
 		const empty =
-			!this.debug.overlay || (!names && !crosshair && this.hurt <= 0 && this.blind <= 0);
+			!this.debug.overlay || (!names && !tags && !crosshair && this.hurt <= 0 && this.blind <= 0);
 		if (empty && !this.overlayDirty) return;
 		ctx.clearRect(0, 0, width, height);
 		this.overlayDirty = !empty;
@@ -852,26 +856,69 @@ export class ReplayScene {
 			ctx.fillText(label, x, barY - 3 * ratio);
 		}
 		ctx.globalAlpha = 1;
+		if (tags) this.drawXrayTags(ctx, width, height);
 
 		if (this.hurt > 0) {
-			const glow = ctx.createRadialGradient(
-				width / 2,
-				height / 2,
-				Math.min(width, height) * 0.25,
-				width / 2,
-				height / 2,
-				Math.max(width, height) * 0.62
-			);
-			glow.addColorStop(0, 'rgba(200, 0, 0, 0)');
-			glow.addColorStop(1, `rgba(200, 0, 0, ${0.55 * this.hurt})`);
-			ctx.fillStyle = glow;
-			ctx.fillRect(0, 0, width, height);
+			const alpha = 0.6 * this.hurt;
+			for (const [from, to] of [
+				[0, width * 0.3],
+				[width, width * 0.7]
+			] as const) {
+				const edge = ctx.createLinearGradient(from, 0, to, 0);
+				edge.addColorStop(0, `rgba(190, 10, 10, ${alpha})`);
+				edge.addColorStop(0.45, `rgba(190, 10, 10, ${alpha * 0.35})`);
+				edge.addColorStop(1, 'rgba(190, 10, 10, 0)');
+				ctx.fillStyle = edge;
+				ctx.fillRect(0, 0, width, height);
+			}
 		}
-
 		if (this.blind > 0) {
 			ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, this.blind * 1.05)})`;
 			ctx.fillRect(0, 0, width, height);
 		}
+	}
+
+	private drawXrayTags(ctx: CanvasRenderingContext2D, width: number, height: number) {
+		const viewer = this.pov !== null ? this.players[this.pov] : undefined;
+		if (!viewer) return;
+		const ratio = this.pixelRatio;
+		const order = this.players
+			.filter((p) => p.present && p.side !== viewer.side)
+			.sort((a, b) => a.index - b.index);
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'bottom';
+		for (const [slot, player] of order.entries()) {
+			if (!player.alive) continue;
+			const lift = player.ducking ? 62 : 80;
+			this.projected.set(player.x, player.y, player.z + lift).project(this.camera);
+			const ndc = this.projected;
+			if (ndc.z < -1 || ndc.z > 1 || Math.abs(ndc.x) > 1.1 || Math.abs(ndc.y) > 1.1) continue;
+			const x = ((ndc.x + 1) / 2) * width;
+			const y = ((1 - ndc.y) / 2) * height;
+			const color = SLOT_COLORS[slot % SLOT_COLORS.length]!;
+			const size = 4 * ratio;
+			ctx.globalAlpha = 0.9;
+			ctx.fillStyle = color;
+			ctx.beginPath();
+			ctx.moveTo(x - size, y - size * 1.6);
+			ctx.lineTo(x + size, y - size * 1.6);
+			ctx.lineTo(x, y);
+			ctx.closePath();
+			ctx.fill();
+			ctx.lineWidth = 2.5 * ratio;
+			ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+			ctx.font = `600 ${Math.round(9.5 * ratio)}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+			const health = `${player.health}%`;
+			ctx.strokeText(health, x, y - size * 2);
+			ctx.fillStyle = '#f0e6a0';
+			ctx.fillText(health, x, y - size * 2);
+			ctx.font = `600 ${Math.round(11 * ratio)}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+			const nameY = y - size * 2 - 11 * ratio;
+			ctx.strokeText(player.name, x, nameY);
+			ctx.fillStyle = color;
+			ctx.fillText(player.name, x, nameY);
+		}
+		ctx.globalAlpha = 1;
 	}
 
 	private applyPlayerViewmodel(settings: [number, number, number, number] | undefined) {
