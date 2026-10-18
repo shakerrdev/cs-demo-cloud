@@ -2,9 +2,9 @@ import type { ReplayEffect, RoundReplay, SmokeVolume } from '@cs-demo-cloud/repl
 import type { MeshRaycaster } from './raycast.ts';
 
 export const SMOKE_CELL = 20;
-const REACH = 12;
-const LAYERS = 9;
-const BELOW = 1;
+const REACH = 16;
+const LAYERS = 11;
+const BELOW = 2;
 const BUDGET = 1050;
 const UP_COST = 1.3;
 const DOWN_COST = 0.7;
@@ -60,7 +60,7 @@ export function smokeVolume(effect: ReplayEffect, raycaster: MeshRaycaster): Smo
 			const X = x + dx;
 			const Y = y + dy;
 			const Z = z + dz;
-			if (X < 0 || Y < 0 || Z < 0 || X >= nx || Y >= ny || Z >= nz) continue;
+			if (X < 1 || Y < 1 || Z < 1 || X >= nx - 1 || Y >= ny - 1 || Z >= nz - 1) continue;
 			const next = index(X, Y, Z);
 			if (done[next]) continue;
 			const total = cost[cell]! + step;
