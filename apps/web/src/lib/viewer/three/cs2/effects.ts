@@ -1,13 +1,15 @@
 import * as THREE from 'three';
-import type { ReplayEffect, RoundReplay } from '@cs-demo-cloud/replay';
+import type { ReplayEffect, RoundReplay, SmokeVolume } from '@cs-demo-cloud/replay';
 import type { PlayerState } from '../../frame.ts';
 import { ImpactEffects } from './impacts.ts';
+import { GrenadeTrails } from './trails.ts';
 import type { WorldShading } from './material.ts';
 
 const SMOKE_RADIUS = 150;
 const SMOKE_HEIGHT = 160;
 const SMOKE_BLOOM = 1.2;
 const SMOKE_FADE = 2.5;
+const SMOKE_SLICES = 14;
 const SMOKE_TINT = new THREE.Vector3(0.93, 0.95, 1);
 const FIRE_RADIUS = 125;
 const FIRE_FLAMES = 28;
@@ -47,21 +49,41 @@ float fbm(vec3 p) {
 `;
 
 const smokeVertex = /* glsl */ `
+in float aSlice;
+uniform vec3 uCamera;
+uniform vec3 uCenter;
+uniform vec3 uForward;
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec2 uRange;
+uniform float uExtent;
 out vec3 vWorld;
+flat out float vRatio;
 void main() {
-	vec4 world = modelMatrix * vec4(position, 1.0);
-	vWorld = world.xyz;
-	gl_Position = projectionMatrix * viewMatrix * world;
+	float step = (uRange.y - uRange.x) / ${SMOKE_SLICES}.0;
+	float far = uRange.y - aSlice * step;
+	vRatio = max(far - step, 0.0) / far;
+	vec3 toCenter = uCenter - uCamera;
+	vec3 middle = uCenter + uForward * (far - dot(toCenter, uForward));
+	vec3 world = middle + (uRight * position.x + uUp * position.y) * uExtent;
+	vWorld = world;
+	gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
 `;
 
 const smokeFragment = /* glsl */ `
 precision highp float;
 in vec3 vWorld;
+flat in float vRatio;
 uniform vec3 uCamera;
 uniform vec3 uCenter;
 uniform vec3 uRadii;
 uniform float uGrowth;
+uniform float uSpread;
+uniform float uHasVolume;
+uniform highp sampler3D uVolume;
+uniform vec3 uVolumeMin;
+uniform vec3 uVolumeSize;
 uniform float uFade;
 uniform float uSeed;
 uniform float uTime;
@@ -77,7 +99,21 @@ vec2 boxHit(vec3 ro, vec3 rd) {
 	vec3 hi = max(t0, t1);
 	return vec2(max(max(lo.x, lo.y), lo.z), min(min(hi.x, hi.y), hi.z));
 }
+float volumeDensity(vec3 q) {
+	vec3 p = q * uRadii;
+	vec3 uvw = (uCenter + p - uVolumeMin) / uVolumeSize;
+	vec2 cell = texture(uVolume, uvw).rg;
+	float fill = smoothstep(0.04, 0.4, cell.r) * smoothstep(-0.12, 0.0, cell.g - 1.0 + uSpread);
+	if (fill <= 0.0) return 0.0;
+	vec3 drift = vec3(uSeed, uSeed * 1.7, uTime * 0.05);
+	float lumps = fbm(p * 0.011 + drift);
+	float body = smoothstep(0.18, 0.5, fill * (0.45 + 0.75 * lumps));
+	if (body <= 0.0) return 0.0;
+	float detail = fbm(p * 0.032 - drift * 2.3);
+	return body * clamp(0.15 + 1.25 * detail * detail + 0.4 * body, 0.0, 1.6);
+}
 float density(vec3 q) {
+	if (uHasVolume > 0.5) return volumeDensity(q);
 	float shape = length(q * vec3(1.0, 1.0, 0.95) - vec3(0.0, 0.0, -0.12));
 	if (shape >= uGrowth || q.z < -0.92) return 0.0;
 	vec3 p = q * uRadii;
@@ -85,24 +121,25 @@ float density(vec3 q) {
 	float lumps = fbm(p * 0.011 + drift);
 	float edge = uGrowth * (0.55 + 0.45 * lumps) - shape;
 	if (edge <= 0.0) return 0.0;
-	float body = smoothstep(0.0, 0.1, edge);
+	float body = smoothstep(0.0, 0.22, edge);
 	float detail = fbm(p * 0.032 - drift * 2.3);
 	float floorCut = smoothstep(-0.92, -0.8, q.z);
 	return body * floorCut * clamp(0.15 + 1.25 * detail * detail + 0.4 * body, 0.0, 1.6);
 }
 void main() {
 	vec3 rdWorld = normalize(vWorld - uCamera);
+	float sliceEnd = length(vWorld - uCamera);
 	vec3 ro = (uCamera - uCenter) / uRadii;
 	vec3 rd = rdWorld / uRadii;
 	float scale = length(rd);
 	rd /= scale;
 	vec2 hit = boxHit(ro, rd);
-	float t = max(hit.x, 0.0);
-	float tEnd = hit.y;
+	float t = max(max(hit.x, 0.0), sliceEnd * vRatio * scale);
+	float tEnd = min(hit.y, sliceEnd * scale);
 	if (tEnd <= t) discard;
-	const int STEPS = 28;
+	const int STEPS = 4;
 	float stepLength = (tEnd - t) / float(STEPS);
-	float jitter = hash3(vec3(gl_FragCoord.xy, uTime));
+	float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + vRatio * 7.13);
 	t += stepLength * jitter;
 	float transmittance = 1.0;
 	vec3 light = vec3(0.0);
@@ -111,10 +148,11 @@ void main() {
 		vec3 q = ro + rd * t;
 		float d = density(q) * uFade;
 		if (d > 0.001) {
-			float extinction = d * 0.03 * worldStep;
+			float extinction = d * 0.04 * worldStep;
 			float absorbed = transmittance * (1.0 - exp(-extinction));
 			float height = clamp(q.z * 0.5 + 0.5, 0.0, 1.0);
-			float lit = clamp(pow(height, 0.7) * (1.15 - 0.45 * d), 0.0, 1.0);
+			float above = density(q + vec3(0.0, 0.0, 0.22)) * uFade;
+			float lit = clamp(pow(height, 0.7) * (1.15 - 0.45 * d) - 0.65 * above, 0.0, 1.0);
 			light += absorbed * mix(uShadow, uLight, lit);
 			transmittance *= exp(-extinction);
 			if (transmittance < 0.02) break;
@@ -211,8 +249,78 @@ void main() {
 }
 `;
 
+const EMPTY_VOLUME = new THREE.Data3DTexture(new Uint8Array(2), 1, 1, 1);
+EMPTY_VOLUME.format = THREE.RGFormat;
+EMPTY_VOLUME.needsUpdate = true;
+
+interface SmokeTexture {
+	texture: THREE.Data3DTexture;
+	min: THREE.Vector3;
+	size: THREE.Vector3;
+	bounds: THREE.Box3;
+}
+
+const smokeTextures = new WeakMap<SmokeVolume, SmokeTexture>();
+
+function smokeTexture(volume: SmokeVolume): SmokeTexture {
+	let cached = smokeTextures.get(volume);
+	if (cached) return cached;
+	const [nx, ny, nz] = volume.dims;
+	const data = new Uint8Array(nx * ny * nz * 2);
+	for (let i = 0; i < nx * ny * nz; i++) data[i * 2 + 1] = 255;
+	const bounds = new THREE.Box3();
+	const point = new THREE.Vector3();
+	const count = volume.cells.length;
+	volume.cells.forEach((cell, k) => {
+		data[cell * 2] = 255;
+		data[cell * 2 + 1] = Math.round(255 * (1 - k / count));
+		const x = cell % nx;
+		const y = Math.floor(cell / nx) % ny;
+		const z = Math.floor(cell / (nx * ny));
+		point.set(x + 0.5, y + 0.5, z + 0.5).multiplyScalar(volume.cell);
+		bounds.expandByPoint(point);
+	});
+	const texture = new THREE.Data3DTexture(data, nx, ny, nz);
+	texture.format = THREE.RGFormat;
+	texture.minFilter = THREE.LinearFilter;
+	texture.magFilter = THREE.LinearFilter;
+	texture.unpackAlignment = 1;
+	texture.needsUpdate = true;
+	const min = new THREE.Vector3(...volume.min);
+	bounds.expandByScalar(volume.cell).translate(min);
+	cached = {
+		texture,
+		min,
+		size: new THREE.Vector3(nx, ny, nz).multiplyScalar(volume.cell),
+		bounds
+	};
+	smokeTextures.set(volume, cached);
+	return cached;
+}
+
 interface Smoke {
-	mesh: THREE.Mesh<THREE.BoxGeometry, THREE.ShaderMaterial>;
+	mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+}
+
+function sliceGeometry(): THREE.BufferGeometry {
+	const positions: number[] = [];
+	const slices: number[] = [];
+	for (let k = 0; k < SMOKE_SLICES; k++)
+		for (const [x, y] of [
+			[-1, -1],
+			[1, -1],
+			[1, 1],
+			[-1, -1],
+			[1, 1],
+			[-1, 1]
+		]) {
+			positions.push(x!, y!, 0);
+			slices.push(k);
+		}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute('aSlice', new THREE.Float32BufferAttribute(slices, 1));
+	return geometry;
 }
 
 interface Fire {
@@ -237,7 +345,7 @@ export class GameEffects {
 	private fires: Fire[] = [];
 	private blasts: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>[] = [];
 	private muzzles: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>[] = [];
-	private box = new THREE.BoxGeometry(2, 2, 2);
+	private slices = sliceGeometry();
 	private plane = new THREE.PlaneGeometry(1, 1);
 	private flamePlane = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
 	private disc = new THREE.CircleGeometry(1, 32);
@@ -251,9 +359,10 @@ export class GameEffects {
 	private direction = new THREE.Vector3();
 	private time = 0;
 	private impacts = new ImpactEffects();
+	private trails = new GrenadeTrails();
 
 	constructor() {
-		this.root.add(this.impacts.root);
+		this.root.add(this.impacts.root, this.trails.mesh);
 		const geometry = new THREE.BufferGeometry();
 		geometry.setAttribute(
 			'position',
@@ -279,7 +388,7 @@ export class GameEffects {
 			const luma = (v: THREE.Vector3) => v.x * 0.2126 + v.y * 0.7152 + v.z * 0.0722;
 			const ambient = luma(sky);
 			const direct = sun ? luma(sun) : 0;
-			this.light.setScalar(ambient * 1.35 + direct * 0.15).multiply(SMOKE_TINT);
+			this.light.setScalar(ambient * 1.15 + direct * 0.15).multiply(SMOKE_TINT);
 			this.shadow.setScalar(ambient * 0.6).multiply(SMOKE_TINT);
 			this.impacts.setLight(this.light);
 		}
@@ -316,6 +425,7 @@ export class GameEffects {
 		}
 		for (let i = blasts; i < this.blasts.length; i++) this.blasts[i]!.visible = false;
 		this.impacts.update(replay, tick);
+		this.trails.update(replay, tick);
 		this.updateShots(replay, tick, players, muzzle);
 	}
 
@@ -330,7 +440,17 @@ export class GameEffects {
 					uCamera: { value: new THREE.Vector3() },
 					uCenter: { value: new THREE.Vector3() },
 					uRadii: { value: new THREE.Vector3() },
+					uForward: { value: new THREE.Vector3() },
+					uRight: { value: new THREE.Vector3() },
+					uUp: { value: new THREE.Vector3() },
+					uRange: { value: new THREE.Vector2() },
+					uExtent: { value: 1 },
 					uGrowth: { value: 1 },
+					uSpread: { value: 1 },
+					uHasVolume: { value: 0 },
+					uVolume: { value: EMPTY_VOLUME },
+					uVolumeMin: { value: new THREE.Vector3() },
+					uVolumeSize: { value: new THREE.Vector3(1, 1, 1) },
 					uFade: { value: 1 },
 					uSeed: { value: 0 },
 					uTime: { value: 0 },
@@ -339,11 +459,12 @@ export class GameEffects {
 				},
 				transparent: true,
 				depthWrite: false,
+				side: THREE.DoubleSide,
 				blending: THREE.CustomBlending,
 				blendSrc: THREE.OneFactor,
 				blendDst: THREE.OneMinusSrcAlphaFactor
 			});
-			smoke = { mesh: new THREE.Mesh(this.box, material) };
+			smoke = { mesh: new THREE.Mesh(this.slices, material) };
 			smoke.mesh.frustumCulled = false;
 			smoke.mesh.renderOrder = 5;
 			this.root.add(smoke.mesh);
@@ -363,27 +484,35 @@ export class GameEffects {
 		const mesh = smoke.mesh;
 		const u = mesh.material.uniforms;
 		const growth = 1 - Math.pow(1 - Math.min(1, age / SMOKE_BLOOM), 3);
-		const center = (u.uCenter!.value as THREE.Vector3).set(
-			effect.x,
-			effect.y,
-			effect.z + SMOKE_HEIGHT * 0.45
-		);
-		const radii = (u.uRadii!.value as THREE.Vector3).set(
-			SMOKE_RADIUS,
-			SMOKE_RADIUS,
-			SMOKE_HEIGHT * 0.6
-		);
-		mesh.position.copy(center);
-		mesh.scale.copy(radii);
-		(u.uCamera!.value as THREE.Vector3).copy(camera.position);
+		const center = u.uCenter!.value as THREE.Vector3;
+		const radii = u.uRadii!.value as THREE.Vector3;
+		const volume = effect.volume ? smokeTexture(effect.volume) : null;
+		u.uHasVolume!.value = volume ? 1 : 0;
+		u.uSpread!.value = growth;
+		if (volume) {
+			u.uVolume!.value = volume.texture;
+			(u.uVolumeMin!.value as THREE.Vector3).copy(volume.min);
+			(u.uVolumeSize!.value as THREE.Vector3).copy(volume.size);
+			volume.bounds.getCenter(center);
+			volume.bounds.getSize(radii).multiplyScalar(0.5);
+		} else {
+			center.set(effect.x, effect.y, effect.z + SMOKE_HEIGHT * 0.45);
+			radii.set(SMOKE_RADIUS, SMOKE_RADIUS, SMOKE_HEIGHT * 0.6);
+		}
+		const eye = (u.uCamera!.value as THREE.Vector3).copy(camera.position);
+		const forward = camera.getWorldDirection(u.uForward!.value as THREE.Vector3);
+		(u.uRight!.value as THREE.Vector3).setFromMatrixColumn(camera.matrixWorld, 0);
+		(u.uUp!.value as THREE.Vector3).setFromMatrixColumn(camera.matrixWorld, 1);
+		const extent = radii.length();
+		const along = this.vector.copy(center).sub(eye).dot(forward);
+		const near = (camera as THREE.PerspectiveCamera).near ?? 1;
+		(u.uRange!.value as THREE.Vector2).set(Math.max(along - extent, near * 1.5), along + extent);
+		u.uExtent!.value = extent;
+		mesh.visible = along + extent > near * 1.5;
 		u.uGrowth!.value = 0.25 + 0.75 * growth;
 		u.uFade!.value = Math.min(1, left / SMOKE_FADE) * Math.min(1, age * 4);
 		u.uSeed!.value = effectSeed(effect) * 0.37;
 		u.uTime!.value = this.time;
-		const local = this.vector.copy(camera.position).sub(center).divide(radii);
-		const inside = Math.max(Math.abs(local.x), Math.abs(local.y), Math.abs(local.z)) < 1.02;
-		mesh.material.side = inside ? THREE.BackSide : THREE.FrontSide;
-		mesh.material.depthTest = !inside;
 	}
 
 	private fire(index: number): Fire {
@@ -612,8 +741,10 @@ export class GameEffects {
 		}
 		for (const mesh of [...this.blasts, ...this.muzzles]) mesh.material.dispose();
 		this.impacts.dispose();
+		this.trails.dispose();
 		this.tracers.geometry.dispose();
 		(this.tracers.material as THREE.Material).dispose();
-		for (const geometry of [this.box, this.plane, this.flamePlane, this.disc]) geometry.dispose();
+		for (const geometry of [this.slices, this.plane, this.flamePlane, this.disc])
+			geometry.dispose();
 	}
 }
