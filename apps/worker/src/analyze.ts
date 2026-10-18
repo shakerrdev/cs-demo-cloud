@@ -46,6 +46,7 @@ import {
 	type TickColumns,
 	type ViewRows
 } from './parser.ts';
+import { estimateReserve, reserveIsMissing } from './ammo.ts';
 import { detectRounds, type RoundSpan } from './rounds.ts';
 import { fillCrosshairs, glovesBySteamId, settingsAt, type PlayerSettings } from './settings.ts';
 import { assignTeams } from './teams.ts';
@@ -379,6 +380,11 @@ export function analyzeDemo(
 	let scoreB = 0;
 	const roundRows: Omit<NewRound, 'demoId'>[] = [];
 	const killRows: Omit<NewKill, 'demoId'>[] = [];
+	if (reserveIsMissing(columns))
+		columns.forEach((cols, r) =>
+			estimateReserve(cols, roundPlayers[r]!.length, grids[r]!.count, [...weaponTables[r]!.keys()])
+		);
+
 	const replays: RoundReplay[] = spans.map((span, r) => {
 		const roundEvents = eventsByRound[r]!;
 		const teamASide = teamASides[r]!;
