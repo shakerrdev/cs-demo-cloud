@@ -1,3 +1,4 @@
+import type { PaintRoll } from './random.ts';
 import type { PackTextureRef } from './map-pack.ts';
 import type { Side } from './types.ts';
 
@@ -422,6 +423,7 @@ export interface SkinPaint {
 	vectors: Record<string, number[]>;
 	textures: Record<string, string>;
 	glove?: boolean;
+	rolls?: PaintRoll[];
 }
 
 export function skinWeaponKey(key: string, legacy: boolean): string {
