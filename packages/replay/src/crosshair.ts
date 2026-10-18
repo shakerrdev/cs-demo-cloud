@@ -1,27 +1,18 @@
 const DICTIONARY = 'ABCDEFGHJKLMNOPQRSTUVWXYZabcdefhijkmnopqrstuvwxyz23456789';
 
+export type Rgba = [number, number, number, number];
+
 export interface Crosshair {
 	style: number;
-	size: number;
-	gap: number;
+	length: number;
 	thickness: number;
-	outline: number;
-	outlineEnabled: boolean;
-	color: number;
-	red: number;
-	green: number;
-	blue: number;
-	alpha: number;
-	alphaEnabled: boolean;
+	gap: number;
 	dot: boolean;
 	tStyle: boolean;
-	followRecoil: boolean;
-	splitDistance: number;
-	fixedGap: number;
-	innerSplitAlpha: number;
-	outerSplitAlpha: number;
-	splitSizeRatio: number;
-	deployedWeaponGap: boolean;
+	color: Rgba;
+	outline: { width: number; color: Rgba; half: boolean } | null;
+	splitRatio: number;
+	screenHeight: number;
 }
 
 const COLORS: [number, number, number][] = [
@@ -33,60 +24,88 @@ const COLORS: [number, number, number][] = [
 ];
 
 export function shareCodeBytes(code: string): Uint8Array | null {
-	const body = code.replace(/^CSGO/, '').replaceAll('-', '');
-	if (body.length !== 25) return null;
+	const trimmed = code.trim();
+	const legacy = trimmed.startsWith('CSGO');
+	const body = trimmed.replace(/^CSGO|^CS/, '').replaceAll('-', '');
+	const size = legacy ? 18 : 32;
+	if (body.length !== (legacy ? 25 : 44)) return null;
 	let value = 0n;
 	for (const char of [...body].reverse()) {
 		const index = DICTIONARY.indexOf(char);
 		if (index < 0) return null;
 		value = value * 57n + BigInt(index);
 	}
-	const bytes = new Uint8Array(18);
-	for (let i = 17; i >= 0; i--) {
+	if (value >> BigInt(size * 8) !== 0n) return null;
+	const bytes = new Uint8Array(size);
+	for (let i = size - 1; i >= 0; i--) {
 		bytes[i] = Number(value & 0xffn);
 		value >>= 8n;
 	}
-	return bytes;
+	let sum = 0;
+	for (let i = 1; i < size; i++) sum += bytes[i]!;
+	return (sum & 0xff) === bytes[0] ? bytes : null;
 }
 
 const signed = (byte: number) => (byte > 127 ? byte - 256 : byte);
 
-export function decodeCrosshair(code: string): Crosshair | null {
-	const bytes = shareCodeBytes(code);
-	if (!bytes) return null;
-	let sum = 0;
-	for (let i = 1; i < bytes.length; i++) sum += bytes[i]!;
-	if ((sum & 0xff) !== bytes[0]) return null;
+function legacyCrosshair(bytes: Uint8Array): Crosshair {
+	const color = bytes[10]! & 7;
+	const alphaEnabled = ((bytes[13]! >> 4) & 4) !== 0;
+	const alpha = alphaEnabled ? bytes[7]! : 255;
+	const rgb = color === 5 ? [bytes[4]!, bytes[5]!, bytes[6]!] : (COLORS[color] ?? COLORS[1]!);
+	const outline = bytes[3]! / 2;
 	return {
-		gap: signed(bytes[2]!) / 10,
-		outline: bytes[3]! / 2,
-		red: bytes[4]!,
-		green: bytes[5]!,
-		blue: bytes[6]!,
-		alpha: bytes[7]!,
-		splitDistance: bytes[8]! & 0x7f,
-		followRecoil: (bytes[8]! & 0x80) !== 0,
-		fixedGap: signed(bytes[9]!) / 10,
-		color: bytes[10]! & 7,
-		outlineEnabled: (bytes[10]! & 8) !== 0,
-		innerSplitAlpha: (bytes[10]! >> 4) / 10,
-		outerSplitAlpha: (bytes[11]! & 0xf) / 10,
-		splitSizeRatio: (bytes[11]! >> 4) / 10,
-		thickness: bytes[12]! / 10,
-		dot: ((bytes[13]! >> 4) & 1) !== 0,
-		deployedWeaponGap: ((bytes[13]! >> 4) & 2) !== 0,
-		alphaEnabled: ((bytes[13]! >> 4) & 4) !== 0,
-		tStyle: ((bytes[13]! >> 4) & 8) !== 0,
 		style: (bytes[13]! & 0xf) >> 1,
-		size: (((bytes[15]! & 0x1f) << 8) + bytes[14]!) / 10
+		length: (((bytes[15]! & 0x1f) << 8) + bytes[14]!) / 10,
+		thickness: bytes[12]! / 10,
+		gap: (signed(bytes[2]!) / 10 + 4.5) * 0.5,
+		dot: ((bytes[13]! >> 4) & 1) !== 0,
+		tStyle: ((bytes[13]! >> 4) & 8) !== 0,
+		color: [rgb[0]!, rgb[1]!, rgb[2]!, alpha],
+		outline:
+			(bytes[10]! & 8) !== 0 && outline > 0
+				? { width: (outline * 480) / 1080, color: [0, 0, 0, alpha], half: false }
+				: null,
+		splitRatio: 1,
+		screenHeight: 480
 	};
 }
 
+function pixelCrosshair(bytes: Uint8Array): Crosshair | null {
+	if (bytes[1] !== 1) return null;
+	const screenHeight = bytes[2]! | (bytes[3]! << 8);
+	if (!screenHeight) return null;
+	const flags = bytes[4]!;
+	const gap = bytes[14]! | (bytes[15]! << 8);
+	const bits = (bytes[18]! | (bytes[19]! << 8) | (bytes[20]! << 16) | (bytes[21]! << 24)) >>> 0;
+	const mode = bytes[13]! >> 6;
+	return {
+		style: Math.min(flags & 0x1f, 9),
+		length: bytes[16]!,
+		thickness: bytes[13]! & 0x3f,
+		gap: gap >= 0x8000 ? gap - 0x10000 : gap,
+		dot: ((flags >> 6) & 1) !== 0,
+		tStyle: ((flags >> 7) & 1) !== 0,
+		color: [bytes[5]!, bytes[6]!, bytes[7]!, bytes[8]!],
+		outline:
+			mode > 0
+				? { width: 1, color: [bytes[9]!, bytes[10]!, bytes[11]!, bytes[12]!], half: mode === 2 }
+				: null,
+		splitRatio: Math.min((bits >>> 21) & 0x7f, 100) / 100,
+		screenHeight
+	};
+}
+
+export function decodeCrosshair(code: string): Crosshair | null {
+	const bytes = shareCodeBytes(code);
+	if (!bytes) return null;
+	return bytes.length === 18 ? legacyCrosshair(bytes) : pixelCrosshair(bytes);
+}
+
+export function rgbaCss([r, g, b, a]: Rgba): string {
+	return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+}
+
 export function crosshairColor(crosshair: Crosshair): string {
-	const [r, g, b] =
-		crosshair.color === 5
-			? [crosshair.red, crosshair.green, crosshair.blue]
-			: (COLORS[crosshair.color] ?? COLORS[1]!);
-	const alpha = crosshair.alphaEnabled ? crosshair.alpha / 255 : 1;
-	return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+	return rgbaCss(crosshair.color);
 }
