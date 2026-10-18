@@ -60,6 +60,13 @@ export interface ReplayGrenade {
 	path: number[];
 }
 
+export interface SmokeVolume {
+	min: [number, number, number];
+	cell: number;
+	dims: [number, number, number];
+	cells: number[];
+}
+
 export interface ReplayEffect {
 	type: GrenadeType;
 	thrower: number;
@@ -68,6 +75,7 @@ export interface ReplayEffect {
 	x: number;
 	y: number;
 	z: number;
+	volume?: SmokeVolume;
 }
 
 export interface ReplayBombEvent {

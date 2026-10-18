@@ -15,6 +15,7 @@ import type { Storage } from '@cs-demo-cloud/shared';
 import { analyzeDemo } from './analyze.ts';
 import { openDemoFile } from './decompress.ts';
 import { computeFalls, computeImpacts } from './impacts.ts';
+import { computeSmokeVolumes } from './smokes.ts';
 import { ensureMapAssets } from './map-assets.ts';
 import { MeshRaycaster } from './raycast.ts';
 
@@ -54,7 +55,10 @@ export async function processDemo(demo: Demo, { db, storage, log }: WorkerContex
 		});
 		for (const replay of analyzed.replays) {
 			replay.meta.impacts = computeImpacts(replay, raycaster);
-			if (raycaster) computeFalls(replay, raycaster);
+			if (raycaster) {
+				computeFalls(replay, raycaster);
+				computeSmokeVolumes(replay, raycaster);
+			}
 			delete replay.meta.bullets;
 		}
 		step('impacts');
