@@ -11,6 +11,7 @@ import {
 	weaponShootName,
 	type GrenadeType,
 	itemWeaponKey,
+	rollPaint,
 	skinWeaponKey,
 	type PlayerPackManifest,
 	type ReplaySkin,
@@ -1297,8 +1298,15 @@ function paintExtras(
 	paint: SkinsPackManifest['paints'][string],
 	base: SkinsPackManifest['weapons'][string]
 ): PaintExtras {
-	const { ints, floats, vectors, textures } = paint;
-	const offset = (name: string) => [vectors[name]?.[0] ?? 0, vectors[name]?.[1] ?? 0];
+	const { ints, vectors, textures } = paint;
+	const rolled = paint.rolls ? rollPaint(paint.rolls, skin.seed) : null;
+	const floats = { ...paint.floats };
+	for (const [name, values] of rolled ?? [])
+		if (values.has(0) && !vectors[name]) floats[name] = values.get(0)!;
+	const offset = (name: string) => [
+		rolled?.get(name)?.get(0) ?? vectors[name]?.[0] ?? 0,
+		rolled?.get(name)?.get(1) ?? vectors[name]?.[1] ?? 0
+	];
 	const sizeScale = ints.g_bIgnoreWeaponSizeScale === 1 ? 1 : base.uvScale;
 	const customNormal = ints.F_OVERRIDE_NORMAL === 1 || ints.g_bUseNormalMap === 1;
 	const ownMasks = ints.g_bOverrideDefaultMasks === 1 ? textures.g_tPaintByNumberMasks : undefined;
