@@ -54,5 +54,7 @@ test('sorts sound keys into groups and converts the game fov', () => {
 	assert.equal(soundGroupOf('step:CT'), 'footsteps');
 	assert.equal(soundGroupOf('bounce:he'), 'grenades');
 	assert.equal(soundGroupOf('radio:ctwin'), 'announcer');
+	assert.equal(soundGroupOf('clipin:ak47'), 'reloads');
+	assert.equal(soundGroupOf('ambient:de_dust2'), 'ambience');
 	assert.ok(Math.abs(horizontalToVerticalFov(90) - 73.74) < 0.01);
 });

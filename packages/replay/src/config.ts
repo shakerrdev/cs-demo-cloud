@@ -7,7 +7,10 @@ export const SOUND_GROUPS = [
 	'bomb',
 	'kills',
 	'hits',
+	'impacts',
 	'weapon',
+	'reloads',
+	'ambience',
 	'music',
 	'announcer'
 ] as const;
@@ -79,12 +82,20 @@ export const SOUND_GROUP_NAMES: Record<SoundGroup, string> = {
 	bomb: 'Bomb (plant, beeps, defuse, explosion)',
 	kills: 'Kills and deaths',
 	hits: 'Hits',
+	impacts: 'Bullet impacts',
 	weapon: 'POV weapon (draw and zoom)',
+	reloads: 'Reloads',
+	ambience: 'Map ambience',
 	music: 'Music kit',
 	announcer: 'Announcer'
 };
 
-const GROUP_VOLUMES: Partial<Record<SoundGroup, number>> = { music: 0.45, announcer: 0.9 };
+const GROUP_VOLUMES: Partial<Record<SoundGroup, number>> = {
+	music: 0.45,
+	announcer: 0.9,
+	ambience: 0.6,
+	impacts: 0.8
+};
 
 export const defaultConfig: AppConfig = {
 	audio: {
@@ -469,6 +480,13 @@ export function soundGroupOf(key: string): SoundGroup {
 			return 'kills';
 		case 'hit':
 			return 'hits';
+		case 'impact':
+			return 'impacts';
+		case 'clipout':
+		case 'clipin':
+			return 'reloads';
+		case 'ambient':
+			return 'ambience';
 		case 'draw':
 		case 'zoom':
 			return 'weapon';
