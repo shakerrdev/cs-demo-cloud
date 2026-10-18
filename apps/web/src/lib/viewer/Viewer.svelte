@@ -594,6 +594,10 @@
 	});
 
 	$effect(() => {
+		audio?.setMap(map);
+	});
+
+	$effect(() => {
 		audio?.setVolume(config.audio.master, !soundOn || !config.audio.enabled);
 	});
 

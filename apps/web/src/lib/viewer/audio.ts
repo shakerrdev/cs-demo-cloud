@@ -1,6 +1,8 @@
 import {
 	FLAG_ALIVE,
 	FLAG_SCOPED,
+	IMPACT_STRIDE,
+	IMPACT_WALL,
 	defaultConfig,
 	soundGroupOf,
 	weaponKey,
@@ -20,6 +22,19 @@ const MAX_GAP_SECONDS = 0.75;
 const LOCAL_VOLUME = 0.6;
 const SNIPERS = new Set(['awp', 'ssg08', 'scar20', 'g3sg1']);
 const SCOPED_RIFLES = new Set(['aug', 'sg556']);
+const PISTOLS = new Set([
+	'glock',
+	'hkp2000',
+	'usp_silencer',
+	'p250',
+	'fiveseven',
+	'tec9',
+	'cz75a',
+	'deagle',
+	'elite',
+	'revolver'
+]);
+const AMBIENT_VOLUME = 0.35;
 export const EAR_HEIGHT = 64;
 
 export interface Listener {
@@ -145,6 +160,29 @@ export function soundCues(replay: RoundReplay, roundSeconds = 115, bombSeconds =
 		const [x, y, z] = [columns.x[f]!, columns.y[f]!, columns.z[f]! + 60];
 		add(tick, `shot:${weapon}`, x, y, z, 3);
 		add(tick, `far:${weapon}`, x, y, z, 2);
+	}
+
+	const impacts = meta.impacts ?? [];
+	for (let i = 0; i + IMPACT_STRIDE - 1 < impacts.length; i += IMPACT_STRIDE) {
+		if (impacts[i + 8] !== IMPACT_WALL) continue;
+		add(impacts[i]!, 'impact:wall', impacts[i + 2]!, impacts[i + 3]!, impacts[i + 4]!, 1);
+	}
+
+	const reloads = meta.reloads ?? [];
+	for (let i = 0; i + 1 < reloads.length; i += 2) {
+		const tick = reloads[i]!;
+		const player = reloads[i + 1]!;
+		const f = frameIndex(replay, player, tick);
+		const weapon = weaponKey(meta.weapons[columns.weapon[f]!] ?? '');
+		if (!weapon) continue;
+		const [x, y, z] = [columns.x[f]!, columns.y[f]!, columns.z[f]! + 50];
+		const [out, inn] = PISTOLS.has(weapon)
+			? [0.25, 0.85]
+			: SNIPERS.has(weapon)
+				? [0.5, 1.7]
+				: [0.35, 1.25];
+		add(tick + Math.round(out * meta.tickRate), `clipout:${weapon}`, x, y, z, 1);
+		add(tick + Math.round(inn * meta.tickRate), `clipin:${weapon}`, x, y, z, 1);
 	}
 
 	for (const kill of meta.kills) {
@@ -295,6 +333,8 @@ export class ReplayAudio {
 	private listener: Listener | null = null;
 	private music: AudioBufferSourceNode | null = null;
 	private config: AppConfig = defaultConfig;
+	private map: string | null = null;
+	private ambient: { source: AudioBufferSourceNode; gain: GainNode; map: string } | null = null;
 
 	constructor(manifest: PlayerPackManifest, version: string) {
 		this.sounds = manifest.sounds ?? {};
@@ -320,6 +360,10 @@ export class ReplayAudio {
 			for (const key of ['shot:ak47', 'shot:m4a1_silencer', 'step:CT', 'step:T']) this.preload(key);
 		}
 		if (this.context.state === 'suspended') void this.context.resume();
+	}
+
+	setMap(map: string) {
+		this.map = map;
 	}
 
 	setConfig(config: AppConfig) {
@@ -390,6 +434,37 @@ export class ReplayAudio {
 			}
 		}
 		this.updateLoops(replay, tick, playing && speed <= 4);
+		this.updateAmbient(playing && speed <= 4);
+	}
+
+	private updateAmbient(active: boolean) {
+		const context = this.context!;
+		const key = this.map ? `ambient:${this.map}` : null;
+		const sound = key ? this.sounds[key] : undefined;
+		if (this.ambient && this.ambient.map !== this.map) {
+			const old = this.ambient;
+			old.gain.gain.setTargetAtTime(0, context.currentTime, 0.2);
+			old.source.stop(context.currentTime + 1);
+			this.ambient = null;
+		}
+		if (!sound || !key) return;
+		if (!this.ambient) {
+			const gain = context.createGain();
+			gain.gain.value = 0;
+			gain.connect(this.master!);
+			const source = context.createBufferSource();
+			source.loop = true;
+			const ambient = { source, gain, map: this.map! };
+			this.ambient = ambient;
+			void this.buffer(sound.files[0]!).then((data) => {
+				if (!data || this.ambient !== ambient) return;
+				source.buffer = data;
+				source.connect(gain);
+				source.start(0, Math.random() * data.duration);
+			});
+		}
+		const target = active ? AMBIENT_VOLUME * sound.volume * this.groupGain(key) : 0;
+		this.ambient.gain.gain.setTargetAtTime(target, context.currentTime, 0.3);
 	}
 
 	private placeListener(context: AudioContext, listener: Listener) {
@@ -587,6 +662,8 @@ export class ReplayAudio {
 
 	dispose() {
 		this.stopMusic();
+		this.ambient?.source.disconnect();
+		this.ambient = null;
 		for (const loop of this.loops.values()) loop.source.disconnect();
 		this.loops.clear();
 		void this.context?.close();
