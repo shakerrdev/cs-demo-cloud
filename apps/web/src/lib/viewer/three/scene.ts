@@ -886,7 +886,6 @@ export class ReplayScene {
 						...this.config,
 						pov: {
 							...pov,
-							viewmodelFov: settings[0],
 							offsetX: settings[1],
 							offsetY: settings[2],
 							offsetZ: settings[3]
