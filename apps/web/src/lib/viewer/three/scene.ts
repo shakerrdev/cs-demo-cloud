@@ -256,10 +256,24 @@ export class ReplayScene {
 		};
 	}
 
-	get stats(): { programs: number; textures: number; geometries: number } {
+	get stats(): {
+		programs: number;
+		failedPrograms: string[];
+		textureUnits: number;
+		textures: number;
+		geometries: number;
+	} {
 		const info = this.renderer.info;
+		const gl = this.renderer.getContext();
 		return {
 			programs: info.programs?.length ?? 0,
+			failedPrograms: (info.programs ?? [])
+				.filter(
+					(program) =>
+						(program as { diagnostics?: { runnable: boolean } }).diagnostics?.runnable === false
+				)
+				.map((program) => program.name),
+			textureUnits: gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number,
 			textures: info.memory.textures,
 			geometries: info.memory.geometries
 		};
