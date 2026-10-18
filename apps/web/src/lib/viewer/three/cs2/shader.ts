@@ -435,7 +435,7 @@ vec3 applyFog(vec3 color) {
 #endif
 #ifdef FOG_CUBE
 	if (dot(relative, relative) > uFogMisc.x || vWorld.z > uFogMisc.y) {
-		float distancePart = pow(max(length(relative.xy) * uFogDistance.y + uFogDistance.x, 0.0001), uFogDistance.w);
+		float distancePart = pow(max(length(relative) * uFogDistance.y + uFogDistance.x, 0.0001), uFogDistance.w);
 		float heightPart = pow(max(vWorld.z * uFogHeight.y + uFogHeight.x, 0.0001), uFogHeight.z);
 		float blend = saturate1(distancePart) * saturate1(heightPart);
 		float lod = saturate1(1.0 - blend * uFogDistance.z) * uFogHeight.w;
