@@ -224,19 +224,34 @@
 	{#if focused}
 		<div class="money">${focused.money}</div>
 		<div class="status" class:dead={!focused.alive}>
-			<span class="armor"
-				><i class="shield">{focused.helmet ? '⛑' : '◈'}</i>{focused.alive ? focused.armor : 0}</span
-			>
-			<span class="hp" class:low={focused.health <= 20}>{focused.alive ? focused.health : 0}</span>
-			<span class="divider"></span>
-			<span class="who" style:--side={sideColors[focused.side]}>{focused.name}</span>
-			<span class="divider"></span>
-			<span class="gun">{focused.alive ? focused.weapon : 'Dead'}</span>
-			{#if focused.alive && focused.clip !== null && weaponClass(weaponKey(focused.weapon)) !== 'knife'}
-				<span class="ammo"
-					><b>{focused.clip}</b><span class="sep">|</span><span>{focused.reserve ?? 0}</span></span
+			<div class="vitals">
+				<span class="shield" class:empty={!focused.alive || focused.armor <= 0}>
+					<svg viewBox="0 0 20 24" aria-hidden="true"
+						><path d="M10 1 2 4v7c0 6 3.6 10.2 8 12 4.4-1.8 8-6 8-12V4z" /></svg
+					>
+					{#if focused.helmet}<i class="helmet"></i>{/if}
+					<b>{focused.alive ? focused.armor : 0}</b>
+				</span>
+				<span class="hp" class:low={focused.health <= 20}
+					><b>{focused.alive ? focused.health : 0}</b><i
+						style:width="{focused.alive ? focused.health : 0}%"
+					></i></span
 				>
-			{/if}
+			</div>
+			<div class="plate">
+				<span class="who">{focused.name}</span>
+				<span class="emblem" style:--side={sideColors[focused.side]}
+					>{focused.side === 'CT' ? 'CT' : 'T'}</span
+				>
+				<span class="gun">{focused.alive ? focused.weapon : 'Dead'}</span>
+			</div>
+			<div class="ammo">
+				{#if focused.alive && focused.clip !== null && weaponClass(weaponKey(focused.weapon)) !== 'knife'}
+					<b>{focused.clip}</b><span class="sep"></span><span class="reserve"
+						>{focused.reserve ?? 0}</span
+					><i class="bullets"></i>
+				{/if}
+			</div>
 		</div>
 		{#if focused.alive && slots.length}
 			<ul class="slots">
@@ -508,21 +523,15 @@
 	}
 
 	.status {
+		--accent: #eeee9a;
 		position: absolute;
 		left: 50%;
-		bottom: 0.5em;
+		bottom: 0.375em;
 		transform: translateX(-50%);
 		display: flex;
-		align-items: center;
-		gap: 0.75em;
-		padding: 0.3125em 0.875em;
-		background: linear-gradient(
-			90deg,
-			rgb(0 0 0 / 0),
-			rgb(0 0 0 / 0.55) 15%,
-			rgb(0 0 0 / 0.55) 85%,
-			rgb(0 0 0 / 0)
-		);
+		align-items: stretch;
+		gap: 1em;
+		color: var(--accent);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
@@ -531,64 +540,136 @@
 		opacity: 0.6;
 	}
 
-	.armor {
+	.vitals,
+	.ammo {
 		display: flex;
 		align-items: center;
-		gap: 0.25em;
-		font-size: 0.9375em;
-		color: #cfd5dc;
+		gap: 0.625em;
+		min-width: 6.5em;
+	}
+
+	.vitals {
+		justify-content: flex-end;
 	}
 
 	.shield {
-		font-style: normal;
-		font-size: 0.8125em;
+		position: relative;
+		display: grid;
+		place-items: center;
+		width: 1.6em;
+		height: 1.9em;
+	}
+
+	.shield svg {
+		position: absolute;
+		inset: 0;
+		fill: rgb(0 0 0 / 0.35);
+		stroke: var(--accent);
+		stroke-width: 1.4;
+	}
+
+	.shield.empty {
+		opacity: 0.4;
+	}
+
+	.shield b {
+		position: relative;
+		font-size: 0.6em;
+		font-weight: 700;
+	}
+
+	.helmet {
+		position: absolute;
+		top: -0.3em;
+		width: 0.9em;
+		height: 0.45em;
+		border-radius: 0.45em 0.45em 0 0;
+		background: var(--accent);
 	}
 
 	.hp {
-		font-size: 1.375em;
+		display: grid;
+		gap: 0.125em;
+		min-width: 2.4em;
+	}
+
+	.hp b {
+		font-size: 1.75em;
 		font-weight: 700;
-		text-decoration: underline;
-		text-decoration-thickness: 0.125em;
-		text-underline-offset: 0.1875em;
+		line-height: 1;
+	}
+
+	.hp i {
+		height: 0.15em;
+		background: currentColor;
 	}
 
 	.hp.low {
 		color: #ff4a3d;
 	}
 
-	.divider {
-		width: 1px;
-		height: 1.375em;
-		background: rgb(255 255 255 / 0.3);
+	.plate {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		gap: 0.75em;
+		min-width: 22em;
+		padding: 0.25em 0.75em;
+		border-inline: 0.0625em solid var(--accent);
+		background: linear-gradient(90deg, rgb(0 0 0 / 0.6), rgb(0 0 0 / 0.35) 50%, rgb(0 0 0 / 0.6));
 	}
 
 	.who {
-		min-width: 5.625em;
-		font-size: 0.8125em;
+		font-size: 0.75em;
 		font-weight: 600;
+	}
+
+	.emblem {
+		display: grid;
+		place-items: center;
+		width: 2.1em;
+		height: 2.1em;
+		border: 0.125em solid var(--accent);
+		border-radius: 50%;
+		background: #050607;
 		color: var(--side);
+		font-size: 0.875em;
+		font-weight: 800;
 	}
 
 	.gun {
-		font-size: 0.75em;
-		color: #dfe4ea;
-	}
-
-	.ammo {
-		display: flex;
-		align-items: baseline;
-		gap: 0.375em;
-		font-size: 0.8125em;
-		color: #c6ccd3;
-	}
-
-	.ammo b {
-		font-size: 1.375em;
+		justify-self: end;
+		font-size: 0.875em;
+		font-weight: 600;
 		color: #f2f4f6;
 	}
 
+	.ammo b {
+		font-size: 1.75em;
+		font-weight: 700;
+		line-height: 1;
+	}
+
 	.ammo .sep {
-		color: rgb(255 255 255 / 0.35);
+		width: 0.0625em;
+		height: 1.25em;
+		background: var(--accent);
+		opacity: 0.6;
+	}
+
+	.reserve {
+		font-size: 0.9375em;
+		font-weight: 600;
+	}
+
+	.bullets {
+		width: 0.9em;
+		height: 0.9em;
+		background: repeating-linear-gradient(
+			180deg,
+			var(--accent) 0 0.12em,
+			transparent 0.12em 0.22em
+		);
 	}
 
 	.slots {
