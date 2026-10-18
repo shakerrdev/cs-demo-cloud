@@ -5,7 +5,8 @@ import {
 	IMPACT_FLESH,
 	IMPACT_MISS,
 	IMPACT_WALL,
-	type RoundReplay
+	type RoundReplay,
+	unpackYaw
 } from '@cs-demo-cloud/replay';
 import type { MeshRaycaster } from './raycast.ts';
 
@@ -161,4 +162,44 @@ export function computeImpacts(replay: RoundReplay, raycaster: MeshRaycaster | n
 		}
 	}
 	return impacts;
+}
+
+export function computeFalls(replay: RoundReplay, raycaster: MeshRaycaster): void {
+	const { meta, columns } = replay;
+	for (const kill of meta.kills) {
+		const frame = Math.max(
+			0,
+			Math.min(meta.frameCount - 1, Math.round((kill.tick - meta.startTick) / meta.tickStep))
+		);
+		let dx = 0;
+		let dy = 0;
+		if (kill.attacker >= 0 && kill.attacker !== kill.victim) {
+			const at = kill.attacker * meta.frameCount + frame;
+			dx = kill.x - columns.x[at]!;
+			dy = kill.y - columns.y[at]!;
+		}
+		if (Math.hypot(dx, dy) < 1) {
+			const yaw = (unpackYaw(columns.yaw[kill.victim * meta.frameCount + frame]!) * Math.PI) / 180;
+			dx = -Math.cos(yaw);
+			dy = -Math.sin(yaw);
+		}
+		const length = Math.hypot(dx, dy);
+		const direction: Vec = [dx / length, dy / length, 0];
+		const chest: Vec = [kill.x, kill.y, kill.z + 40];
+		const wall = raycaster.cast(chest, direction, 96);
+		const room = Math.max(0, (wall?.distance ?? 96) - 14);
+		const floors = [0, room * 0.5, room].map((distance) => {
+			const hit = raycaster.cast(
+				[chest[0] + direction[0] * distance, chest[1] + direction[1] * distance, chest[2]],
+				[0, 0, -1],
+				400
+			);
+			return hit ? chest[2] - hit.distance : kill.z;
+		});
+		kill.fall = [
+			Math.round((Math.atan2(direction[1], direction[0]) * 180) / Math.PI),
+			Math.round(room),
+			Math.round(Math.max(...floors) * 10) / 10
+		];
+	}
 }

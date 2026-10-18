@@ -51,6 +51,7 @@ export interface ReplayKill {
 	x: number;
 	y: number;
 	z: number;
+	fall?: [yaw: number, room: number, floor: number];
 }
 
 export interface ReplayGrenade {

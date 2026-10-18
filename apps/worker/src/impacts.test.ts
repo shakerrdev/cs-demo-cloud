@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { quantizeMesh } from '@cs-demo-cloud/replay';
-import { bulletDirections } from './impacts.ts';
+import { createColumns, quantizeMesh, type RoundReplay } from '@cs-demo-cloud/replay';
+import { bulletDirections, computeFalls } from './impacts.ts';
 import { MeshRaycaster } from './raycast.ts';
 
 function wall(x: number): MeshRaycaster {
@@ -57,4 +57,30 @@ test('spread is deterministic per seed and stays inside the cone', () => {
 	assert.equal(a.length, 6);
 	for (const d of a) assert.ok(Math.hypot(d[1], d[2]) / d[0] <= 0.0601);
 	assert.notDeepEqual(a[0], bulletDirections(0, 0, 0.05, 0.01, 99, 1)[0]);
+});
+
+test('bodies fall away from the shooter until the wall and land on the floor', () => {
+	const vertices = new Float32Array([
+		-500, -500, -10, 500, -500, -10, 500, 500, -10, -500, 500, -10, 50, -100, -10, 50, 100, -10, 50,
+		100, 200, 50, -100, 200
+	]);
+	const raycaster = new MeshRaycaster(
+		quantizeMesh(vertices, new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]))
+	);
+	const columns = createColumns(2);
+	columns.x.set([-100, 0]);
+	const replay = {
+		meta: {
+			startTick: 0,
+			tickStep: 4,
+			frameCount: 1,
+			kills: [{ tick: 0, attacker: 0, victim: 1, x: 0, y: 0, z: 0 }]
+		},
+		columns
+	} as unknown as RoundReplay;
+	computeFalls(replay, raycaster);
+	const [yaw, room, floor] = replay.meta.kills[0]!.fall!;
+	assert.equal(yaw, 0);
+	assert.equal(room, 36);
+	assert.ok(Math.abs(floor + 10) < 0.5);
 });
