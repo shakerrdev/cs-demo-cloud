@@ -636,7 +636,9 @@ export async function exportSkins(
 		const glovePaint = async (item: number, paint: number) => {
 			const kit = kits.get(paint);
 			if (!kit || !(await gloveModel(item)) || paints[paint]) return;
-			const candidates = [kit.vmat, `gloves/paints/${kit.name}.vmat`].filter(
+			const recipe = kit.composite ? await blocks.read(kit.composite) : null;
+			const composite = recipe ? compositePaint(recipe) : null;
+			const candidates = [kit.vmat, composite?.material, `gloves/paints/${kit.name}.vmat`].filter(
 				(path): path is string => Boolean(path) && vpk.has(`${path}_c`)
 			);
 			const data = candidates[0] ? await blocks.read(candidates[0]) : null;
@@ -645,6 +647,10 @@ export async function exportSkins(
 				return;
 			}
 			const params = materialParams(data);
+			if (!params.shader.includes('customglove') || params.shader.includes('preview')) {
+				log(`  glove paint ${kit.name} uses ${params.shader}, not supported yet`);
+				return;
+			}
 			const picked = Object.fromEntries(
 				Object.entries(params.textures).filter(([name]) => name in GLOVE_TEXTURES)
 			);
