@@ -122,6 +122,15 @@ curl -H "Authorization: Bearer cdc_…" \
 
 The answer is `{"id": "…", "duplicate": false}` (201, or 200 when the file is already in the library). Tokens work on every `/api/` route and nowhere else, and those routes answer CORS requests from any site, so a page script on FACEIT can call them directly. Demos uploaded with a token are marked as coming from an extension.
 
+### Exporting demos
+
+Every match page has a **Download .dem** button that gives back the actual demo file, ready for CS2's `replays` folder or another demo tool. Demos stored compressed (`.dem.bz2` from Valve, `.dem.gz`, `.dem.zst`) are decompressed on the fly; the second button hands over the file exactly as it was uploaded, which is smaller. Scripts can do the same with a token:
+
+```sh
+curl -OJ -H "Authorization: Bearer cdc_…" https://demos.example.com/api/demos/<id>/file
+curl -OJ -H "Authorization: Bearer cdc_…" "https://demos.example.com/api/demos/<id>/file?original"
+```
+
 ## Auto-import from Valve
 
 The **Auto-import** page downloads new Premier, Competitive and Wingman matches on its own:
