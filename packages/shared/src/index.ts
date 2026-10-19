@@ -1,4 +1,5 @@
 export * from './crypto.ts';
+export * from './demo-stream.ts';
 export * from './incoming.ts';
 export * from './map-packs.ts';
 export * from './owner.ts';

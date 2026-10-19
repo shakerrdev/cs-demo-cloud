@@ -11,6 +11,10 @@
 		"test": "node --test src/*.test.ts"
 	},
 	"dependencies": {
-		"csgo-sharecode": "^7.0.1"
+		"csgo-sharecode": "^7.0.1",
+		"unbzip2-stream": "^1.4.3"
+	},
+	"devDependencies": {
+		"@types/unbzip2-stream": "^1.4.3"
 	}
 }
