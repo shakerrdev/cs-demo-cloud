@@ -18,6 +18,27 @@
 	});
 
 	let confirmAll = $state(false);
+	let selecting = $state(false);
+	let selected = $state<string[]>([]);
+
+	const selectedSet = $derived(new Set(selected));
+	const selectedBytes = $derived(
+		data.demos.reduce((sum, { demo }) => (selectedSet.has(demo.id) ? sum + demo.fileSize : sum), 0)
+	);
+	const allSelected = $derived(selected.length === data.demos.length);
+
+	function toggleAll() {
+		selected = allSelected ? [] : data.demos.map(({ demo }) => demo.id);
+	}
+
+	function stopSelecting() {
+		selecting = false;
+		selected = [];
+	}
+
+	function exported() {
+		setTimeout(stopSelecting, 500);
+	}
 
 	const statusText = { queued: 'Queued', processing: 'Parsing…', ready: 'Ready', failed: 'Failed' };
 </script>
@@ -26,7 +47,34 @@
 
 <div class="heading">
 	<h1>Matches</h1>
-	{#if data.isAdmin && data.demos.length}
+	{#if selecting}
+		<form
+			method="POST"
+			action="/api/demos/export"
+			id="export-form"
+			class="confirm"
+			onsubmit={exported}
+		>
+			<span class="count">
+				{selected.length} selected{selected.length ? ` · ${formatBytes(selectedBytes)}` : ''}
+			</span>
+			<button type="button" onclick={toggleAll}>{allSelected ? 'Select none' : 'Select all'}</button
+			>
+			<button type="submit" class="primary" disabled={!selected.length}>Download zip</button>
+			<button type="button" onclick={stopSelecting}>Cancel</button>
+		</form>
+	{:else if data.demos.length}
+		<div class="tools">
+			<button type="button" class="button small" onclick={() => (selecting = true)}
+				>Export demos</button
+			>
+			{@render reparseAll()}
+		</div>
+	{/if}
+</div>
+
+{#snippet reparseAll()}
+	{#if data.isAdmin}
 		{#if confirmAll}
 			<form method="POST" action="?/reparseAll" class="confirm">
 				<span>Parse all {data.demos.length} demos again?</span>
@@ -39,7 +87,7 @@
 			>
 		{/if}
 	{/if}
-</div>
+{/snippet}
 
 {#if data.demos.length === 0}
 	<p class="empty">No demos yet. Drop a few .dem files here to get started.</p>
@@ -47,43 +95,20 @@
 	<ul class="matches">
 		{#each data.demos as { demo, match } (demo.id)}
 			<li>
-				<a href="/demos/{demo.id}">
-					<span class="thumb">
-						{#if match}
-							<img
-								src="/maps/{match.map}.png"
-								alt=""
-								loading="lazy"
-								onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
-							/>
-						{/if}
-					</span>
-					<span class="main">
-						<span class="title">{match ? mapTitle(match.map) : demo.fileName}</span>
-						<span class="meta">
-							{#if match}
-								{platformName(match.platform)} · {formatDuration(match.durationSeconds)} ·
-							{/if}
-							{formatDate(demo.fileModifiedAt ?? demo.createdAt)}
-							{#if !match}· {formatBytes(demo.fileSize)}{/if}
-						</span>
-					</span>
-					{#if match && demo.status !== 'ready'}
-						<span class="status {demo.status}" title={demo.error ?? undefined}>
-							{statusText[demo.status]}
-						</span>
-					{:else if match}
-						<span class="score">
-							<span class:win={match.scoreA > match.scoreB}>{match.scoreA}</span>
-							<span class="sep">:</span>
-							<span class:win={match.scoreB > match.scoreA}>{match.scoreB}</span>
-						</span>
-					{:else}
-						<span class="status {demo.status}" title={demo.error ?? undefined}>
-							{statusText[demo.status]}
-						</span>
-					{/if}
-				</a>
+				{#if selecting}
+					<label class="row" class:picked={selectedSet.has(demo.id)}>
+						<input
+							type="checkbox"
+							name="id"
+							value={demo.id}
+							form="export-form"
+							bind:group={selected}
+						/>
+						{@render row(demo, match)}
+					</label>
+				{:else}
+					<a class="row" href="/demos/{demo.id}">{@render row(demo, match)}</a>
+				{/if}
 				{#if demo.status === 'failed' && demo.error}
 					<p class="error">{demo.error}</p>
 				{/if}
@@ -91,6 +116,47 @@
 		{/each}
 	</ul>
 {/if}
+
+{#snippet row(
+	demo: (typeof data.demos)[number]['demo'],
+	match: (typeof data.demos)[number]['match']
+)}
+	<span class="thumb">
+		{#if match}
+			<img
+				src="/maps/{match.map}.png"
+				alt=""
+				loading="lazy"
+				onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
+			/>
+		{/if}
+	</span>
+	<span class="main">
+		<span class="title">{match ? mapTitle(match.map) : demo.fileName}</span>
+		<span class="meta">
+			{#if match}
+				{platformName(match.platform)} · {formatDuration(match.durationSeconds)} ·
+			{/if}
+			{formatDate(demo.fileModifiedAt ?? demo.createdAt)}
+			{#if !match}· {formatBytes(demo.fileSize)}{/if}
+		</span>
+	</span>
+	{#if match && demo.status !== 'ready'}
+		<span class="status {demo.status}" title={demo.error ?? undefined}>
+			{statusText[demo.status]}
+		</span>
+	{:else if match}
+		<span class="score">
+			<span class:win={match.scoreA > match.scoreB}>{match.scoreA}</span>
+			<span class="sep">:</span>
+			<span class:win={match.scoreB > match.scoreA}>{match.scoreB}</span>
+		</span>
+	{:else}
+		<span class="status {demo.status}" title={demo.error ?? undefined}>
+			{statusText[demo.status]}
+		</span>
+	{/if}
+{/snippet}
 
 <style>
 	.heading {
@@ -131,7 +197,19 @@
 		list-style: none;
 	}
 
-	a {
+	.tools {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.count {
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.row {
 		display: grid;
 		grid-template-columns: 56px minmax(0, 1fr) auto;
 		align-items: center;
@@ -143,7 +221,27 @@
 		text-decoration: none;
 	}
 
-	a[href]:hover {
+	label.row {
+		grid-template-columns: 18px 56px minmax(0, 1fr) auto;
+		color: inherit;
+		font-size: inherit;
+		font-weight: inherit;
+		cursor: pointer;
+	}
+
+	label.row input {
+		width: 18px;
+		height: 18px;
+		margin: 0;
+		accent-color: var(--accent);
+	}
+
+	label.row.picked {
+		border-color: var(--border);
+	}
+
+	a[href]:hover,
+	label.row:hover {
 		border-color: var(--border);
 		background: var(--surface-2);
 	}
