@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mapTitle, type TeamKey } from '@cs-demo-cloud/replay';
-	import { formatDate, formatDuration, platformName } from '#lib/format.ts';
+	import { formatBytes, formatDate, formatDuration, platformName } from '#lib/format.ts';
 	import Viewer from '#lib/viewer/Viewer.svelte';
 	import type { PageProps } from './$types';
 
@@ -42,6 +42,7 @@
 	</p>
 	<a href="/">Back to matches</a>
 	<div class="actions">
+		{@render downloads()}
 		{#if data.demo.status !== 'processing'}
 			<form method="POST" action="?/reparse">
 				<button type="submit">Parse again</button>
@@ -148,12 +149,26 @@
 		<span class="file">
 			{data.demo.fileName}{details.uploader ? ` · uploaded by ${details.uploader}` : ''}
 		</span>
+		{@render downloads()}
 		<form method="POST" action="?/reparse">
 			<button type="submit">Parse again</button>
 		</form>
 		{@render deleteForm()}
 	</footer>
 {/if}
+
+{#snippet downloads()}
+	<a class="download" href="/api/demos/{data.demo.id}/file" download>Download .dem</a>
+	{#if data.demo.format !== 'dem'}
+		<a
+			class="download"
+			href="/api/demos/{data.demo.id}/file?original"
+			download
+			title="The file as it was uploaded, still compressed"
+			>.dem.{data.demo.format} · {formatBytes(data.demo.fileSize)}</a
+		>
+	{/if}
+{/snippet}
 
 {#snippet deleteForm()}
 	{#if data.canDelete}
@@ -309,15 +324,16 @@
 
 	.actions {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		justify-content: space-between;
 		gap: 12px;
 		margin-top: 24px;
 		color: var(--muted);
 		font-size: 13px;
 	}
 
-	.actions button {
+	.actions button,
+	.actions .download {
 		padding: 6px 12px;
 		border: 1px solid var(--border);
 		border-radius: 8px;
@@ -325,6 +341,15 @@
 		color: var(--text);
 		font: inherit;
 		cursor: pointer;
+	}
+
+	.actions .download {
+		text-decoration: none;
+	}
+
+	.actions .download:hover,
+	.actions button:hover {
+		background: var(--surface-2);
 	}
 
 	.actions .file {
