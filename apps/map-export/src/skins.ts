@@ -933,9 +933,12 @@ export async function patchSkinRolls(options: {
 	const { csgo, log } = options;
 	const vpkPath = join(csgo, 'pak01_dir.vpk');
 	const vpk = await Vpk.open(vpkPath);
+	const kits = await vpk
+		.read('scripts/items/items_game.txt')
+		.then((data) => paintKits(new TextDecoder().decode(data)))
+		.finally(() => vpk.close());
 	const vrf = new Vrf(options.tools.vrf, join(csgo, 'gameinfo.gi'));
 	const blocks = new Blocks(vrf, vpkPath, join(options.workDir, 'blocks'), log);
-	const kits = paintKits(new TextDecoder().decode(await vpk.read('scripts/items/items_game.txt')));
 	const source = await openZipFile(options.pack);
 	try {
 		const manifestEntry = source.entries.get(SKINS_PACK_MANIFEST);
