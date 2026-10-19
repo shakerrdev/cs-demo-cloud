@@ -131,6 +131,8 @@ curl -OJ -H "Authorization: Bearer cdc_…" https://demos.example.com/api/demos/
 curl -OJ -H "Authorization: Bearer cdc_…" "https://demos.example.com/api/demos/<id>/file?original"
 ```
 
+To take many demos at once, use **Export demos** on the match list: tick the ones you want (or Select all) and **Download zip**. The zip holds each demo as it was stored, named `<date> <map> <file>` so it sorts by date; nothing is recompressed, so it starts at once and the browser shows real progress. Zip64 is used, so exports over 4 GB open fine in Windows Explorer, 7-Zip and `unzip`. With a token, `GET /api/demos/export` exports the whole library, and `?id=<id>&id=<id>` a selection.
+
 ## Auto-import from Valve
 
 The **Auto-import** page downloads new Premier, Competitive and Wingman matches on its own:
@@ -269,6 +271,7 @@ Everything requires signing in, and accounts only come from invite links.
 - On first start (no accounts yet) the web app prints a one-time admin invite link to its log. Open it to create your account.
 - Admins create more invite links in **Settings** (member or admin, valid once for 7 days), see open invites and remove people. Everyone can change their own password there.
 - Invited people share one match library; each upload remembers who added it.
+- Demos are kept until someone deletes them; uploaded and auto-imported demos alike. Nothing expires or gets cleaned up automatically.
 - A demo can be deleted from its match page (or `DELETE /api/demos/<id>`) by the person who uploaded it and by admins; that removes the file, its replays and its stats. A demo that is being parsed right now can't be deleted until it's done.
 - Lost access? Create a fresh admin invite from the server: `pnpm invite --admin`, or in Docker as described below.
 
