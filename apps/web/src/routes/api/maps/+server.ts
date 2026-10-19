@@ -23,8 +23,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			Readable.fromWeb(request.body as unknown as NodeReadableStream<Uint8Array>),
 			createWriteStream(path)
 		);
-		const pack = await installMapPack(storage, path);
-		return json(pack, { status: 201 });
+		const packs = await installMapPack(storage, path);
+		return json(packs, { status: 201 });
 	} catch (cause) {
 		if (cause instanceof MapPackError) error(400, cause.message);
 		throw cause;

@@ -13,7 +13,6 @@ import {
 	type Side
 } from '@cs-demo-cloud/replay';
 
-const BASE = '/maps/3d/players';
 const STRIDE = 76;
 const RUNNING = 150;
 const LANDING = -260;
@@ -336,18 +335,31 @@ export class ReplayAudio {
 	private map: string | null = null;
 	private ambient: { source: AudioBufferSourceNode; gain: GainNode; map: string } | null = null;
 
-	constructor(manifest: PlayerPackManifest, version: string) {
-		this.sounds = manifest.sounds ?? {};
+	private base: string;
+
+	constructor(sounds: Record<string, PlayerPackSound>, base: string, version: string) {
+		this.sounds = sounds;
+		this.base = base;
 		this.version = version;
 	}
 
-	static async load(version: string): Promise<ReplayAudio | null> {
-		const response = await fetch(`${BASE}/players.json?v=${version}`);
-		if (!response.ok) return null;
-		const manifest = (await response.json()) as PlayerPackManifest;
-		return manifest.sounds && Object.keys(manifest.sounds).length
-			? new ReplayAudio(manifest, version)
-			: null;
+	static async load(
+		soundsVersion: string | null,
+		playersVersion: string | null
+	): Promise<ReplayAudio | null> {
+		const sources: [string, string, string | null][] = [
+			['/maps/3d/sounds', 'sounds.json', soundsVersion],
+			['/maps/3d/players', 'players.json', playersVersion]
+		];
+		for (const [base, file, version] of sources) {
+			if (!version) continue;
+			const response = await fetch(`${base}/${file}?v=${version}`).catch(() => null);
+			if (!response?.ok) continue;
+			const manifest = (await response.json()) as Pick<PlayerPackManifest, 'sounds'>;
+			if (manifest.sounds && Object.keys(manifest.sounds).length)
+				return new ReplayAudio(manifest.sounds, base, version);
+		}
+		return null;
 	}
 
 	unlock() {
@@ -501,7 +513,7 @@ export class ReplayAudio {
 		let promise = this.buffers.get(file);
 		if (!promise) {
 			const context = this.context!;
-			promise = fetch(`${BASE}/${file}?v=${this.version}`)
+			promise = fetch(`${this.base}/${file}?v=${this.version}`)
 				.then((response) => (response.ok ? response.arrayBuffer() : Promise.reject()))
 				.then((data) => context.decodeAudioData(data))
 				.catch(() => null);

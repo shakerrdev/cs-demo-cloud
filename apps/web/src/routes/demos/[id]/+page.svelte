@@ -86,6 +86,8 @@
 		mapPack={data.mapPack}
 		playerPack={data.playerPack}
 		skinsPack={data.skinsPack}
+		agentsPack={data.agentsPack}
+		soundsPack={data.soundsPack}
 		{rounds}
 		{teamNames}
 		config={data.config}

@@ -13,6 +13,8 @@ import {
 	itemWeaponKey,
 	rollPaint,
 	skinWeaponKey,
+	type AgentsPackManifest,
+	type PackTextureRef,
 	type PlayerPackManifest,
 	type ReplayKill,
 	type ReplaySkin,
@@ -44,6 +46,13 @@ import { RAGDOLL_BONES, Ragdoll } from './ragdoll.ts';
 
 const BASE = '/maps/3d/players';
 const SKINS_BASE = '/maps/3d/skins';
+const AGENTS_BASE = '/maps/3d/agents';
+
+interface AgentSource {
+	agents: Record<string, string>;
+	textures: Record<string, PackTextureRef>;
+	url: (file: string) => string;
+}
 const CONCURRENT_DOWNLOADS = 4;
 const DEG = Math.PI / 180;
 
@@ -137,6 +146,7 @@ export class PlayerPack {
 	private skins: SkinsPackManifest | null;
 	private uploader: TextureUploader;
 	private skinsVersion: string | null;
+	private agentSource: AgentSource | null;
 	private agents = new Map<string, Promise<Template | null>>();
 	private loadedAgents = new Map<string, Template>();
 	private gloves = new Map<string, Promise<Template | null>>();
@@ -151,12 +161,14 @@ export class PlayerPack {
 		clips: THREE.AnimationClip[],
 		skins: SkinsPackManifest | null,
 		skinsVersion: string | null,
+		agentSource: AgentSource | null,
 		uploader: TextureUploader
 	) {
 		this.uploader = uploader;
 		this.manifest = manifest;
 		this.skins = skins;
 		this.skinsVersion = skinsVersion;
+		this.agentSource = agentSource;
 		this.version = version;
 		this.support = support;
 		this.quality = quality === 'auto' ? 'high' : quality;
@@ -168,7 +180,8 @@ export class PlayerPack {
 		renderer: THREE.WebGLRenderer,
 		version: string,
 		quality: TextureQuality = 'auto',
-		skinsVersion: string | null = null
+		skinsVersion: string | null = null,
+		agentsVersion: string | null = null
 	): Promise<PlayerPack> {
 		const url = (file: string) => `${BASE}/${file}?v=${version}`;
 		const response = await fetch(url('players.json'));
@@ -186,6 +199,25 @@ export class PlayerPack {
 					.then((result) => (result.ok ? (result.json() as Promise<SkinsPackManifest>) : null))
 					.catch(() => null)
 			: null;
+		const agentsPack = agentsVersion
+			? await fetch(`${AGENTS_BASE}/agents.json?v=${agentsVersion}`)
+					.then((result) => (result.ok ? (result.json() as Promise<AgentsPackManifest>) : null))
+					.catch(() => null)
+			: null;
+		const agentSource: AgentSource | null =
+			agentsPack && Object.keys(agentsPack.agents).length
+				? {
+						agents: agentsPack.agents,
+						textures: agentsPack.textures,
+						url: (file) => `${AGENTS_BASE}/${file}?v=${agentsVersion}`
+					}
+				: skins && Object.keys(skins.agents ?? {}).length
+					? {
+							agents: skins.agents,
+							textures: {},
+							url: (file) => `${SKINS_BASE}/${file}?v=${skinsVersion}`
+						}
+					: null;
 		const [animations, ct, t] = await Promise.all([
 			parse(manifest.animations),
 			parse(manifest.characters.CT),
@@ -200,6 +232,7 @@ export class PlayerPack {
 			animations.animations,
 			skins,
 			skins ? skinsVersion : null,
+			agentSource,
 			textureUploader(renderer)
 		);
 	}
@@ -209,15 +242,16 @@ export class PlayerPack {
 	}
 
 	hasAgent(agent: string): boolean {
-		return Boolean(this.skins?.agents[agent]);
+		return Boolean(this.agentSource?.agents[agent]);
 	}
 
 	loadAgent(agent: string): Promise<Template | null> {
 		let promise = this.agents.get(agent);
 		if (!promise) {
-			const file = this.skins?.agents[agent];
+			const source = this.agentSource;
+			const file = source?.agents[agent];
 			promise = file
-				? this.fetchGltf(`${SKINS_BASE}/${file}?v=${this.skinsVersion}`)
+				? this.fetchGltf(source.url(file))
 						.then((gltf) => {
 							const template = makeTemplate(gltf.scene);
 							this.loadedAgents.set(agent, template);
@@ -514,12 +548,16 @@ export class PlayerPack {
 
 	private requestTexture(path: string, srgb: boolean, target: THREE.IUniform) {
 		const own = this.manifest.textures[path];
-		const ref = own ?? this.skins?.textures[path];
+		const skin = own ? undefined : this.skins?.textures[path];
+		const agent = own || skin ? undefined : this.agentSource?.textures[path];
+		const ref = own ?? skin ?? agent;
 		if (!ref || !supportsFormat(this.support, ref.format)) return;
 		const name = this.quality === 'low' && ref.low ? ref.low.file : ref.file;
 		const file = own
 			? `${BASE}/${name}?v=${this.version}`
-			: `${SKINS_BASE}/${name}?v=${this.skinsVersion}`;
+			: skin
+				? `${SKINS_BASE}/${name}?v=${this.skinsVersion}`
+				: this.agentSource!.url(name);
 		const key = `${file}|${srgb}`;
 		let job = this.jobs.get(key);
 		if (!job) {

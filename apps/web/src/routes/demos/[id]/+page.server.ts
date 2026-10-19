@@ -1,6 +1,12 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { getDemo, getMatch, requeueDemo } from '@cs-demo-cloud/db';
-import { PLAYER_PACK, SKINS_PACK, readMapPack } from '@cs-demo-cloud/shared';
+import {
+	AGENTS_PACK,
+	PLAYER_PACK,
+	SKINS_PACK,
+	SOUNDS_PACK,
+	readMapPack
+} from '@cs-demo-cloud/shared';
 import { loadConfig } from '#lib/server/config.ts';
 import { db } from '#lib/server/db.ts';
 import { canRemoveDemo, removeDemo } from '#lib/server/demos.ts';
@@ -15,12 +21,16 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const pack = details ? await readMapPack(storage, details.match.map) : null;
 	const players = pack ? await readMapPack(storage, PLAYER_PACK) : null;
 	const skins = players ? await readMapPack(storage, SKINS_PACK) : null;
+	const agents = players ? await readMapPack(storage, AGENTS_PACK) : null;
+	const sounds = await readMapPack(storage, SOUNDS_PACK);
 	return {
 		demo,
 		details,
 		mapPack: pack?.version ?? null,
 		playerPack: players?.version ?? null,
 		skinsPack: skins?.version ?? null,
+		agentsPack: agents?.version ?? null,
+		soundsPack: sounds?.version ?? null,
 		canDelete: canRemoveDemo(locals.user, demo),
 		config: loadConfig()
 	};

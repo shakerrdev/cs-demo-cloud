@@ -9,7 +9,9 @@ import {
 	getSession,
 	removeBootstrapInvites
 } from '@cs-demo-cloud/db';
+import { splitCombinedPacks } from '@cs-demo-cloud/shared';
 import { db } from '#lib/server/db.ts';
+import { storage } from '#lib/server/storage.ts';
 import { SESSION_COOKIE, clearSessionCookie, setSessionCookie } from '#lib/server/session.ts';
 
 const publicPaths = [
@@ -23,6 +25,12 @@ const publicPaths = [
 export const init: ServerInit = () => {
 	if (building) return;
 	deleteExpiredSessions(db);
+	splitCombinedPacks(storage)
+		.then((packs) => {
+			if (packs.length)
+				console.log(`Split the 3D packs into ${packs.map((pack) => pack.map).join(', ')}`);
+		})
+		.catch((error: Error) => console.error(`Could not split the 3D packs: ${error.message}`));
 	if (countUsers(db) > 0) return;
 
 	removeBootstrapInvites(db);

@@ -394,16 +394,17 @@ export class ReplayScene {
 	setPlayerPack(
 		version: string | null,
 		quality: TextureQuality = 'auto',
-		skins: string | null = null
+		skins: string | null = null,
+		agents: string | null = null
 	) {
-		const key = version ? `${version}@${quality}@${skins ?? ''}` : '';
+		const key = version ? `${version}@${quality}@${skins ?? ''}@${agents ?? ''}` : '';
 		if (key === this.modelsKey) return;
 		this.modelsKey = key;
 		this.clearModels();
 		if (!version) return;
 		import('./cs2/players.ts')
 			.then(async ({ PlayerModels, PlayerPack }) => {
-				const pack = await PlayerPack.load(this.renderer, version, quality, skins);
+				const pack = await PlayerPack.load(this.renderer, version, quality, skins, agents);
 				if (this.modelsKey !== key) {
 					pack.dispose();
 					return;

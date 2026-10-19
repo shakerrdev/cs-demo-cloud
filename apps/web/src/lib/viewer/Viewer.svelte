@@ -39,6 +39,8 @@
 		mapPack: string | null;
 		playerPack: string | null;
 		skinsPack?: string | null;
+		agentsPack?: string | null;
+		soundsPack?: string | null;
 		rounds: RoundInfo[];
 		teamNames: Record<TeamKey, string>;
 		config?: AppConfig;
@@ -51,6 +53,8 @@
 		mapPack,
 		playerPack,
 		skinsPack = null,
+		agentsPack = null,
+		soundsPack = null,
 		rounds,
 		teamNames,
 		config = defaultConfig
@@ -553,15 +557,16 @@
 	});
 
 	$effect(() => {
-		scene3d?.setPlayerPack(playerPack, textureQuality, skinsPack);
+		scene3d?.setPlayerPack(playerPack, textureQuality, skinsPack, agentsPack);
 	});
 
 	$effect(() => {
-		const version = playerPack;
-		if (!version) return;
+		const sounds = soundsPack;
+		const players = playerPack;
+		if (!sounds && !players) return;
 		let current: ReplayAudio | null = null;
 		let cancelled = false;
-		void ReplayAudio.load(version)
+		void ReplayAudio.load(sounds, players)
 			.then((loaded) => {
 				if (cancelled) loaded?.dispose();
 				else audio = current = loaded;

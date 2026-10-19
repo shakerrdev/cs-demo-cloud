@@ -400,6 +400,26 @@ export interface SkinsPackManifest {
 	textures: Record<string, PackTextureRef>;
 }
 
+export const AGENTS_PACK_MANIFEST = 'agents.json';
+
+export interface AgentsPackManifest {
+	version: number;
+	exportedAt: string;
+	build: string | null;
+	agents: Record<string, string>;
+	textures: Record<string, PackTextureRef>;
+}
+
+export const SOUNDS_PACK_MANIFEST = 'sounds.json';
+export const SOUNDS_PACK_NAME = 'sounds';
+
+export interface SoundsPackManifest {
+	version: number;
+	exportedAt: string;
+	build: string | null;
+	sounds: Record<string, PlayerPackSound>;
+}
+
 export interface SkinGlove {
 	model: string;
 }
