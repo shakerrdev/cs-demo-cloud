@@ -60,6 +60,7 @@ export interface ExportOptions {
 	keepWork?: boolean;
 	reuseWork?: boolean;
 	maxTextureSize?: number;
+	mapVpk?: string;
 }
 
 interface WorldSource {
@@ -844,9 +845,19 @@ async function openSearchPaths(csgo: string): Promise<Vpk[]> {
 	return vpks;
 }
 
+export function worldPathIn(vpk: Vpk, map: string): string {
+	const own = `maps/${map}/world.vwrld_c`;
+	if (vpk.has(own)) return own;
+	const worlds = vpk
+		.list('maps/')
+		.filter((path) => /^maps\/[^/]+\/world\.vwrld_c$/.test(path) && !/skybox|_sky\//.test(path))
+		.sort((a, b) => (vpk.size(b) ?? 0) - (vpk.size(a) ?? 0));
+	return worlds[0] ?? own;
+}
+
 export async function exportMap(options: ExportOptions): Promise<{ pack: string; bytes: number }> {
 	const { map, csgo, log } = options;
-	const mapVpkPath = join(csgo, 'maps', `${map}.vpk`);
+	const mapVpkPath = options.mapVpk ?? join(csgo, 'maps', `${map}.vpk`);
 	if (!existsSync(mapVpkPath)) throw new Error(`${map} is not installed (${mapVpkPath})`);
 
 	await mkdir(options.outDir, { recursive: true });
@@ -863,7 +874,7 @@ export async function exportMap(options: ExportOptions): Promise<{ pack: string;
 
 	try {
 		const main = await exportWorld(
-			{ id: 'world', kind: 'world', vpk: mapVpk, worldPath: `maps/${map}/world.vwrld_c` },
+			{ id: 'world', kind: 'world', vpk: mapVpk, worldPath: worldPathIn(mapVpk, map) },
 			options,
 			vrf,
 			pack,

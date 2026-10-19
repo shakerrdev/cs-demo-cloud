@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bloomBlendMode, envMapNormalization, limitTextureSize } from './export.ts';
+import { bloomBlendMode, envMapNormalization, limitTextureSize, worldPathIn } from './export.ts';
+import type { Vpk } from './vpk.ts';
 
 test('maps bloom blend modes from names and numbers', () => {
 	assert.equal(bloomBlendMode('BLOOM_BLEND_SCREEN'), 'screen');
@@ -50,4 +51,20 @@ test('turns a cube map array layer’s radiance into a luminance normalization',
 	assert.ok(Math.abs(w - 0.282095) < 1e-6);
 	assert.deepEqual(envMapNormalization(sh, 2), [0, 0, 0, 0]);
 	assert.deepEqual(envMapNormalization(undefined, 0), [0, 0, 0, 0]);
+});
+
+test('finds the world of a map shipped in its own vpk', () => {
+	const files = new Map([
+		['maps/thera/world.vwrld_c', 100],
+		['maps/thera_skybox/world.vwrld_c', 900],
+		['maps/thera_lobby/world.vwrld_c', 10]
+	]);
+	const vpk = {
+		has: (path: string) => files.has(path),
+		list: (prefix: string) => [...files.keys()].filter((path) => path.startsWith(prefix)),
+		size: (path: string) => files.get(path)
+	} as unknown as Vpk;
+	assert.equal(worldPathIn(vpk, 'de_thera'), 'maps/thera/world.vwrld_c');
+	files.set('maps/de_thera/world.vwrld_c', 1);
+	assert.equal(worldPathIn(vpk, 'de_thera'), 'maps/de_thera/world.vwrld_c');
 });

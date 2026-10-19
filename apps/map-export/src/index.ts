@@ -1,3 +1,4 @@
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -34,6 +35,9 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --token <token>   API token for --skins <server url>
   --skins-rolls <skins.zip>  Add how each paint seed places the pattern to an existing
                     skins.zip without exporting it again (writes skins-patched.zip to --out)
+
+A map can also come from its own vpk, e.g. a Steam Workshop download:
+  node apps/map-export/src/index.ts de_thera=C:\\path\\to\\thera.vpk
 
 Example: node apps/map-export/src/index.ts de_dust2 de_mirage`;
 
@@ -84,7 +88,23 @@ const csgo = findCsgo(values.game);
 log(`CS2: ${csgo}`);
 const tools = await ensureTools(values.tools ?? defaultToolsDir(), log);
 
-let maps = positionals.map((map) => map.replace(/\.vpk$/, '').toLowerCase());
+function vpkIn(path: string): string {
+	if (!existsSync(path) || !statSync(path).isDirectory()) return path;
+	const files = readdirSync(path).filter((file) => file.endsWith('.vpk'));
+	const pick = files.find((file) => file.endsWith('_dir.vpk')) ?? files.sort()[0];
+	return pick ? join(path, pick) : path;
+}
+
+const mapVpks = new Map<string, string>();
+let maps = positionals.map((arg) => {
+	const split = arg.indexOf('=');
+	if (split > 0) {
+		const map = arg.slice(0, split).toLowerCase();
+		mapVpks.set(map, vpkIn(resolve(arg.slice(split + 1))));
+		return map;
+	}
+	return arg.replace(/\.vpk$/, '').toLowerCase();
+});
 if (values.all) {
 	const { readdir } = await import('node:fs/promises');
 	maps = (await readdir(join(csgo, 'maps')))
@@ -188,7 +208,8 @@ for (const map of maps) {
 			log,
 			keepWork: values['keep-work'] || values['reuse-work'],
 			reuseWork: values['reuse-work'],
-			maxTextureSize: Number(values['max-texture-size'] ?? 2048)
+			maxTextureSize: Number(values['max-texture-size'] ?? 2048),
+			mapVpk: mapVpks.get(map)
 		});
 		log(
 			`${map}: ${pack} (${(bytes / 1024 / 1024).toFixed(1)} MB, ${((Date.now() - started) / 1000).toFixed(0)} s)`
