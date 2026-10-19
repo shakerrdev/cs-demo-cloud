@@ -7,3 +7,4 @@ export * from './paths.ts';
 export * from './steam.ts';
 export * from './storage.ts';
 export * from './zip.ts';
+export * from './zip-stream.ts';
