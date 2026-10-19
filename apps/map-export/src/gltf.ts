@@ -66,6 +66,12 @@ export interface ProcessResult {
 	disabled: number;
 }
 
+function isEmpty(gltf: Gltf, primitive: GltfPrimitive): boolean {
+	const position = primitive.attributes.POSITION;
+	if (position === undefined || !gltf.accessors[position]?.count) return true;
+	return primitive.indices !== undefined && !gltf.accessors[primitive.indices]?.count;
+}
+
 export function startsDisabled(extras: unknown): boolean {
 	const value = (extras as { startdisabled?: unknown } | undefined)?.startdisabled;
 	return value === '1' || value === 'true' || value === 1 || value === true;
@@ -205,7 +211,7 @@ export function processWorldGltf(
 		for (const primitive of mesh.primitives) {
 			const vmat =
 				primitive.material !== undefined ? materials[primitive.material]?.extras?.vmat : undefined;
-			if (isDroppedMaterial(vmat)) {
+			if (isDroppedMaterial(vmat) || isEmpty(gltf, primitive)) {
 				dropped++;
 				continue;
 			}

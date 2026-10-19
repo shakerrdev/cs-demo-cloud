@@ -230,3 +230,18 @@ test('leaves out entities that start disabled, like wingman and retake blockers'
 	assert.equal(gltf.nodes[0]!.mesh, 0);
 	assert.equal(gltf.nodes[1]!.mesh, undefined);
 });
+
+test('drops empty primitives so no accessor ends up without bounds', () => {
+	const { gltf, bin } = sharedVertexGltf();
+	gltf.accessors.push({ bufferView: 2, componentType: 5123, count: 0, type: 'SCALAR' });
+	gltf.meshes![1]!.primitives[0]!.indices = gltf.accessors.length - 1;
+	gltf.nodes = [{ mesh: 0 }, { mesh: 1 }];
+	const result = processWorldGltf(gltf, bin, null);
+	assert.equal(result.dropped, 1);
+	const repacked = repackBuffers(gltf, bin);
+	assert.ok(repacked.bin.length > 0);
+	for (const accessor of gltf.accessors)
+		for (const value of [...(accessor.min ?? []), ...(accessor.max ?? [])])
+			assert.ok(Number.isFinite(value));
+	assert.equal(gltf.nodes[1]!.mesh, undefined);
+});
