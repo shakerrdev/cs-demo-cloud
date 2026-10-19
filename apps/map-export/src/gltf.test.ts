@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { processModelGltf, repackBuffers, type Gltf } from './gltf.ts';
+import { processModelGltf, processWorldGltf, repackBuffers, type Gltf } from './gltf.ts';
 
 function sharedVertexGltf() {
 	const positions = new Float32Array(100 * 3).map((_, i) => i);
@@ -216,4 +216,17 @@ test('tags the materials of chosen meshes with their part', () => {
 	assert.equal(gltf.materials![1]!.name, 'skin');
 	assert.equal(gltf.materials![1]!.extras?.part, 'firstperson');
 	assert.equal(gltf.materials![0]!.extras?.part, undefined);
+});
+
+test('leaves out entities that start disabled, like wingman and retake blockers', () => {
+	const { gltf, bin } = sharedVertexGltf();
+	gltf.meshes![0]!.extras = { classname: 'prop_dynamic', startdisabled: '0' };
+	gltf.meshes![1]!.extras = { classname: 'func_brush', startdisabled: '1' };
+	gltf.nodes = [{ mesh: 0 }, { mesh: 1 }];
+	const result = processWorldGltf(gltf, bin, null);
+	assert.equal(result.disabled, 1);
+	assert.equal(gltf.meshes!.length, 1);
+	assert.equal(gltf.meshes![0]!.extras, undefined);
+	assert.equal(gltf.nodes[0]!.mesh, 0);
+	assert.equal(gltf.nodes[1]!.mesh, undefined);
 });

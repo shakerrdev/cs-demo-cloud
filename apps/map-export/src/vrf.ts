@@ -93,6 +93,7 @@ export class Vrf {
 			'gltf',
 			'--gltf_export_materials',
 			'--gltf_textures_adapt',
+			'--gltf_export_extras',
 			'--game',
 			this.gameinfo,
 			'-o',

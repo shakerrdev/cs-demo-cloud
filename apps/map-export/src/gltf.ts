@@ -63,6 +63,12 @@ export interface ProcessResult {
 	primitives: number;
 	dropped: number;
 	lightmapped: number;
+	disabled: number;
+}
+
+export function startsDisabled(extras: unknown): boolean {
+	const value = (extras as { startdisabled?: unknown } | undefined)?.startdisabled;
+	return value === '1' || value === 'true' || value === 1 || value === true;
 }
 
 const FLOAT = 5126;
@@ -160,6 +166,7 @@ export function processWorldGltf(
 	let primitives = 0;
 	let dropped = 0;
 	let lightmapped = 0;
+	let disabled = 0;
 
 	const materialFor = (original: number | undefined, layout: VertexLayout): number => {
 		const key = `${original ?? -1}|${layout.lightmap}|${layout.uv2}|${layout.paint}|${layout.blend}`;
@@ -189,7 +196,11 @@ export function processWorldGltf(
 	const meshIndex = new Map<number, number>();
 	const newMeshes: NonNullable<Gltf['meshes']> = [];
 
-	meshes.forEach((mesh, index) => {
+	meshes.forEach(({ extras, ...mesh }, index) => {
+		if (startsDisabled(extras)) {
+			disabled++;
+			return;
+		}
 		const kept: GltfPrimitive[] = [];
 		for (const primitive of mesh.primitives) {
 			const vmat =
@@ -283,7 +294,7 @@ export function processWorldGltf(
 	if (!gltf.extensionsUsed?.length) delete gltf.extensionsUsed;
 	if (!gltf.extensionsRequired?.length) delete gltf.extensionsRequired;
 
-	return { textures, materials: newMaterials.length, primitives, dropped, lightmapped };
+	return { textures, materials: newMaterials.length, primitives, dropped, lightmapped, disabled };
 }
 
 const COMPONENT_BYTES: Record<number, number> = {

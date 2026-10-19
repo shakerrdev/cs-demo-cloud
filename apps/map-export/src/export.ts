@@ -525,7 +525,7 @@ async function exportWorld(
 	const processed = join(dirname(gltfPath), 'world.processed.gltf');
 	const result = await prepareGltf(gltfPath, processed, lightmapUvScale);
 	log(
-		`${source.id}: [${seconds()}] ${result.primitives} primitives (${result.lightmapped} lightmapped, ${result.compacted} compacted, ${result.dropped} tool primitives dropped), ${result.materials} materials, ${result.textures.size} textures`
+		`${source.id}: [${seconds()}] ${result.primitives} primitives (${result.lightmapped} lightmapped, ${result.compacted} compacted, ${result.dropped} tool primitives dropped, ${result.disabled} disabled entities skipped), ${result.materials} materials, ${result.textures.size} textures`
 	);
 
 	const glb = join(workDir, `${source.id}.glb`);
