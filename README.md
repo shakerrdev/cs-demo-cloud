@@ -86,7 +86,7 @@ The pack also carries the game's sounds (about 20 MB): every gun near and far, f
 
 Death animations can't be read by Source 2 Viewer yet, so deaths are a simple fall.
 
-To add newer sounds to a player pack without exporting the models again, run `node apps/map-export/src/index.ts --player-sounds map-packs/players.zip --out map-packs-new` and upload the new `players.zip`. Demos parsed before the view stream existed play without it (16 Hz POV, no HUD ammo or hits) until you press **Parse again** on their match page.
+**Settings → 3D maps** lists player models, sounds, weapon and glove skins and agents as separate packs: a `players.zip` is installed as player models plus sounds, a `skins.zip` as skins plus agents (packs installed before this are split the same way when the server starts). To update only the sounds, run `node apps/map-export/src/index.ts --sounds` and upload `map-packs/sounds.zip` (about 20 MB). Several packs can be picked in one go in **Add packs**; they upload one after another. Demos parsed before the view stream existed play without it (16 Hz POV, no HUD ammo or hits) until you press **Parse again** on their match page.
 
 ### Skins and agents
 

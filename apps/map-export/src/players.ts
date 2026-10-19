@@ -3,6 +3,9 @@ import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:
 import { dirname, join, sep } from 'node:path';
 import {
 	PLAYER_PACK_MANIFEST,
+	SOUNDS_PACK_MANIFEST,
+	SOUNDS_PACK_NAME,
+	type SoundsPackManifest,
 	PLAYER_PACK_NAME,
 	PLAYER_PACK_VERSION,
 	playerClipNames,
@@ -14,7 +17,6 @@ import {
 	viewmodelClipNames,
 	weaponClass
 } from '@cs-demo-cloud/replay';
-import { openZipFile } from '@cs-demo-cloud/shared/zip';
 import { EXPORTER_VERSION, forEachLimit, PackBuilder } from './export.ts';
 import { processModelGltf, type Gltf, type ModelGltfOptions, type ModelResult } from './gltf.ts';
 import { gameBuild } from './steam.ts';
@@ -680,9 +682,8 @@ export async function exportPlayers(
 	}
 }
 
-export async function updatePlayerSounds(options: {
+export async function exportSoundsPack(options: {
 	csgo: string;
-	source: string;
 	outDir: string;
 	workDir: string;
 	tools: Tools;
@@ -692,21 +693,11 @@ export async function updatePlayerSounds(options: {
 	const vpkPath = join(csgo, 'pak01_dir.vpk');
 	await mkdir(options.workDir, { recursive: true });
 	await mkdir(options.outDir, { recursive: true });
-	const packPath = join(options.outDir, `${PLAYER_PACK_NAME}.zip`);
-	const partPath = join(options.workDir, `${PLAYER_PACK_NAME}.zip`);
-	const source = await openZipFile(options.source);
+	const packPath = join(options.outDir, `${SOUNDS_PACK_NAME}.zip`);
+	const partPath = join(options.workDir, `${SOUNDS_PACK_NAME}.zip`);
 	const pack = new PackBuilder(partPath, log);
 	try {
-		const manifestEntry = source.entries.get(PLAYER_PACK_MANIFEST);
-		if (!manifestEntry) throw new Error(`${options.source} is not a player pack`);
-		const manifest = JSON.parse(
-			new TextDecoder().decode(await source.read(manifestEntry))
-		) as PlayerPackManifest;
-		for (const entry of source.entries.values()) {
-			if (entry.name === PLAYER_PACK_MANIFEST || entry.name.startsWith('sounds/')) continue;
-			await pack.copyEntry(entry.name, await source.read(entry), entry.method === 8);
-		}
-		log('players: exporting sounds');
+		log('sounds: exporting');
 		const sounds = await exportSounds(
 			new Vrf(tools.vrf, join(csgo, 'gameinfo.gi')),
 			tools,
@@ -715,19 +706,18 @@ export async function updatePlayerSounds(options: {
 			pack,
 			log
 		);
-		const updated: PlayerPackManifest = {
-			...manifest,
+		const manifest: SoundsPackManifest = {
+			version: 1,
 			exportedAt: new Date().toISOString(),
-			tools: { ...tools.versions, exporter: EXPORTER_VERSION },
+			build: gameBuild(csgo),
 			sounds
 		};
 		await pack.addFile(
-			PLAYER_PACK_MANIFEST,
-			new TextEncoder().encode(JSON.stringify(updated)),
+			SOUNDS_PACK_MANIFEST,
+			new TextEncoder().encode(JSON.stringify(manifest)),
 			false
 		);
 		await pack.close();
-		await source.close();
 		log(`Moving the pack to ${packPath}`);
 		await rename(partPath, packPath).catch(async (error: NodeJS.ErrnoException) => {
 			if (error.code !== 'EXDEV') throw error;
@@ -736,7 +726,6 @@ export async function updatePlayerSounds(options: {
 		return { pack: packPath, bytes: pack.bytes };
 	} catch (error) {
 		await pack.close().catch(() => {});
-		await source.close().catch(() => {});
 		throw error;
 	}
 }

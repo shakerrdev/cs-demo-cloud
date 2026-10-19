@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { exportMap } from './export.ts';
-import { exportPlayers, updatePlayerSounds } from './players.ts';
+import { exportPlayers, exportSoundsPack } from './players.ts';
 import { exportSkins, fetchCosmetics, patchSkinRolls } from './skins.ts';
 import { findCsgo } from './steam.ts';
 import { defaultToolsDir, ensureTools } from './tools.ts';
@@ -12,7 +12,7 @@ const usage = `Exports CS2 maps as 3D map packs for cs-demo-cloud.
 
 Usage: node apps/map-export/src/index.ts [options] <map> [map...]
        node apps/map-export/src/index.ts --players
-       node apps/map-export/src/index.ts --player-sounds <players.zip>
+       node apps/map-export/src/index.ts --sounds
        node apps/map-export/src/index.ts --skins <cosmetics.json | server url> [--token <api token>]
        node apps/map-export/src/index.ts --skins-rolls <skins.zip>
 
@@ -25,9 +25,8 @@ Usage: node apps/map-export/src/index.ts [options] <map> [map...]
   --max-texture-size <px>  Drop texture mips above this size (default 2048, 0 keeps all)
   --low-memory      Run Source 2 Viewer on one thread with less memory (slower, for 4 GB machines)
   --all             Every map in the game's maps folder
-  --players         Player models, animations and weapons (players.zip)
-  --player-sounds <players.zip>  Export only the sounds again into a copy of an existing
-                    players.zip (written to --out)
+  --players         Player models, animations and weapons (players.zip, sounds included)
+  --sounds          Only the sounds (sounds.zip), to update them without the models
   --skins <source>  Agents and weapon skins (skins.zip): "all" for every skin and agent in
                     the game, or only those your demos use, from the list in Settings or
                     straight from your server with --token
@@ -55,6 +54,7 @@ const { values, positionals } = parseArgs({
 		all: { type: 'boolean', default: false },
 		players: { type: 'boolean', default: false },
 		'player-sounds': { type: 'string' },
+		sounds: { type: 'boolean', default: false },
 		skins: { type: 'string' },
 		'skins-rolls': { type: 'string' },
 		token: { type: 'string' },
@@ -70,7 +70,8 @@ if (
 		!values.players &&
 		!values.skins &&
 		!values['skins-rolls'] &&
-		!values['player-sounds'])
+		!values['player-sounds'] &&
+		!values.sounds)
 ) {
 	console.log(usage);
 	process.exit(values.help ? 0 : 1);
@@ -134,21 +135,20 @@ if (values.players) {
 		console.error(`players failed: ${error instanceof Error ? error.message : error}`);
 	}
 }
-if (values['player-sounds']) {
-	log('\n== player sounds');
+if (values.sounds || values['player-sounds']) {
+	log('\n== sounds');
 	try {
-		const { pack, bytes } = await updatePlayerSounds({
+		const { pack, bytes } = await exportSoundsPack({
 			csgo,
-			source: resolve(values['player-sounds']),
 			outDir: resolve(values.out!),
-			workDir: join(resolve(values.work ?? tmpdir()), 'cs-demo-cloud-player-sounds'),
+			workDir: join(resolve(values.work ?? tmpdir()), 'cs-demo-cloud-sounds'),
 			tools,
 			log
 		});
-		log(`players: ${pack} (${(bytes / 1024 / 1024).toFixed(1)} MB)`);
+		log(`sounds: ${pack} (${(bytes / 1024 / 1024).toFixed(1)} MB)`);
 	} catch (error) {
 		failed++;
-		console.error(`player sounds failed: ${error instanceof Error ? error.message : error}`);
+		console.error(`sounds failed: ${error instanceof Error ? error.message : error}`);
 	}
 }
 if (values.skins) {
