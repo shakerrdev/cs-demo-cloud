@@ -7,45 +7,78 @@
 
 	const admin = $derived(data.user?.role === 'admin');
 	let copied = $state(false);
-	let packUpload = $state<{ name: string; loaded: number; total: number } | null>(null);
-	let packMessage = $state<{ ok: boolean; text: string } | null>(null);
+	type PackResult = { name: string; ok: boolean; text: string };
+	let packUpload = $state<{
+		name: string;
+		index: number;
+		count: number;
+		loaded: number;
+		total: number;
+	} | null>(null);
+	let packResults = $state<PackResult[]>([]);
 	let packInput = $state<HTMLInputElement>();
 
-	function uploadPack(file: File) {
-		packMessage = null;
-		packUpload = { name: file.name, loaded: 0, total: file.size };
-		const request = new XMLHttpRequest();
-		request.open('POST', '/api/maps');
-		request.setRequestHeader('content-type', 'application/octet-stream');
-		request.upload.onprogress = (event) => {
-			if (packUpload) packUpload.loaded = event.loaded;
-		};
-		request.onload = async () => {
-			packUpload = null;
-			if (request.status === 201) {
-				const pack = JSON.parse(request.responseText) as { map: string };
-				packMessage = { ok: true, text: `${pack.map} is ready in 3D` };
-				await invalidateAll();
-			} else {
-				let text = `Server answered ${request.status}`;
-				try {
-					text = (JSON.parse(request.responseText) as { message?: string }).message ?? text;
-				} catch {}
-				packMessage = { ok: false, text };
-			}
-		};
-		request.onerror = () => {
-			packUpload = null;
-			packMessage = { ok: false, text: 'Connection lost' };
-		};
-		request.send(file);
+	const PACK_LABELS: Record<string, string> = {
+		players: 'Player models',
+		sounds: 'Sounds',
+		skins: 'Weapon and glove skins',
+		agents: 'Agents'
+	};
+	const PACK_ORDER = Object.keys(PACK_LABELS);
+	const packs = $derived(
+		[...data.mapPacks].sort((a, b) => {
+			const ai = PACK_ORDER.indexOf(a.map);
+			const bi = PACK_ORDER.indexOf(b.map);
+			if (ai >= 0 || bi >= 0) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+			return a.map.localeCompare(b.map);
+		})
+	);
+
+	function sendPack(file: File, index: number, count: number): Promise<PackResult> {
+		packUpload = { name: file.name, index, count, loaded: 0, total: file.size };
+		return new Promise((resolve) => {
+			const request = new XMLHttpRequest();
+			request.open('POST', '/api/maps');
+			request.setRequestHeader('content-type', 'application/octet-stream');
+			request.upload.onprogress = (event) => {
+				if (packUpload) packUpload.loaded = event.loaded;
+			};
+			request.onload = () => {
+				if (request.status === 201) {
+					const installed = JSON.parse(request.responseText) as { map: string }[];
+					const names = installed.map((pack) => PACK_LABELS[pack.map] ?? pack.map);
+					resolve({ name: file.name, ok: true, text: `${names.join(', ')} ready` });
+				} else {
+					let text = `Server answered ${request.status}`;
+					try {
+						text = (JSON.parse(request.responseText) as { message?: string }).message ?? text;
+					} catch {}
+					resolve({ name: file.name, ok: false, text });
+				}
+			};
+			request.onerror = () => resolve({ name: file.name, ok: false, text: 'Connection lost' });
+			request.send(file);
+		});
+	}
+
+	async function uploadPacks(files: File[]) {
+		packResults = [];
+		for (const [index, file] of files.entries()) {
+			const result = await sendPack(file, index + 1, files.length);
+			packResults = [...packResults, result];
+			if (result.ok) await invalidateAll();
+		}
+		packUpload = null;
 	}
 
 	async function removePack(map: string) {
-		if (!confirm(`Remove the 3D map for ${map}? Matches on it fall back to the simple 3D view.`))
-			return;
+		const question = PACK_LABELS[map]
+			? `Remove ${PACK_LABELS[map]}?`
+			: `Remove the 3D map for ${map}? Matches on it fall back to the simple 3D view.`;
+		if (!confirm(question)) return;
 		const response = await fetch(`/api/maps/${map}`, { method: 'DELETE' });
-		if (!response.ok) packMessage = { ok: false, text: `Could not remove ${map}` };
+		if (!response.ok)
+			packResults = [{ name: map, ok: false, text: `Could not remove ${PACK_LABELS[map] ?? map}` }];
 		await invalidateAll();
 	}
 
@@ -274,22 +307,17 @@
 	<section class="panel">
 		<h2>3D maps</h2>
 		<p class="hint">
-			Maps with textures, lighting and sky, and player models for the 3D view. Make the packs on a
-			PC with CS2 using the map exporter (see the README), then add the zips here. The skins pack
-			holds the agents and weapon skins your demos use: give the exporter
+			Maps with textures, lighting and sky, player models, sounds, skins and agents for the 3D view.
+			Make the packs on a PC with CS2 using the map exporter (see the README), then add the zips
+			here; you can pick several at once. The skins and agents packs hold what your demos use: give
+			the exporter
 			<a href="/api/cosmetics?download">this list</a> or an API token.
 		</p>
-		{#if data.mapPacks.length}
+		{#if packs.length}
 			<ul class="list">
-				{#each data.mapPacks as pack (pack.map)}
+				{#each packs as pack (pack.map)}
 					<li>
-						<span
-							>{pack.map === 'players'
-								? 'Player models and sounds'
-								: pack.map === 'skins'
-									? 'Skins and agents'
-									: pack.map}</span
-						>
+						<span>{PACK_LABELS[pack.map] ?? pack.map}</span>
 						<span class="muted"
 							>{formatBytes(pack.bytes)} · game {pack.build ?? 'unknown'} · exported {formatDate(
 								new Date(pack.exportedAt)
@@ -307,35 +335,51 @@
 				bind:this={packInput}
 				type="file"
 				accept=".zip,application/zip"
+				multiple
 				hidden
 				onchange={(e) => {
-					const file = e.currentTarget.files?.[0];
-					if (file) uploadPack(file);
+					const files = [...(e.currentTarget.files ?? [])];
 					e.currentTarget.value = '';
+					if (files.length) void uploadPacks(files);
 				}}
 			/>
 			<button
 				type="button"
 				class="primary"
 				disabled={!!packUpload}
-				onclick={() => packInput?.click()}>Add pack</button
+				onclick={() => packInput?.click()}>Add packs</button
 			>
 			{#if packUpload}
 				<span class="muted" role="status"
-					>{packUpload.loaded < packUpload.total
+					>{packUpload.count > 1
+						? `${packUpload.index}/${packUpload.count} · `
+						: ''}{packUpload.loaded < packUpload.total
 						? `Uploading ${packUpload.name} · ${Math.floor((packUpload.loaded / packUpload.total) * 100)} %`
 						: `Unpacking ${packUpload.name}…`}</span
 				>
-			{:else if packMessage}
-				<span class:form-error={!packMessage.ok} class:form-ok={packMessage.ok} role="status"
-					>{packMessage.text}</span
-				>
 			{/if}
 		</div>
+		{#if packResults.length}
+			<ul class="results" role="status">
+				{#each packResults as result, i (i)}
+					<li class:form-error={!result.ok} class:form-ok={result.ok}>
+						{result.name}: {result.text}
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</section>
 {/if}
 
 <style>
+	.results {
+		margin: 10px 0 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 4px;
+		font-size: 0.9em;
+	}
 	.fingerprint {
 		margin: 12px 0 0;
 		font-size: 13px;
