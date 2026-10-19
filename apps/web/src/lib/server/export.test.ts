@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { attachment, exportFileName } from './export.ts';
+import { attachment, bulkEntryName, bulkZipName, exportFileName } from './export.ts';
 
 test('names the playable export .dem whatever the stored format', () => {
 	assert.equal(exportFileName('match730_003.dem.bz2', 'bz2', false), 'match730_003.dem');
@@ -24,4 +24,15 @@ test('quotes non-ASCII names for every browser', () => {
 		attachment('müller.dem'),
 		`attachment; filename="m_ller.dem"; filename*=UTF-8''m%C3%BCller.dem`
 	);
+});
+
+test('names bulk entries by date and map so they sort sensibly', () => {
+	const date = new Date('2026-10-12T19:30:00Z');
+	assert.equal(
+		bulkEntryName('match730_003.dem.bz2', 'bz2', date, 'de_mirage'),
+		'2026-10-12 de_mirage match730_003.dem.bz2'
+	);
+	assert.equal(bulkEntryName('scrim.dem', 'dem', date, null), '2026-10-12 scrim.dem');
+	assert.equal(bulkZipName(1, date), 'cs-demo-cloud-2026-10-12-1-demo.zip');
+	assert.equal(bulkZipName(12, date), 'cs-demo-cloud-2026-10-12-12-demos.zip');
 });
