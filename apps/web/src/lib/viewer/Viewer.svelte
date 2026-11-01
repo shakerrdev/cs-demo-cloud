@@ -612,6 +612,12 @@
 		}
 	}
 
+	function topView() {
+		if (view !== '3d') return;
+		if (cameraMode !== 'free') setCameraMode('free');
+		scene3d?.toggleTopView();
+	}
+
 	function pickFocus(index: number) {
 		director = false;
 		focus = focus === index ? null : index;
@@ -1010,6 +1016,8 @@
 	function onKey(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName)) return;
+		const flying = view === '3d' && cameraMode === 'free' && /^Key[WASDQE]$/.test(event.code);
+		if (flying && !event.ctrlKey && !event.metaKey) return;
 		if (
 			view === '3d' &&
 			cameraMode === 'free' &&
@@ -1031,6 +1039,7 @@
 		else if (event.key === 's' || event.key === 'S') void copySetpos();
 		else if (event.key === 'd' || event.key === 'D') toggleDrawing();
 		else if (event.key === 'b' || event.key === 'B') startBookmark();
+		else if ((event.key === 't' || event.key === 'T') && view === '3d') topView();
 		else if (event.key === 'g' || event.key === 'G') toggleDirector();
 		else if (event.key === 'Escape' && bookmarking) bookmarking = null;
 		else if (
@@ -1429,6 +1438,11 @@
 						aria-pressed={!roofs}
 						title="Hide everything above the players"
 						onclick={() => (roofs = !roofs)}>Cut roofs</button
+					>
+					<button
+						type="button"
+						title="Look straight down, press again to go back (T)"
+						onclick={topView}>Top</button
 					>
 					<button type="button" onclick={() => scene3d?.resetView()}>Reset</button>
 					{#if mapPack}

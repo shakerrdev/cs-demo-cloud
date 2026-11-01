@@ -186,6 +186,7 @@ export class ReplayScene {
 	} | null = null;
 	private transitionFocus: number | null = null;
 	private tick = 0;
+	private angledOffset: THREE.Vector3 | null = null;
 	private shown = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 	private desired = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 	private chaseYaw: number | null = null;
@@ -619,6 +620,27 @@ export class ReplayScene {
 		};
 		this.controls.target.add(delta);
 		this.camera.position.add(delta);
+		this.controls.update();
+		this.dirty = true;
+	}
+
+	toggleTopView() {
+		const target = this.controls.target;
+		const offset = this.camera.position.clone().sub(target);
+		const distance = offset.length();
+		const flat = Math.hypot(offset.x, offset.y);
+		this.transition = {
+			position: this.shown.position.clone(),
+			quaternion: this.shown.quaternion.clone(),
+			start: performance.now()
+		};
+		if (flat / distance < 0.05 && this.angledOffset) {
+			this.camera.position.copy(target).add(this.angledOffset);
+			this.angledOffset = null;
+		} else {
+			this.angledOffset = offset.clone();
+			this.camera.position.set(target.x, target.y - 1, target.z + Math.max(distance, 1800));
+		}
 		this.controls.update();
 		this.dirty = true;
 	}
