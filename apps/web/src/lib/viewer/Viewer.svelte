@@ -9,6 +9,7 @@
 		type AppConfig,
 		weaponTitle,
 		type MapMesh,
+		type ReplayKill,
 		type RoundReplay,
 		type Side,
 		type TeamKey
@@ -610,6 +611,14 @@
 		} catch {
 			return;
 		}
+	}
+
+	function watchKill(kill: ReplayKill) {
+		if (!replay) return;
+		tick = hudTick = Math.max(replay.meta.startTick, kill.tick - 3 * replay.meta.tickRate);
+		director = false;
+		if (kill.attacker >= 0 && kill.attacker !== kill.victim) focus = kill.attacker;
+		if (view === '3d' && cameraMode === 'free') setCameraMode('follow');
 	}
 
 	function topView() {
@@ -1235,6 +1244,7 @@
 						{pixelRatio}
 						height={stageHeight}
 						onSelect={(index) => pickFocus(index)}
+						onKill={watchKill}
 						onRadarPick={(x, y) => {
 							setCameraMode('free');
 							scene3d?.flyTo(x, y);
@@ -1327,16 +1337,23 @@
 						{@const attacker = replay?.meta.players[kill.attacker]}
 						{@const victim = replay?.meta.players[kill.victim]}
 						<li>
-							{#if attacker && kill.attacker !== kill.victim}
-								<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
-							{/if}
-							{#if kill.attackerBlind}<KillIcon kind="blind" />{/if}
-							<span class="kill-weapon">{weaponTitle(kill.weapon)}</span>
-							{#if kill.noScope}<KillIcon kind="noscope" />{/if}
-							{#if kill.throughSmoke}<KillIcon kind="smoke" />{/if}
-							{#if kill.wallbang}<KillIcon kind="wallbang" />{/if}
-							{#if kill.headshot}<KillIcon kind="headshot" />{/if}
-							{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
+							<button
+								type="button"
+								class="watch"
+								title="Watch this kill"
+								onclick={() => watchKill(kill)}
+							>
+								{#if attacker && kill.attacker !== kill.victim}
+									<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
+								{/if}
+								{#if kill.attackerBlind}<KillIcon kind="blind" />{/if}
+								<span class="kill-weapon">{weaponTitle(kill.weapon)}</span>
+								{#if kill.noScope}<KillIcon kind="noscope" />{/if}
+								{#if kill.throughSmoke}<KillIcon kind="smoke" />{/if}
+								{#if kill.wallbang}<KillIcon kind="wallbang" />{/if}
+								{#if kill.headshot}<KillIcon kind="headshot" />{/if}
+								{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
+							</button>
 						</li>
 					{/each}
 				</ol>
@@ -1911,6 +1928,8 @@
 	}
 
 	.killfeed li {
+		pointer-events: auto;
+		cursor: pointer;
 		display: flex;
 		gap: 8px;
 		padding: 3px 9px;
@@ -2233,5 +2252,11 @@
 	.zoom-tools button.active {
 		border-color: var(--accent);
 		color: var(--accent);
+	}
+
+	.watch {
+		all: unset;
+		display: contents;
+		cursor: pointer;
 	}
 </style>

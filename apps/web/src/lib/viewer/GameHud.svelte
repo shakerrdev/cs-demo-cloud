@@ -4,6 +4,7 @@
 		weaponKey,
 		weaponTitle,
 		type MapInfo,
+		type ReplayKill,
 		type RoundReplay,
 		type Side,
 		type TeamKey
@@ -30,6 +31,7 @@
 		height: number;
 		onSelect: (index: number) => void;
 		onRadarPick?: (x: number, y: number) => void;
+		onKill?: (kill: ReplayKill) => void;
 	}
 
 	let {
@@ -48,7 +50,8 @@
 		pixelRatio,
 		height,
 		onSelect,
-		onRadarPick
+		onRadarPick,
+		onKill
 	}: Props = $props();
 
 	const RADAR_SHARE = 0.26;
@@ -260,18 +263,23 @@
 		{#each killFeed as kill (kill.tick + ':' + kill.victim)}
 			{@const attacker = replay.meta.players[kill.attacker]}
 			{@const victim = replay.meta.players[kill.victim]}
-			<li class:mine={focus !== null && (kill.attacker === focus || kill.victim === focus)}>
-				{#if kill.attackerBlind}<KillIcon kind="blind" />{/if}
-				{#if attacker && kill.attacker !== kill.victim}
-					<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
-				{/if}
-				{#if kill.flashAssist}<KillIcon kind="flash" />{/if}
-				<span class="weapon">{weaponTitle(kill.weapon)}</span>
-				{#if kill.noScope}<KillIcon kind="noscope" />{/if}
-				{#if kill.throughSmoke}<KillIcon kind="smoke" />{/if}
-				{#if kill.wallbang}<KillIcon kind="wallbang" />{/if}
-				{#if kill.headshot}<KillIcon kind="headshot" />{/if}
-				{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
+			<li
+				class:mine={focus !== null && (kill.attacker === focus || kill.victim === focus)}
+				class:pickable={onKill !== undefined}
+			>
+				<button type="button" class="watch" title="Watch this kill" onclick={() => onKill?.(kill)}>
+					{#if kill.attackerBlind}<KillIcon kind="blind" />{/if}
+					{#if attacker && kill.attacker !== kill.victim}
+						<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
+					{/if}
+					{#if kill.flashAssist}<KillIcon kind="flash" />{/if}
+					<span class="weapon">{weaponTitle(kill.weapon)}</span>
+					{#if kill.noScope}<KillIcon kind="noscope" />{/if}
+					{#if kill.throughSmoke}<KillIcon kind="smoke" />{/if}
+					{#if kill.wallbang}<KillIcon kind="wallbang" />{/if}
+					{#if kill.headshot}<KillIcon kind="headshot" />{/if}
+					{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
+				</button>
 			</li>
 		{/each}
 	</ol>
@@ -544,6 +552,11 @@
 		list-style: none;
 	}
 
+	.feed li.pickable {
+		pointer-events: auto;
+		cursor: pointer;
+	}
+
 	.feed li {
 		display: flex;
 		align-items: center;
@@ -805,5 +818,11 @@
 			opacity: 0;
 			transform: translateX(-50%) scale(0.96);
 		}
+	}
+
+	.watch {
+		all: unset;
+		display: contents;
+		cursor: pointer;
 	}
 </style>
