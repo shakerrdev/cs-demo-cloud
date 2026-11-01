@@ -52,6 +52,26 @@
 	</div>
 </div>
 
+{#if shown.length}
+	<form method="POST" action="?/save" class="save">
+		{#each shown as item (item.demoId + item.round + item.steamid + item.kind)}
+			<input
+				type="hidden"
+				name="item"
+				value="{item.demoId}/{item.round}/{item.steamid}/{item.kind}"
+			/>
+		{/each}
+		<input
+			name="name"
+			placeholder="Playlist name"
+			maxlength="80"
+			value="Highlights"
+			aria-label="Playlist name"
+		/>
+		<button type="submit" class="button small">Save {shown.length} as a playlist</button>
+	</form>
+{/if}
+
 {#if !shown.length}
 	<p class="empty">No highlights yet{data.items.length ? ' for these filters' : ''}.</p>
 {:else}
@@ -126,6 +146,22 @@
 	.toggle button[aria-pressed='true'] {
 		background: var(--border);
 		color: var(--text);
+	}
+
+	.save {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-bottom: 10px;
+	}
+
+	.save input {
+		background: var(--surface);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 5px 8px;
 	}
 
 	.list {
