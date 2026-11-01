@@ -1174,9 +1174,17 @@ export class ReplayScene {
 		);
 		this.raycaster.setFromCamera(ndc, this.camera);
 		const [hit] = this.raycaster.intersectObjects(this.actors.bodies(), false);
-		if (!hit) return;
-		const index = this.actors.indexOf(hit.object);
-		if (index >= 0) this.onPick(index);
+		const index = hit ? this.actors.indexOf(hit.object) : -1;
+		if (index >= 0) {
+			this.onPick(index);
+			return;
+		}
+		this.hoverPoint = {
+			x: (event.clientX - rect.left) * this.pixelRatio,
+			y: (event.clientY - rect.top) * this.pixelRatio
+		};
+		const near = this.hoverTarget();
+		if (near !== null) this.onPick(near);
 	}
 
 	private drawDamage(ctx: CanvasRenderingContext2D, width: number, height: number) {
