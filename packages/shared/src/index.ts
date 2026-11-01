@@ -8,3 +8,4 @@ export * from './steam.ts';
 export * from './storage.ts';
 export * from './zip.ts';
 export * from './zip-stream.ts';
+export * from './remote-demo.ts';
