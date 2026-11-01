@@ -84,6 +84,7 @@
 	const cameraModes: { mode: CameraMode; label: string }[] = [
 		{ mode: 'free', label: 'Free' },
 		{ mode: 'follow', label: 'Follow' },
+		{ mode: 'chase', label: 'Chase' },
 		{ mode: 'pov', label: 'POV' }
 	];
 	const viewKey = 'viewer.view';

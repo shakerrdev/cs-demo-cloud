@@ -12,7 +12,9 @@ import {
 	weaponKey,
 	type MapInfo,
 	type MapMesh,
-	type RoundReplay
+	type RoundReplay,
+	MeshRaycaster,
+	lerpAngle
 } from '@cs-demo-cloud/replay';
 import type { Listener } from '../audio.ts';
 import { profiler } from '../perf.ts';
@@ -41,7 +43,7 @@ import type { PovPose, Viewmodel } from './cs2/viewmodel.ts';
 
 export type { TextureQuality, DebugToggles, GraphicsSettings };
 
-export type CameraMode = 'free' | 'follow' | 'pov';
+export type CameraMode = 'free' | 'follow' | 'chase' | 'pov';
 
 const MIN_AUTO_SCALE = 0.5;
 
@@ -62,6 +64,11 @@ export interface SceneFrame {
 
 const background = new THREE.Color(0x0b0d10);
 const ORBIT_FOV = 50;
+const CHASE_FOV = 68;
+const CHASE_DISTANCE = 140;
+const CHASE_MIN = 24;
+const CHASE_CLEARANCE = 10;
+const CHASE_FOLLOW = 6;
 const SLOT_COLORS = ['#7fbdff', '#6fe08a', '#ffe066', '#ffa358', '#c99bff'];
 const ROOF_CUT = 170;
 const MAX_PLAYER_SCALE = 3;
@@ -161,6 +168,12 @@ export class ReplayScene {
 	private crosshairs = new Map<string, Crosshair | null>();
 	private flyKeys = new Set<string>();
 	private sunShadow: SunShadow | null = null;
+	private raycaster3: MeshRaycaster | null = null;
+	private raycasterMesh: MapMesh | null = null;
+	private chaseYaw: number | null = null;
+	private chasePitch = 0;
+	private chaseDistance = CHASE_DISTANCE;
+	private lastChase = 0;
 	private lastFly = 0;
 	private viewmodelKey = '';
 
@@ -592,6 +605,8 @@ export class ReplayScene {
 
 		if (mode === 'follow' && focused?.alive) this.follow(focused);
 		else this.followAnchor = null;
+		if (mode === 'chase' && focused?.alive) this.chase(focused);
+		else this.chaseYaw = null;
 		this.povPose = mode === 'pov' && focused ? this.placePov(replay, tick, focused) : null;
 		const pov = this.config.pov;
 		this.scope = this.pov !== null && pov.scope ? scopeOf(focused) : null;
@@ -737,7 +752,7 @@ export class ReplayScene {
 	};
 
 	private sizeOf = (player: PlayerState): number => {
-		if (this.mode === 'pov' || this.models?.active) return 1;
+		if (this.mode === 'pov' || this.mode === 'chase' || this.models?.active) return 1;
 		const distance = this.projected
 			.set(player.x, player.y, player.z)
 			.distanceTo(this.camera.position);
@@ -791,7 +806,7 @@ export class ReplayScene {
 		this.controls.target.copy(center);
 		this.camera.position.set(center.x, center.y - extent * 0.55, center.z + extent * 0.85);
 		this.mapMaterial.uniforms.uFogDensity!.value = 0.55 / (extent * 2.2);
-		if (this.mode === 'pov') this.mode = 'free';
+		if (this.mode === 'pov' || this.mode === 'chase') this.mode = 'free';
 		this.followAnchor = null;
 		this.controls.enabled = true;
 		this.camera.fov = ORBIT_FOV;
@@ -802,7 +817,21 @@ export class ReplayScene {
 	}
 
 	private switchMode(mode: CameraMode) {
-		if (mode === 'pov') {
+		const fixed = (m: CameraMode) => m === 'pov' || m === 'chase';
+		if (fixed(mode) && fixed(this.mode)) {
+			this.camera.fov = mode === 'pov' ? this.povFov : CHASE_FOV;
+		} else if (mode === 'chase') {
+			this.orbit.position.copy(this.camera.position);
+			this.orbit.target.copy(this.controls.target);
+			this.controls.enabled = false;
+			this.camera.fov = CHASE_FOV;
+		} else if (this.mode === 'chase') {
+			this.camera.position.copy(this.orbit.position);
+			this.controls.target.copy(this.orbit.target);
+			this.controls.enabled = true;
+			this.camera.fov = ORBIT_FOV;
+			this.controls.update();
+		} else if (mode === 'pov') {
 			this.orbit.position.copy(this.camera.position);
 			this.orbit.target.copy(this.controls.target);
 			this.controls.enabled = false;
@@ -818,6 +847,48 @@ export class ReplayScene {
 		this.followAnchor = null;
 		this.mode = mode;
 		this.dirty = true;
+	}
+
+	private chase(player: PlayerState) {
+		const now = performance.now();
+		const dt = Math.min(0.25, (now - this.lastChase) / 1000);
+		this.lastChase = now;
+		const eye = new THREE.Vector3(player.x, player.y, player.z + eyeHeight(player));
+		const keep = this.chaseYaw === null ? 1 : 1 - Math.exp(-dt * CHASE_FOLLOW);
+		this.chaseYaw =
+			this.chaseYaw === null ? player.yaw : lerpAngle(this.chaseYaw, player.yaw, keep);
+		this.chasePitch += (Math.max(-30, Math.min(40, player.pitch)) * 0.5 - this.chasePitch) * keep;
+		const yaw = this.chaseYaw * (Math.PI / 180);
+		const pitch = this.chasePitch * (Math.PI / 180);
+		const back = new THREE.Vector3(
+			-Math.cos(pitch) * Math.cos(yaw),
+			-Math.cos(pitch) * Math.sin(yaw),
+			Math.sin(pitch) * 0.6 + 0.18
+		).normalize();
+		const raycaster = this.chaseRaycaster();
+		const hit = raycaster?.cast([eye.x, eye.y, eye.z], [back.x, back.y, back.z], CHASE_DISTANCE);
+		const wanted = hit ? Math.max(CHASE_MIN, hit.distance - CHASE_CLEARANCE) : CHASE_DISTANCE;
+		this.chaseDistance =
+			wanted < this.chaseDistance
+				? wanted
+				: this.chaseDistance + (wanted - this.chaseDistance) * (1 - Math.exp(-dt * 4));
+		this.camera.position.copy(eye).addScaledVector(back, this.chaseDistance);
+		const ahead = new THREE.Vector3(Math.cos(yaw), Math.sin(yaw), -Math.sin(pitch) * 0.4);
+		this.camera.lookAt(eye.clone().addScaledVector(ahead, 60));
+		if (
+			Math.abs(((player.yaw - this.chaseYaw + 540) % 360) - 180) > 0.2 ||
+			Math.abs(wanted - this.chaseDistance) > 0.5
+		)
+			this.dirty = true;
+	}
+
+	private chaseRaycaster(): MeshRaycaster | null {
+		if (!this.mesh) return null;
+		if (this.raycasterMesh !== this.mesh) {
+			this.raycasterMesh = this.mesh;
+			this.raycaster3 = new MeshRaycaster(this.mesh);
+		}
+		return this.raycaster3;
 	}
 
 	private follow(player: PlayerState) {
