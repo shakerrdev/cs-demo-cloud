@@ -49,6 +49,9 @@
 		rounds: RoundInfo[];
 		teamNames: Record<TeamKey, string>;
 		config?: AppConfig;
+		playlists?: { id: string; name: string }[];
+		bookmarks?: { id: string; round: number; tick: number; note: string; playlist: string }[];
+		onbookmark?: () => void;
 	}
 
 	let {
@@ -62,7 +65,10 @@
 		soundsPack = null,
 		rounds,
 		teamNames,
-		config = defaultConfig
+		config = defaultConfig,
+		playlists = [],
+		bookmarks = [],
+		onbookmark
 	}: Props = $props();
 
 	const speeds = [0.5, 1, 2, 4, 8];
@@ -223,6 +229,56 @@
 	function toggleDrawing() {
 		if (view !== '2d') setView('2d');
 		drawing = !drawing;
+	}
+
+	let bookmarking = $state<{
+		tick: number;
+		note: string;
+		playlistId: string;
+		newName: string;
+	} | null>(null);
+	let savingBookmark = $state(false);
+	const roundBookmarks = $derived(bookmarks.filter((b) => b.round === round));
+
+	function startBookmark() {
+		if (!replay) return;
+		playing = false;
+		bookmarking = {
+			tick: Math.round(tick),
+			note: '',
+			playlistId: playlists[0]?.id ?? '',
+			newName: playlists.length ? '' : 'My moments'
+		};
+	}
+
+	async function saveBookmark(event: SubmitEvent) {
+		event.preventDefault();
+		if (!bookmarking || savingBookmark) return;
+		savingBookmark = true;
+		try {
+			const response = await fetch('/api/bookmarks', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					demoId,
+					round,
+					tick: bookmarking.tick,
+					note: bookmarking.note,
+					playlistId: bookmarking.playlistId || undefined,
+					playlistName: bookmarking.playlistId ? undefined : bookmarking.newName
+				})
+			});
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				showNotice(body.message ?? `Could not save the bookmark (${response.status})`);
+				return;
+			}
+			bookmarking = null;
+			showNotice('Bookmarked');
+			onbookmark?.();
+		} finally {
+			savingBookmark = false;
+		}
 	}
 
 	let notice = $state<string | null>(null);
@@ -527,6 +583,7 @@
 
 	let host: HTMLDivElement | undefined = $state();
 	let pendingTick: number | null = null;
+	let loadedKey = '';
 
 	$effect(() => {
 		const follow = () => {
@@ -549,11 +606,14 @@
 
 	$effect(() => {
 		const number = round;
+		const key = `${demoId}/${version}/${number}`;
+		if (key === loadedKey) return;
 		loading = true;
 		error = null;
 		loadRound(demoId, version, number)
 			.then((next) => {
 				if (number !== round) return;
+				loadedKey = key;
 				replay = next;
 				const wanted = pendingTick;
 				pendingTick = null;
@@ -833,6 +893,8 @@
 		else if (event.key === 'k' || event.key === 'K') jumpToEvent(1);
 		else if (event.key === 's' || event.key === 'S') void copySetpos();
 		else if (event.key === 'd' || event.key === 'D') toggleDrawing();
+		else if (event.key === 'b' || event.key === 'B') startBookmark();
+		else if (event.key === 'Escape' && bookmarking) bookmarking = null;
 		else if (
 			(event.key === 'z' || event.key === 'Z') &&
 			(event.ctrlKey || event.metaKey) &&
@@ -1125,6 +1187,16 @@
 					{#each replay.meta.bomb.filter((b) => b.type === 'plant') as plant (plant.tick)}
 						<span class="mark plant" style:left="{marker(plant.tick)}%"></span>
 					{/each}
+					{#each roundBookmarks as mark (mark.id)}
+						<button
+							type="button"
+							class="mark bookmark"
+							style:left="{marker(mark.tick)}%"
+							title="{mark.note || 'Bookmark'} · {mark.playlist}"
+							aria-label="Go to bookmark: {mark.note || mark.playlist}"
+							onclick={() => (tick = hudTick = mark.tick)}
+						></button>
+					{/each}
 				{/if}
 				<input
 					type="range"
@@ -1277,6 +1349,12 @@
 				</div>
 				<button
 					type="button"
+					class:active={bookmarking !== null}
+					title="Bookmark this moment into a playlist (B)"
+					onclick={() => (bookmarking ? (bookmarking = null) : startBookmark())}>Bookmark</button
+				>
+				<button
+					type="button"
 					class:active={drawing}
 					aria-pressed={drawing}
 					title="Draw on the radar (D). Drawings are kept per round in this browser."
@@ -1329,6 +1407,39 @@
 	</div>
 </div>
 
+{#if bookmarking}
+	<form class="bookmark-form" onsubmit={saveBookmark}>
+		<span class="where">Round {round} · {clock.time}</span>
+		<!-- svelte-ignore a11y_autofocus -->
+		<input
+			type="text"
+			placeholder="Note, e.g. late rotate to B"
+			maxlength="500"
+			bind:value={bookmarking.note}
+			autofocus
+			aria-label="Note"
+		/>
+		<select bind:value={bookmarking.playlistId} aria-label="Playlist">
+			{#each playlists as list (list.id)}
+				<option value={list.id}>{list.name}</option>
+			{/each}
+			<option value="">New playlist…</option>
+		</select>
+		{#if !bookmarking.playlistId}
+			<input
+				type="text"
+				placeholder="Playlist name"
+				maxlength="80"
+				required
+				bind:value={bookmarking.newName}
+				aria-label="New playlist name"
+			/>
+		{/if}
+		<button type="submit" class="primary" disabled={savingBookmark}>Save</button>
+		<button type="button" onclick={() => (bookmarking = null)}>Cancel</button>
+	</form>
+{/if}
+
 <nav class="rounds" aria-label="Rounds">
 	{#each rounds as info (info.number)}
 		<button
@@ -1346,9 +1457,9 @@
 	{/each}
 </nav>
 <p class="hint">
-	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · D draw · [ /
-	] round · 1–5 speed · V 2D/3D · click a player to highlight them and draw their path (J / K then
-	follow their kills and deaths)
+	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · D draw · B
+	bookmark · [ / ] round · 1–5 speed · V 2D/3D · click a player to highlight them and draw their
+	path (J / K then follow their kills and deaths)
 	{#if view === '3d'}
 		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode · F
 		full screen · H HUD · X x-ray · in Follow and POV, left/right click switches to the
@@ -1848,5 +1959,64 @@
 
 	.draw-tools .swatch.active {
 		border-color: var(--text);
+	}
+
+	.mark.bookmark {
+		top: auto;
+		bottom: -2px;
+		width: 9px;
+		height: 9px;
+		margin-left: -3px;
+		padding: 0;
+		border: 0;
+		border-radius: 2px 2px 0 0;
+		background: #b48cff;
+		clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%);
+		cursor: pointer;
+		z-index: 2;
+	}
+
+	.bookmark-form {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin: 10px 0 0;
+		padding: 10px 12px;
+		border-radius: var(--radius);
+		background: var(--surface);
+		border: 1px solid #b48cff55;
+	}
+
+	.bookmark-form .where {
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.bookmark-form input,
+	.bookmark-form select,
+	.bookmark-form button {
+		height: 32px;
+		padding: 0 10px;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: var(--bg);
+		color: var(--text);
+		font: inherit;
+	}
+
+	.bookmark-form input[type='text'] {
+		flex: 1 1 200px;
+	}
+
+	.bookmark-form button {
+		cursor: pointer;
+		font-weight: 600;
+	}
+
+	.bookmark-form button.primary {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #1a1206;
 	}
 </style>
