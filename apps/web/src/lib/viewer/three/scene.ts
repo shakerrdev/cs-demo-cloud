@@ -100,6 +100,7 @@ export function scopeOf(player: PlayerState | undefined): { fov: number; sniper:
 }
 
 const FLY_SPEED = 900;
+const LOOK_SPEED = 0.004;
 const FLY_KEYS = new Set([
 	'KeyW',
 	'KeyA',
@@ -206,7 +207,7 @@ export class ReplayScene {
 		this.controls.zoomToCursor = true;
 		this.controls.minDistance = 60;
 		this.controls.maxDistance = 16000;
-		this.controls.maxPolarAngle = Math.PI / 2 - 0.04;
+		this.controls.maxPolarAngle = Math.PI * 0.95;
 		this.controls.addEventListener('change', this.markDirty);
 
 		this.scene.background = background;
@@ -227,9 +228,30 @@ export class ReplayScene {
 			}
 			this.pointer.down = false;
 		};
-		const menu = (event: MouseEvent) => {
-			if (this.mode !== 'free') event.preventDefault();
+		const menu = (event: MouseEvent) => event.preventDefault();
+		let look: { x: number; y: number; id: number } | null = null;
+		const lookStart = (event: PointerEvent) => {
+			if (this.mode !== 'free' || event.button !== 2 || event.shiftKey) return;
+			event.stopImmediatePropagation();
+			look = { x: event.clientX, y: event.clientY, id: event.pointerId };
+			canvas.setPointerCapture(event.pointerId);
 		};
+		const lookMove = (event: PointerEvent) => {
+			if (!look || event.pointerId !== look.id) return;
+			event.stopImmediatePropagation();
+			this.lookAround(event.clientX - look.x, event.clientY - look.y);
+			look.x = event.clientX;
+			look.y = event.clientY;
+		};
+		const lookEnd = (event: PointerEvent) => {
+			if (!look || event.pointerId !== look.id) return;
+			event.stopImmediatePropagation();
+			look = null;
+			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+		};
+		canvas.addEventListener('pointerdown', lookStart, { capture: true });
+		canvas.addEventListener('pointermove', lookMove, { capture: true });
+		canvas.addEventListener('pointerup', lookEnd, { capture: true });
 		const isTyping = (target: EventTarget | null) =>
 			target instanceof HTMLElement &&
 			(['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable);
@@ -255,6 +277,9 @@ export class ReplayScene {
 			canvas.removeEventListener('pointerdown', down);
 			canvas.removeEventListener('pointerup', up);
 			canvas.removeEventListener('contextmenu', menu);
+			canvas.removeEventListener('pointerdown', lookStart, { capture: true });
+			canvas.removeEventListener('pointermove', lookMove, { capture: true });
+			canvas.removeEventListener('pointerup', lookEnd, { capture: true });
 			window.removeEventListener('keydown', keyDown);
 			window.removeEventListener('keyup', keyUp);
 			window.removeEventListener('blur', blur);
@@ -761,6 +786,23 @@ export class ReplayScene {
 
 	get flying(): boolean {
 		return this.mode === 'free';
+	}
+
+	private lookAround(dx: number, dy: number) {
+		const offset = this.controls.target.clone().sub(this.camera.position);
+		const distance = Math.max(1, offset.length());
+		const yaw = Math.atan2(offset.y, offset.x) - dx * LOOK_SPEED;
+		const pitch = Math.max(
+			-1.5,
+			Math.min(1.5, Math.asin(Math.max(-1, Math.min(1, offset.z / distance))) - dy * LOOK_SPEED)
+		);
+		this.controls.target.set(
+			this.camera.position.x + Math.cos(pitch) * Math.cos(yaw) * distance,
+			this.camera.position.y + Math.cos(pitch) * Math.sin(yaw) * distance,
+			this.camera.position.z + Math.sin(pitch) * distance
+		);
+		this.camera.lookAt(this.controls.target);
+		this.dirty = true;
 	}
 
 	private fly() {

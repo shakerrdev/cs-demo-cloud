@@ -1534,9 +1534,9 @@
 	bookmark · [ / ] round · 1–5 speed (3D: − / =; 1–0 spectate a player like CS2) · V 2D/3D · click a
 	player to highlight them and draw their path (J / K then follow their kills and deaths)
 	{#if view === '3d'}
-		<br />3D: WASD to fly (Q/E down/up, Shift faster) · drag to pan · right-drag or Shift-drag to
-		rotate · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in Follow and POV,
-		left/right click switches to the next/previous player
+		<br />3D: WASD to fly (Q/E down/up, Shift faster) · right-drag to look around · drag to pan ·
+		Shift-drag to orbit · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in
+		Follow, Chase and POV, left/right click switches to the next/previous player
 	{/if}
 </p>
 
