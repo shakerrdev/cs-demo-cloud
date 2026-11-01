@@ -41,6 +41,33 @@ export function loadMapMesh(map: string): Promise<MapMesh | null> {
 	return pending;
 }
 
+export interface RoundSource {
+	demoId: string;
+	version: number;
+	round: number;
+}
+
+export function loadRounds(
+	sources: RoundSource[],
+	onRound: (replay: RoundReplay | null, index: number) => void,
+	workers = 4
+): () => void {
+	let cancelled = false;
+	let next = 0;
+	const work = async () => {
+		while (next < sources.length && !cancelled) {
+			const index = next++;
+			const { demoId, version, round } = sources[index]!;
+			const replay = await loadRound(demoId, version, round).catch(() => null);
+			if (!cancelled) onRound(replay, index);
+		}
+	};
+	for (let i = 0; i < workers; i++) void work();
+	return () => {
+		cancelled = true;
+	};
+}
+
 export function loadAllRounds(
 	demoId: string,
 	version: number,
@@ -48,17 +75,9 @@ export function loadAllRounds(
 	onRound: (replay: RoundReplay | null, number: number) => void,
 	workers = 4
 ): () => void {
-	let cancelled = false;
-	const queue = [...rounds];
-	const work = async () => {
-		while (queue.length && !cancelled) {
-			const number = queue.shift()!;
-			const replay = await loadRound(demoId, version, number).catch(() => null);
-			if (!cancelled) onRound(replay, number);
-		}
-	};
-	for (let i = 0; i < workers; i++) void work();
-	return () => {
-		cancelled = true;
-	};
+	return loadRounds(
+		rounds.map((round) => ({ demoId, version, round })),
+		(replay, index) => onRound(replay, rounds[index]!),
+		workers
+	);
 }

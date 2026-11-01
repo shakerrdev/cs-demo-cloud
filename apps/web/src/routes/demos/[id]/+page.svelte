@@ -234,10 +234,13 @@
 	{:else if board === 'utility'}
 		<section class="economy" aria-label="Utility">
 			<UtilityMap
-				demoId={data.demo.id}
-				version={match.parsedAt.getTime()}
+				currentDemo={data.demo.id}
 				map={match.map}
-				roundNumbers={details.rounds.map((r) => r.number)}
+				sources={details.rounds.map((r) => ({
+					demoId: data.demo.id,
+					version: match.parsedAt.getTime(),
+					round: r.number
+				}))}
 				players={players.map((p) => ({ steamid: p.steamid, name: p.name }))}
 			/>
 		</section>

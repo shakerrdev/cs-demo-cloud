@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { maps, worldToRadar, type GrenadeType, type Side } from '@cs-demo-cloud/replay';
-	import { loadAllRounds } from '#lib/viewer/loader.ts';
+	import { goto } from '$app/navigation';
+	import { loadRounds, type RoundSource } from '#lib/viewer/loader.ts';
 	import { setposCommand } from '#lib/viewer/frame.ts';
 
 	interface Props {
-		demoId: string;
-		version: number;
 		map: string;
-		roundNumbers: number[];
+		sources: RoundSource[];
 		players: { steamid: string; name: string }[];
+		currentDemo?: string;
+		player?: string;
 	}
 
 	interface Throw {
+		demoId: string;
 		round: number;
 		type: GrenadeType;
 		steamid: string;
@@ -37,12 +39,11 @@
 		decoy: '#9aa4ae'
 	};
 
-	let { demoId, version, map, roundNumbers, players }: Props = $props();
+	let { map, sources, players, currentDemo, player = $bindable('') }: Props = $props();
 
 	let throws = $state.raw<Throw[]>([]);
 	let loaded = $state(0);
 	let types = $state<GrenadeType[]>(['smoke', 'flash', 'he', 'molotov']);
-	let player = $state('');
 	let side = $state<'all' | Side>('all');
 	let level = $state<'upper' | 'lower'>('upper');
 	let canvas: HTMLCanvasElement | undefined = $state();
@@ -56,21 +57,22 @@
 	const names = $derived(new Map(players.map((p) => [p.steamid, p.name])));
 
 	$effect(() => {
-		const numbers = roundNumbers;
+		const list = sources;
 		throws = [];
 		loaded = 0;
 		const collected: Throw[][] = [];
-		return loadAllRounds(demoId, version, numbers, (replay, number) => {
+		return loadRounds(list, (replay, index) => {
 			loaded++;
 			if (!replay) return;
 			const { meta } = replay;
-			collected[number] = meta.grenades.flatMap((grenade): Throw[] => {
+			collected[index] = meta.grenades.flatMap((grenade): Throw[] => {
 				const thrower = meta.players[grenade.thrower];
 				const path = grenade.path;
 				if (!thrower || path.length < 8) return [];
 				const last = path.length - 4;
 				return [
 					{
+						demoId: list[index]!.demoId,
 						round: meta.round,
 						type: grenade.type,
 						steamid: thrower.steamid,
@@ -123,6 +125,7 @@
 		) as Record<GrenadeType, number>
 	);
 
+	const bothSides = $derived(new Set(throws.map((t) => t.side)).size > 1);
 	const image = $derived(level === 'lower' && lowerRadar ? lowerRadar : radar);
 
 	function project(size: number, x: number, y: number) {
@@ -192,7 +195,10 @@
 
 	function watch(event: MouseEvent) {
 		const hit = nearest(event);
-		if (hit) location.hash = `round-${hit.item.round}@${Math.max(0, hit.item.tick - 128)}`;
+		if (!hit) return;
+		const hash = `round-${hit.item.round}@${Math.max(0, hit.item.tick - 128)}`;
+		if (hit.item.demoId === currentDemo) location.hash = hash;
+		else goto(`/demos/${hit.item.demoId}#${hash}`);
 	}
 
 	async function copyLineup(event: MouseEvent) {
@@ -225,19 +231,23 @@
 				><i></i>{typeLabels[type]} <small>{counts[type]}</small></button
 			>
 		{/each}
-		<select bind:value={player} aria-label="Player">
-			<option value="">Everyone</option>
-			{#each players as p (p.steamid)}
-				<option value={p.steamid}>{p.name}</option>
-			{/each}
-		</select>
-		<div class="toggle" role="group" aria-label="Side">
-			{#each ['all', 'CT', 'T'] as const as key (key)}
-				<button type="button" aria-pressed={side === key} onclick={() => (side = key)}
-					>{key === 'all' ? 'Both sides' : key}</button
-				>
-			{/each}
-		</div>
+		{#if players.length > 1}
+			<select bind:value={player} aria-label="Player">
+				<option value="">Everyone</option>
+				{#each players as p (p.steamid)}
+					<option value={p.steamid}>{p.name}</option>
+				{/each}
+			</select>
+		{/if}
+		{#if bothSides}
+			<div class="toggle" role="group" aria-label="Side">
+				{#each ['all', 'CT', 'T'] as const as key (key)}
+					<button type="button" aria-pressed={side === key} onclick={() => (side = key)}
+						>{key === 'all' ? 'Both sides' : key}</button
+					>
+				{/each}
+			</div>
+		{/if}
 		{#if hasLower}
 			<div class="toggle" role="group" aria-label="Level">
 				<button type="button" aria-pressed={level === 'upper'} onclick={() => (level = 'upper')}
@@ -249,8 +259,8 @@
 			</div>
 		{/if}
 		<span class="count">
-			{loaded < roundNumbers.length
-				? `Loading rounds ${loaded}/${roundNumbers.length}…`
+			{loaded < sources.length
+				? `Loading rounds ${loaded}/${sources.length}…`
 				: `${visible.length} grenades`}
 		</span>
 	</div>
