@@ -40,3 +40,25 @@ export function loadMapMesh(map: string): Promise<MapMesh | null> {
 	}
 	return pending;
 }
+
+export function loadAllRounds(
+	demoId: string,
+	version: number,
+	rounds: number[],
+	onRound: (replay: RoundReplay | null, number: number) => void,
+	workers = 4
+): () => void {
+	let cancelled = false;
+	const queue = [...rounds];
+	const work = async () => {
+		while (queue.length && !cancelled) {
+			const number = queue.shift()!;
+			const replay = await loadRound(demoId, version, number).catch(() => null);
+			if (!cancelled) onRound(replay, number);
+		}
+	};
+	for (let i = 0; i < workers; i++) void work();
+	return () => {
+		cancelled = true;
+	};
+}

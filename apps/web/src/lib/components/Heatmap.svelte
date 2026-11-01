@@ -6,7 +6,7 @@
 		type RoundReplay,
 		type Side
 	} from '@cs-demo-cloud/replay';
-	import { loadRound } from '#lib/viewer/loader.ts';
+	import { loadAllRounds } from '#lib/viewer/loader.ts';
 	import { sideColors } from '#lib/viewer/draw.ts';
 	import { playerStates } from '#lib/viewer/frame.ts';
 
@@ -69,32 +69,17 @@
 	}
 
 	$effect(() => {
-		const id = demoId;
-		const v = version;
 		const numbers = roundNumbers;
-		let cancelled = false;
 		spots = [];
 		loaded = 0;
 		failed = 0;
 		const collected: Spot[][] = [];
-		const queue = [...numbers];
-		const worker = async () => {
-			while (queue.length && !cancelled) {
-				const number = queue.shift()!;
-				try {
-					collected[number] = spotsOf(await loadRound(id, v, number));
-				} catch {
-					failed++;
-				}
-				if (cancelled) return;
-				loaded++;
-				spots = collected.flat();
-			}
-		};
-		void Promise.all([worker(), worker(), worker(), worker()]);
-		return () => {
-			cancelled = true;
-		};
+		return loadAllRounds(demoId, version, numbers, (replay, number) => {
+			if (replay) collected[number] = spotsOf(replay);
+			else failed++;
+			loaded++;
+			spots = collected.flat();
+		});
 	});
 
 	$effect(() => {
