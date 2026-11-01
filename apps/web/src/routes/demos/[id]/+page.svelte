@@ -6,6 +6,10 @@
 
 	let { data, form }: PageProps = $props();
 	let confirmDelete = $state(false);
+	let board = $state<'basic' | 'advanced'>('basic');
+	const statsOf = $derived(new Map(data.stats?.players.map((p) => [p.steamid, p]) ?? []));
+	const openingsWon = (team: TeamKey) =>
+		data.stats?.openings.filter((o) => o.team === team).length ?? 0;
 
 	const details = $derived(data.details);
 	const teamKeys: TeamKey[] = ['a', 'b'];
@@ -94,6 +98,26 @@
 		config={data.config}
 	/>
 
+	<div class="board-switch" role="tablist" aria-label="Scoreboard">
+		<button
+			type="button"
+			role="tab"
+			aria-selected={board === 'basic'}
+			onclick={() => (board = 'basic')}>Scoreboard</button
+		>
+		<button
+			type="button"
+			role="tab"
+			aria-selected={board === 'advanced'}
+			onclick={() => (board = 'advanced')}>Duels &amp; clutches</button
+		>
+		{#if board === 'advanced' && data.stats}
+			<span class="openings"
+				>Opening duels {teamNames.a} {openingsWon('a')} – {openingsWon('b')} {teamNames.b}</span
+			>
+		{/if}
+	</div>
+
 	<section class="scoreboard">
 		{#each teamKeys as team (team)}
 			<div class="table">
@@ -104,14 +128,23 @@
 								{teamNames[team]}
 								<span class="started">started {startSide(team)}</span>
 							</th>
-							<th>K</th>
-							<th>D</th>
-							<th>A</th>
-							<th>+/−</th>
-							<th>ADR</th>
-							<th>HS%</th>
-							<th>MVP</th>
-							<th>Score</th>
+							{#if board === 'basic'}
+								<th>K</th>
+								<th>D</th>
+								<th>A</th>
+								<th>+/−</th>
+								<th>ADR</th>
+								<th>HS%</th>
+								<th>MVP</th>
+								<th>Score</th>
+							{:else}
+								<th title="Rounds with a kill, assist, survival or traded death">KAST</th>
+								<th title="Opening kills – opening deaths">Open</th>
+								<th title="Kills within 5 s of an enemy killing a teammate">Trades</th>
+								<th title="Rounds with 2, 3, 4 and 5 kills">2K/3K/4K/5K</th>
+								<th title="Clutches won / played (last player alive)">Clutch</th>
+								<th title="Kills on enemies this player flashed">Flash A</th>
+							{/if}
 						</tr>
 					</thead>
 					<tbody>
@@ -129,14 +162,36 @@
 										{player.name}
 									{/if}
 								</td>
-								<td>{player.kills}</td>
-								<td>{player.deaths}</td>
-								<td>{player.assists}</td>
-								<td class:pos={diff > 0} class:neg={diff < 0}>{diff > 0 ? `+${diff}` : diff}</td>
-								<td>{Math.round(player.damage / Math.max(1, match.roundCount))}</td>
-								<td>{percent(player.headshotKills, player.kills)}%</td>
-								<td>{player.mvps}</td>
-								<td>{player.score}</td>
+								{#if board === 'basic'}
+									<td>{player.kills}</td>
+									<td>{player.deaths}</td>
+									<td>{player.assists}</td>
+									<td class:pos={diff > 0} class:neg={diff < 0}>{diff > 0 ? `+${diff}` : diff}</td>
+									<td>{Math.round(player.damage / Math.max(1, match.roundCount))}</td>
+									<td>{percent(player.headshotKills, player.kills)}%</td>
+									<td>{player.mvps}</td>
+									<td>{player.score}</td>
+								{:else}
+									{@const s = statsOf.get(player.steamid)}
+									{@const won = s?.clutches.filter((c) => c.won) ?? []}
+									<td>{s ? Math.round(s.kast * 100) : 0}%</td>
+									<td
+										class:pos={(s?.openingKills ?? 0) > (s?.openingDeaths ?? 0)}
+										class:neg={(s?.openingKills ?? 0) < (s?.openingDeaths ?? 0)}
+										>{s?.openingKills ?? 0}–{s?.openingDeaths ?? 0}</td
+									>
+									<td>{s?.trades ?? 0}</td>
+									<td class="multi">{s?.multiKills.join(' / ') ?? '0 / 0 / 0 / 0'}</td>
+									<td
+										title={s?.clutches
+											.map((c) => `Round ${c.round}: 1v${c.opponents} ${c.won ? 'won' : 'lost'}`)
+											.join('\n')}
+										>{won.length}/{s?.clutches.length ?? 0}{#if won.length}<span class="best"
+												>1v{Math.max(...won.map((c) => c.opponents))}</span
+											>{/if}</td
+									>
+									<td>{s?.flashAssists ?? 0}</td>
+								{/if}
 							</tr>
 						{/each}
 					</tbody>
@@ -294,6 +349,45 @@
 	th.player {
 		color: var(--text);
 		font-size: 13px;
+	}
+
+	.board-switch {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px 4px;
+		margin-top: 20px;
+	}
+
+	.board-switch button {
+		border: 1px solid var(--border);
+		background: transparent;
+		color: var(--muted);
+		padding: 4px 12px;
+		border-radius: 999px;
+		cursor: pointer;
+	}
+
+	.board-switch button[aria-selected='true'] {
+		background: var(--surface);
+		color: var(--text);
+	}
+
+	.openings {
+		margin-left: auto;
+		color: var(--muted);
+		font-size: 0.9em;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.multi {
+		white-space: nowrap;
+	}
+
+	.best {
+		margin-left: 6px;
+		color: var(--muted);
+		font-size: 0.85em;
 	}
 
 	.started {

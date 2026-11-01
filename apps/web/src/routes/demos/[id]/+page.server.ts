@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { getDemo, getMatch, requeueDemo } from '@cs-demo-cloud/db';
+import { getDemo, getMatch, getMatchKills, requeueDemo } from '@cs-demo-cloud/db';
+import { matchStats } from '@cs-demo-cloud/replay';
 import {
 	AGENTS_PACK,
 	PLAYER_PACK,
@@ -18,6 +19,14 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const demo = getDemo(db, params.id);
 	if (!demo) error(404, 'Demo not found');
 	const details = getMatch(db, params.id) ?? null;
+	const stats = details
+		? matchStats(
+				details.players,
+				details.rounds.map((r) => ({ number: r.number, winnerTeam: r.winnerTeam })),
+				getMatchKills(db, params.id),
+				details.match.tickRate
+			)
+		: null;
 	const pack = details ? await readMapPack(storage, details.match.map) : null;
 	const players = pack ? await readMapPack(storage, PLAYER_PACK) : null;
 	const skins = players ? await readMapPack(storage, SKINS_PACK) : null;
@@ -26,6 +35,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		demo,
 		details,
+		stats,
 		mapPack: pack?.version ?? null,
 		playerPack: players?.version ?? null,
 		skinsPack: skins?.version ?? null,
