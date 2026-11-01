@@ -157,7 +157,11 @@ export const rounds = sqliteTable(
 		winnerTeam: text('winner_team', { enum: teams }),
 		reason: text('reason'),
 		scoreA: integer('score_a').notNull(),
-		scoreB: integer('score_b').notNull()
+		scoreB: integer('score_b').notNull(),
+		teamAEquipment: integer('team_a_equipment'),
+		teamBEquipment: integer('team_b_equipment'),
+		teamAMoney: integer('team_a_money'),
+		teamBMoney: integer('team_b_money')
 	},
 	(table) => [primaryKey({ columns: [table.demoId, table.number] })]
 );

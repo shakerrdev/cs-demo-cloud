@@ -12,3 +12,4 @@ export * from './crosshair.ts';
 export * from './random.ts';
 export * from './timing.ts';
 export * from './stats.ts';
+export * from './economy.ts';
