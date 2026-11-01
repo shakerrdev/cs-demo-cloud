@@ -1,4 +1,4 @@
-import { dequantize, type MapMesh } from '@cs-demo-cloud/replay';
+import { dequantize, type MapMesh } from './mesh.ts';
 
 const LEAF_SIZE = 8;
 

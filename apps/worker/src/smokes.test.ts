@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { quantizeMesh, type ReplayEffect } from '@cs-demo-cloud/replay';
-import { MeshRaycaster } from './raycast.ts';
+import { quantizeMesh, type ReplayEffect, MeshRaycaster } from '@cs-demo-cloud/replay';
 import { smokeVolume } from './smokes.ts';
 
 function room(): MeshRaycaster {

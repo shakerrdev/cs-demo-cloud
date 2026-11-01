@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createColumns, quantizeMesh, type RoundReplay } from '@cs-demo-cloud/replay';
+import {
+	createColumns,
+	quantizeMesh,
+	type RoundReplay,
+	MeshRaycaster
+} from '@cs-demo-cloud/replay';
 import { bulletDirections, computeFalls } from './impacts.ts';
-import { MeshRaycaster } from './raycast.ts';
 
 function wall(x: number): MeshRaycaster {
 	const vertices = new Float32Array([

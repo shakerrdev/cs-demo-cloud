@@ -6,9 +6,9 @@ import {
 	IMPACT_MISS,
 	IMPACT_WALL,
 	type RoundReplay,
-	unpackYaw
+	unpackYaw,
+	type MeshRaycaster
 } from '@cs-demo-cloud/replay';
-import type { MeshRaycaster } from './raycast.ts';
 
 const RANGE = 8192;
 const BLOOD_RANGE = 180;

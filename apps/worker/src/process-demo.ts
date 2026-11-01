@@ -9,7 +9,8 @@ import {
 	collectCosmetics,
 	decodeMapMesh,
 	encodeRound,
-	normalizeConfig
+	normalizeConfig,
+	MeshRaycaster
 } from '@cs-demo-cloud/replay';
 import type { Storage } from '@cs-demo-cloud/shared';
 import { analyzeDemo } from './analyze.ts';
@@ -17,7 +18,6 @@ import { openDemoFile } from './decompress.ts';
 import { computeFalls, computeImpacts } from './impacts.ts';
 import { computeSmokeVolumes } from './smokes.ts';
 import { ensureMapAssets } from './map-assets.ts';
-import { MeshRaycaster } from './raycast.ts';
 
 const compress = promisify(gzip);
 
