@@ -179,6 +179,7 @@ export class ReplayScene {
 		start: number;
 	} | null = null;
 	private transitionFocus: number | null = null;
+	private tick = 0;
 	private shown = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 	private desired = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 	private chaseYaw: number | null = null;
@@ -611,6 +612,7 @@ export class ReplayScene {
 	render(frame: SceneFrame): boolean {
 		const { replay, tick, focus, mode, roofs, xray = true } = frame;
 		this.replay = replay;
+		this.tick = tick;
 		this.xray = xray;
 		if (replay.meta.round !== this.round) {
 			this.round = replay.meta.round;
@@ -1054,6 +1056,40 @@ export class ReplayScene {
 		if (index >= 0) this.onPick(index);
 	}
 
+	private drawUtilityTimers(ctx: CanvasRenderingContext2D, width: number, height: number) {
+		const replay = this.replay;
+		if (!replay) return;
+		const ratio = this.pixelRatio;
+		const r = 10 * ratio;
+		for (const effect of replay.meta.effects) {
+			if (effect.type !== 'smoke' && effect.type !== 'molotov') continue;
+			if (this.tick < effect.startTick || this.tick > effect.endTick) continue;
+			const lift = effect.type === 'smoke' ? 150 : 30;
+			this.projected.set(effect.x, effect.y, effect.z + lift).project(this.camera);
+			const ndc = this.projected;
+			if (ndc.z <= -1 || ndc.z >= 1 || Math.abs(ndc.x) > 1.1 || Math.abs(ndc.y) > 1.1) continue;
+			const x = ((ndc.x + 1) / 2) * width;
+			const y = ((1 - ndc.y) / 2) * height;
+			const left = (effect.endTick - this.tick) / replay.meta.tickRate;
+			const total = (effect.endTick - effect.startTick) / replay.meta.tickRate;
+			const color = effect.type === 'smoke' ? '#eef1f5' : '#ffb47a';
+			ctx.fillStyle = 'rgba(10, 12, 15, 0.72)';
+			ctx.beginPath();
+			ctx.arc(x, y, r, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.strokeStyle = color;
+			ctx.lineWidth = 2 * ratio;
+			ctx.beginPath();
+			ctx.arc(x, y, r - ratio, -Math.PI / 2, -Math.PI / 2 + (left / total) * Math.PI * 2);
+			ctx.stroke();
+			ctx.fillStyle = color;
+			ctx.font = `600 ${Math.round(r)}px system-ui, sans-serif`;
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillText(String(Math.ceil(left)), x, y + 0.5 * ratio);
+		}
+	}
+
 	private drawOverlay(focus: number | null) {
 		const ctx = this.overlay;
 		const ratio = this.pixelRatio;
@@ -1147,6 +1183,7 @@ export class ReplayScene {
 			ctx.fillText(label, x, barY - 3 * ratio);
 		}
 		ctx.globalAlpha = 1;
+		if (names) this.drawUtilityTimers(ctx, width, height);
 		if (tags) this.drawXrayTags(ctx, width, height);
 
 		if (this.hurt > 0) {
