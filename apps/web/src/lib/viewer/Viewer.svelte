@@ -727,6 +727,34 @@
 		tick = Math.max(replay.meta.startTick, Math.min(end, tick + seconds * replay.meta.tickRate));
 	}
 
+	const EVENT_LEAD_SECONDS = 2;
+
+	function eventTicks(current: RoundReplay): number[] {
+		const kills = current.meta.kills
+			.filter((kill) => focus === null || kill.attacker === focus || kill.victim === focus)
+			.map((kill) => kill.tick);
+		const bomb =
+			focus === null
+				? current.meta.bomb
+						.filter((event) => ['plant', 'defuse', 'explode'].includes(event.type))
+						.map((event) => event.tick)
+				: [];
+		return [...kills, ...bomb].sort((a, b) => a - b);
+	}
+
+	function jumpToEvent(direction: 1 | -1) {
+		if (!replay) return;
+		const lead = EVENT_LEAD_SECONDS * replay.meta.tickRate;
+		const ticks = eventTicks(replay);
+		const here = tick + lead;
+		const target =
+			direction > 0
+				? ticks.find((t) => t > here + 1)
+				: ticks.findLast((t) => t < here - replay!.meta.tickRate / 2);
+		if (target === undefined) return;
+		tick = Math.max(replay.meta.startTick, Math.min(end, target - lead));
+	}
+
 	function onKey(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName)) return;
@@ -736,6 +764,8 @@
 		else if (event.key === 'PageUp' || event.key === '[') goToRound(round - 1);
 		else if (event.key === 'PageDown' || event.key === ']') goToRound(round + 1);
 		else if (/^[1-5]$/.test(event.key)) speed = speeds[Number(event.key) - 1]!;
+		else if (event.key === 'k' || event.key === 'K') jumpToEvent(1);
+		else if (event.key === 'j' || event.key === 'J') jumpToEvent(-1);
 		else if (event.key === 'm' || event.key === 'M') toggleSound();
 		else if (event.key === 'f' || event.key === 'F') setTheater(!theater);
 		else if (event.key === 'h' || event.key === 'H') toggleHud();
@@ -1195,8 +1225,8 @@
 	{/each}
 </nav>
 <p class="hint">
-	Space play/pause · ←/→ 5 s (Shift 1 s) · [ / ] round · 1–5 speed · V 2D/3D · click a player to
-	highlight
+	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · [ / ] round · 1–5 speed · V
+	2D/3D · click a player to highlight (J / K then follow their kills and deaths)
 	{#if view === '3d'}
 		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode · F
 		full screen · H HUD · X x-ray · in Follow and POV, left/right click switches to the
