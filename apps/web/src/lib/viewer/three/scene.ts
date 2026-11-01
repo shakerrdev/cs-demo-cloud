@@ -24,7 +24,16 @@ import {
 } from '../graphics.ts';
 import { playerMotion, playerStates, viewState, type PlayerState } from '../frame.ts';
 import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
-import { applyRadar, createMapGeometry, createMapMaterial, placeMap, radarTexture } from './map.ts';
+import {
+	SUN_DIRECTION,
+	applyRadar,
+	applyShadow,
+	createMapGeometry,
+	createMapMaterial,
+	placeMap,
+	radarTexture
+} from './map.ts';
+import { bakeSunShadow, type SunShadow } from './sun-shadow.ts';
 import type { MapPack, PackProgress, TextureQuality } from './cs2/pack.ts';
 import type { GameEffects } from './cs2/effects.ts';
 import type { PlayerModels } from './cs2/players.ts';
@@ -95,6 +104,7 @@ const FLY_KEYS = new Set([
 	'ShiftRight'
 ]);
 
+const SHADOW_SIZE = 4096;
 export class ReplayScene {
 	onPick: ((index: number) => void) | null = null;
 	onCycle: ((direction: 1 | -1) => void) | null = null;
@@ -150,6 +160,7 @@ export class ReplayScene {
 	private overlayDirty = true;
 	private crosshairs = new Map<string, Crosshair | null>();
 	private flyKeys = new Set<string>();
+	private sunShadow: SunShadow | null = null;
 	private lastFly = 0;
 	private viewmodelKey = '';
 
@@ -349,6 +360,15 @@ export class ReplayScene {
 				this.mapObject.visible = !this.pack;
 				placeMap(this.mapObject, mesh);
 				this.scene.add(this.mapObject);
+				this.mapObject.updateMatrixWorld();
+				this.sunShadow?.dispose();
+				this.sunShadow = null;
+				try {
+					this.sunShadow = bakeSunShadow(this.renderer, this.mapObject, SUN_DIRECTION, SHADOW_SIZE);
+				} catch (error) {
+					console.warn('No sun shadows for the collision map', error);
+				}
+				applyShadow(this.mapMaterial, this.sunShadow, SHADOW_SIZE);
 			}
 			this.mesh = mesh;
 		}
@@ -695,6 +715,7 @@ export class ReplayScene {
 	}
 
 	dispose() {
+		this.sunShadow?.dispose();
 		this.packKey = '';
 		this.modelsKey = '';
 		this.clearModels();

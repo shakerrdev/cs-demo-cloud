@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import type { MapInfo, MapMesh } from '@cs-demo-cloud/replay';
+import type { SunShadow } from './sun-shadow.ts';
+
+export const SUN_DIRECTION = new THREE.Vector3(0.55, 0.32, 0.77).normalize();
 
 const vertexShader = /* glsl */ `
 out vec3 vWorld;
@@ -32,6 +35,29 @@ uniform float uCutZ;
 uniform vec3 uLightDir;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
+uniform sampler2D uShadow;
+uniform mat4 uShadowMatrix;
+uniform float uShadowTexel;
+uniform float uShadowRange;
+uniform float uHasShadow;
+uniform float uShadowSize;
+
+float sunVisibility(vec3 world, vec3 normal, float ndotl) {
+	if (uHasShadow < 0.5) return 1.0;
+	vec3 offset = world + normal * uShadowTexel * 1.5;
+	vec4 coord = uShadowMatrix * vec4(offset, 1.0);
+	if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0) return 1.0;
+	float bias = uShadowTexel * (1.0 + 2.5 * (1.0 - ndotl)) / uShadowRange;
+	float lit = 0.0;
+	float step = 1.0 / uShadowSize;
+	for (int x = -1; x <= 1; x++) {
+		for (int y = -1; y <= 1; y++) {
+			float depth = texture(uShadow, coord.xy + vec2(float(x), float(y)) * step).r;
+			lit += coord.z - bias <= depth ? 1.0 : 0.0;
+		}
+	}
+	return lit / 9.0;
+}
 
 out vec4 outColor;
 
@@ -56,14 +82,19 @@ void main() {
 		: texture(uRadar, uv);
 	color = mix(color, radar.rgb * 1.05, floorness * radar.a * inside * uRadarStrength);
 
-	vec2 cell = vWorld.xy / 128.0;
+	vec3 an = abs(normal);
+	vec2 plane = an.z > max(an.x, an.y) ? vWorld.xy : an.x > an.y ? vWorld.yz : vWorld.xz;
+	vec2 cell = plane / 64.0;
 	vec2 grid = abs(fract(cell - 0.5) - 0.5) / max(fwidth(cell), vec2(1e-4));
 	float line = 1.0 - min(min(grid.x, grid.y), 1.0);
-	color *= 1.0 - 0.1 * line * floorness;
+	color *= 1.0 - mix(0.06, 0.1, floorness) * line;
 
-	float diffuse = max(dot(normal, uLightDir), 0.0);
-	float side = 0.85 + 0.15 * abs(normal.x);
-	color *= (0.56 + 0.56 * diffuse) * mix(side, 1.0, floorness);
+	float ndotl = max(dot(normal, uLightDir), 0.0);
+	float sun = ndotl * sunVisibility(vWorld, normal, ndotl);
+	vec3 sky = mix(vec3(0.5, 0.53, 0.6), vec3(0.66, 0.7, 0.78), normal.z * 0.5 + 0.5);
+	float side = 0.9 + 0.1 * abs(normal.x);
+	color *= (sky * mix(side, 1.0, floorness) + vec3(1.0, 0.93, 0.8) * 0.85 * sun);
+	color = vec3(1.0) - exp(-color * 1.35);
 
 	float fog = 1.0 - exp(-pow(uFogDensity * vDepth, 2.0));
 	outColor = vec4(mix(color, uFogColor, fog), 1.0);
@@ -86,9 +117,15 @@ export function createMapMaterial(background: THREE.Color): THREE.ShaderMaterial
 			uRadarSize: { value: 1 },
 			uHeightRange: { value: new THREE.Vector2(-200, 400) },
 			uCutZ: { value: 1e9 },
-			uLightDir: { value: new THREE.Vector3(0.45, 0.3, 1).normalize() },
+			uLightDir: { value: SUN_DIRECTION.clone() },
 			uFogColor: { value: background.clone() },
-			uFogDensity: { value: 0 }
+			uFogDensity: { value: 0 },
+			uShadow: { value: null },
+			uShadowMatrix: { value: new THREE.Matrix4() },
+			uShadowTexel: { value: 1 },
+			uShadowRange: { value: 1 },
+			uHasShadow: { value: 0 },
+			uShadowSize: { value: 1 }
 		}
 	});
 }
@@ -136,4 +173,19 @@ export function applyRadar(
 		(u.uRadarOrigin!.value as THREE.Vector2).set(map.posX, map.posY);
 		u.uRadarSize!.value = map.scale * 1024;
 	}
+}
+
+export function applyShadow(
+	material: THREE.ShaderMaterial,
+	shadow: SunShadow | null,
+	size: number
+) {
+	const u = material.uniforms;
+	u.uHasShadow!.value = shadow ? 1 : 0;
+	if (!shadow) return;
+	u.uShadow!.value = shadow.target.depthTexture;
+	(u.uShadowMatrix!.value as THREE.Matrix4).copy(shadow.matrix);
+	u.uShadowTexel!.value = shadow.texel;
+	u.uShadowRange!.value = shadow.range;
+	u.uShadowSize!.value = size;
 }
