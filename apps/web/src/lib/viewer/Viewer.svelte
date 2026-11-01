@@ -1666,7 +1666,8 @@
 	{#if view === '3d'}
 		<br />3D: WASD to fly (Q/E down/up, Shift faster) · right-drag to look around · drag to pan ·
 		Shift-drag to orbit · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in
-		Follow, Chase and POV, left/right click switches to the next/previous player
+		Follow, Chase and POV, left/right click switches to the next/previous player · T top view ·
+		click the HUD radar to fly there · click a kill in the feed to rewatch it
 	{/if}
 </p>
 
