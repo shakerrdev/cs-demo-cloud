@@ -15,6 +15,7 @@
 	import { formatClock, roundEndReason } from '#lib/format.ts';
 	import { EAR_HEIGHT, ReplayAudio, type Listener } from './audio.ts';
 	import { drawFrame, sideColors } from './draw.ts';
+	import DrawLayer, { type DrawTool, type Stroke } from './DrawLayer.svelte';
 	import GameHud from './GameHud.svelte';
 	import PerfPanel from './PerfPanel.svelte';
 	import { Benchmark } from './bench.ts';
@@ -194,6 +195,34 @@
 		} catch {
 			return;
 		}
+	}
+
+	const drawColors = ['#ffd23f', '#ff4d4d', '#4dd2ff', '#7dff6b', '#ffffff'];
+	let drawing = $state(false);
+	let drawTool = $state<DrawTool>('pen');
+	let drawColor = $state(drawColors[0]!);
+	let drawings = $state.raw<Record<number, Stroke[]>>({});
+	const drawingsKey = $derived(`viewer.drawings.${demoId}`);
+	const roundStrokes = $derived(drawings[round] ?? []);
+
+	$effect(() => {
+		try {
+			drawings = JSON.parse(localStorage.getItem(drawingsKey) ?? '{}');
+		} catch {
+			drawings = {};
+		}
+	});
+
+	function setStrokes(strokes: Stroke[]) {
+		drawings = { ...drawings, [round]: strokes };
+		try {
+			localStorage.setItem(drawingsKey, JSON.stringify(drawings));
+		} catch {}
+	}
+
+	function toggleDrawing() {
+		if (view !== '2d') setView('2d');
+		drawing = !drawing;
 	}
 
 	let notice = $state<string | null>(null);
@@ -803,6 +832,13 @@
 		else if (/^[1-5]$/.test(event.key)) speed = speeds[Number(event.key) - 1]!;
 		else if (event.key === 'k' || event.key === 'K') jumpToEvent(1);
 		else if (event.key === 's' || event.key === 'S') void copySetpos();
+		else if (event.key === 'd' || event.key === 'D') toggleDrawing();
+		else if (
+			(event.key === 'z' || event.key === 'Z') &&
+			(event.ctrlKey || event.metaKey) &&
+			drawing
+		)
+			setStrokes(roundStrokes.slice(0, -1));
 		else if (event.key === 'j' || event.key === 'J') jumpToEvent(-1);
 		else if (event.key === 'm' || event.key === 'M') toggleSound();
 		else if (event.key === 'f' || event.key === 'F') setTheater(!theater);
@@ -911,7 +947,7 @@
 />
 
 <div class="viewer" class:theater bind:this={host}>
-	{#if notice}<div class="notice" role="status">{notice}</div>{/if}
+	{#if notice}<div class="toast" role="status">{notice}</div>{/if}
 	{#each teamKeys as team (team)}
 		{@const side = teamSide(team)}
 		<aside class="team {team}" style:--side={side ? sideColors[side] : 'var(--muted)'}>
@@ -1011,6 +1047,15 @@
 					style:width="{cssSize}px"
 					style:height="{cssSize}px"
 				></canvas>
+				<DrawLayer
+					size={cssSize}
+					{pixelRatio}
+					active={drawing}
+					tool={drawTool}
+					color={drawColor}
+					strokes={roundStrokes}
+					onchange={setStrokes}
+				/>
 			{/if}
 			{#if loading}<div class="notice">Loading round {round}…</div>{/if}
 			{#if error}<div class="notice error">{error}</div>{/if}
@@ -1230,6 +1275,46 @@
 						onclick={() => setView('3d')}>3D</button
 					>
 				</div>
+				<button
+					type="button"
+					class:active={drawing}
+					aria-pressed={drawing}
+					title="Draw on the radar (D). Drawings are kept per round in this browser."
+					onclick={toggleDrawing}>Draw</button
+				>
+				{#if drawing}
+					<div class="draw-tools" role="group" aria-label="Drawing">
+						<button
+							type="button"
+							class:active={drawTool === 'pen'}
+							onclick={() => (drawTool = 'pen')}>Pen</button
+						>
+						<button
+							type="button"
+							class:active={drawTool === 'arrow'}
+							onclick={() => (drawTool = 'arrow')}>Arrow</button
+						>
+						{#each drawColors as color (color)}
+							<button
+								type="button"
+								class="swatch"
+								class:active={drawColor === color}
+								style:--swatch={color}
+								aria-label="Colour {color}"
+								onclick={() => (drawColor = color)}
+							></button>
+						{/each}
+						<button
+							type="button"
+							disabled={!roundStrokes.length}
+							title="Undo (Ctrl+Z)"
+							onclick={() => setStrokes(roundStrokes.slice(0, -1))}>Undo</button
+						>
+						<button type="button" disabled={!roundStrokes.length} onclick={() => setStrokes([])}
+							>Clear</button
+						>
+					</div>
+				{/if}
 				{#if view === '2d' && mapInfo?.lowerBelowZ !== null && mapInfo}
 					<button
 						type="button"
@@ -1261,9 +1346,9 @@
 	{/each}
 </nav>
 <p class="hint">
-	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · [ / ] round
-	· 1–5 speed · V 2D/3D · click a player to highlight them and draw their path (J / K then follow
-	their kills and deaths)
+	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · D draw · [ /
+	] round · 1–5 speed · V 2D/3D · click a player to highlight them and draw their path (J / K then
+	follow their kills and deaths)
 	{#if view === '3d'}
 		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode · F
 		full screen · H HUD · X x-ray · in Follow and POV, left/right click switches to the
@@ -1728,7 +1813,7 @@
 		font-size: 12.5px;
 	}
 
-	.notice {
+	.toast {
 		position: fixed;
 		left: 50%;
 		bottom: 24px;
@@ -1743,5 +1828,25 @@
 		font-family: ui-monospace, monospace;
 		overflow-wrap: anywhere;
 		pointer-events: none;
+	}
+
+	.draw-tools {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.draw-tools .swatch {
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		border-radius: 50%;
+		background: var(--swatch);
+		border: 2px solid transparent;
+	}
+
+	.draw-tools .swatch.active {
+		border-color: var(--text);
 	}
 </style>
