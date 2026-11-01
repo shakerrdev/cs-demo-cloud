@@ -1234,7 +1234,7 @@ export class ReplayScene {
 		const r = 10 * ratio;
 		for (const effect of replay.meta.effects) {
 			if (effect.type !== 'smoke' && effect.type !== 'molotov') continue;
-			if (this.tick < effect.startTick || this.tick > effect.endTick) continue;
+			if (this.tick < effect.startTick || this.tick >= effect.endTick) continue;
 			const lift = effect.type === 'smoke' ? 150 : 30;
 			this.projected.set(effect.x, effect.y, effect.z + lift).project(this.camera);
 			const ndc = this.projected;
