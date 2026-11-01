@@ -40,6 +40,21 @@ Both views share the same playback, HUD, kill feed and timeline; **V** switches 
 - **3D**: the map's collision geometry rendered with three.js, floors coloured with the radar image, players as capsules facing where they aim, smokes, fires, flash and HE bursts, grenade trails, shots, the bomb and kill markers. Players, smokes and trails behind walls show through faintly. Cameras: **Free** (drag to pan, right-drag to rotate, scroll to zoom), **Follow** (orbits the selected player) and **POV** (the player's eye position and view angles). **Cut roofs** hides everything above the players. In Follow and POV, left and right click switch to the next and previous player, like spectating in CS2. three.js only loads when you open the 3D view.
 - **Game HUD** (3D, **H**): CS2's spectator HUD over the 16:9 view: the top bar with both teams' players, money, guns, utility, armor and kit, the round timer, score and players alive, the radar with the location's name, the kill feed, and for the followed player health, armor, name, gun, ammo, money and the weapons they carry. **Full screen** (**F**) fills the screen with it and hides the controls while playing. **X-ray** (**X**) turns the see-through players on and off.
 
+- **Navigation**: **J** / **K** jump to the previous / next kill or bomb event (2 s early); with a player highlighted they follow that player's kills and deaths, and the 2D radar draws the player's path for the round. Links like `#round-7` or `#round-7@51200` open the viewer on that round or tick; the analysis below uses them everywhere.
+- **Clock**: round and bomb timers use the timings measured from the match itself (time-out rounds, bomb fuse), so non-matchmaking servers show the right clock after **Parse again**.
+
+### Match analysis
+
+Under the viewer on every match page:
+
+- **Highlights**: 3K+ rounds and won 1v2+ clutches, each opening the replay 3 s before it starts.
+- **Scoreboard** and **Duels & clutches**: KAST, opening duels, trades (kills within 5 s of a teammate's death), 2K–5K rounds, clutches and flash assists. These come from the kills table, so old demos get them without parsing again.
+- **Rounds**: every round's winner, reason and kills with the round clock, weapon and headshot/wallbang/smoke/no-scope tags; click a kill to watch it.
+- **Economy**: each team's equipment value and bank at freeze end with the buy type (pistol, eco, semi-eco, force, full buy). Recorded while parsing, so older demos need **Parse again**.
+- **Kill positions**: where kills happened on the radar, filtered by player, side and level; click a spot to watch that round.
+
+**Players** lists everyone in the library; a player's page has their career numbers (K/D, ADR, KAST, win rate, opening duels, clutches, multi-kills), a record per map and their matches. **This is me** on your own page (or a SteamID linked under Auto-import) adds **My stats** to the menu and shows your result and K–D on every match in the list.
+
 Map assets come from Valve's game files, which is fine for a private instance but not something to redistribute publicly, so none are committed here. The worker downloads them the first time it parses a demo on a map (and on start for maps it already has demos of) into `data/maps`:
 
 - radar images (and lower-level images) from [CS Demo Manager](https://github.com/akiver/cs-demo-manager)'s repository at a pinned commit
