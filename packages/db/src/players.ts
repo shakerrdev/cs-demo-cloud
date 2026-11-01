@@ -85,14 +85,21 @@ export function listPlayers(db: Db) {
 			name: sql<string>`(select mp2.name from match_players mp2 join demos d2 on d2.id = mp2.demo_id where mp2.steamid = ${matchPlayers.steamid} order by coalesce(d2.file_modified_at, d2.created_at) desc limit 1)`,
 			matches: sql<number>`count(*)`,
 			kills: sql<number>`sum(${matchPlayers.kills})`,
-			deaths: sql<number>`sum(${matchPlayers.deaths})`
+			deaths: sql<number>`sum(${matchPlayers.deaths})`,
+			headshotKills: sql<number>`sum(${matchPlayers.headshotKills})`,
+			damage: sql<number>`sum(${matchPlayers.damage})`,
+			rounds: sql<number>`sum(${matches.roundCount})`,
+			wins: sql<number>`sum(case when (${matchPlayers.team} = 'a' and ${matches.scoreA} > ${matches.scoreB}) or (${matchPlayers.team} = 'b' and ${matches.scoreB} > ${matches.scoreA}) then 1 else 0 end)`,
+			lastPlayed: sql<number>`max(coalesce(${demos.fileModifiedAt}, ${demos.createdAt}))`
 		})
 		.from(matchPlayers)
 		.innerJoin(demos, eq(demos.id, matchPlayers.demoId))
+		.innerJoin(matches, eq(matches.demoId, matchPlayers.demoId))
 		.where(eq(demos.status, 'ready'))
 		.groupBy(matchPlayers.steamid)
 		.orderBy(desc(sql`count(*)`), asc(sql`2`))
-		.all();
+		.all()
+		.map((row) => ({ ...row, lastPlayed: new Date(row.lastPlayed) }));
 }
 
 const ownSteamIdKey = (userId: string) => `user.${userId}.steamId`;
