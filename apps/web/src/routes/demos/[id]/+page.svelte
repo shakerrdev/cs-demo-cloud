@@ -7,13 +7,14 @@
 		type TeamKey
 	} from '@cs-demo-cloud/replay';
 	import { formatBytes, formatDate, formatDuration, platformName } from '#lib/format.ts';
+	import Heatmap from '#lib/components/Heatmap.svelte';
 	import Viewer from '#lib/viewer/Viewer.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 	let confirmDelete = $state(false);
 	const details = $derived(data.details);
-	let board = $state<'basic' | 'advanced' | 'economy'>('basic');
+	let board = $state<'basic' | 'advanced' | 'economy' | 'positions'>('basic');
 	const buys = $derived(
 		details ? roundBuys(details.rounds) : new Map<number, Record<TeamKey, BuyType> | null>()
 	);
@@ -135,6 +136,12 @@
 			aria-selected={board === 'economy'}
 			onclick={() => (board = 'economy')}>Economy</button
 		>
+		<button
+			type="button"
+			role="tab"
+			aria-selected={board === 'positions'}
+			onclick={() => (board = 'positions')}>Kill positions</button
+		>
 		{#if board === 'advanced' && data.stats}
 			<span class="openings"
 				>Opening duels {teamNames.a} {openingsWon('a')} – {openingsWon('b')} {teamNames.b}</span
@@ -142,7 +149,17 @@
 		{/if}
 	</div>
 
-	{#if board === 'economy'}
+	{#if board === 'positions'}
+		<section class="economy" aria-label="Kill positions">
+			<Heatmap
+				demoId={data.demo.id}
+				version={match.parsedAt.getTime()}
+				map={match.map}
+				roundNumbers={details.rounds.map((r) => r.number)}
+				players={players.map((p) => ({ steamid: p.steamid, name: p.name }))}
+			/>
+		</section>
+	{:else if board === 'economy'}
 		<section class="economy" aria-label="Economy per round">
 			{#if !hasEconomy}
 				<p class="hint">
