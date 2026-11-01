@@ -28,6 +28,7 @@ const FIRE_RADIUS = 110;
 const SHOT_LENGTH = 420;
 const SHOT_TICKS = 6;
 const DEG = Math.PI / 180;
+const STRIDE = 42;
 
 export function eyeHeight(player: PlayerState): number {
 	return player.ducking ? CROUCH_EYE : STAND_EYE;
@@ -170,10 +171,15 @@ class Lines {
 
 interface PlayerActor {
 	group: THREE.Group;
+	rig: THREE.Group;
 	body: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
+	skull: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
+	legs: [THREE.Group, THREE.Group];
+	legMaterial: THREE.MeshLambertMaterial;
 	ghost: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
 	head: THREE.Group;
 	nose: THREE.Mesh;
+	walk: { x: number; y: number; tick: number; distance: number; speed: number };
 	aim: THREE.Line;
 	marker: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
 	side: Side;
@@ -182,7 +188,10 @@ interface PlayerActor {
 export class Actors {
 	readonly root = new THREE.Group();
 	private bodyGeometry = new THREE.CapsuleGeometry(16, STAND_HEIGHT - 32, 4, 12);
-	private noseGeometry = new THREE.ConeGeometry(6, 22, 12);
+	private noseGeometry = new THREE.BoxGeometry(28, 3.5, 6);
+	private torsoGeometry = new THREE.CapsuleGeometry(11, 16, 4, 10);
+	private skullGeometry = new THREE.SphereGeometry(8, 16, 12);
+	private legGeometry = new THREE.CapsuleGeometry(5.5, 24, 3, 8);
 	private aimGeometry = new THREE.BufferGeometry().setFromPoints([
 		new THREE.Vector3(0, 0, 0),
 		new THREE.Vector3(900, 0, 0)
@@ -217,8 +226,11 @@ export class Actors {
 	constructor() {
 		this.bodyGeometry.rotateX(Math.PI / 2);
 		this.bodyGeometry.translate(0, 0, STAND_HEIGHT / 2);
-		this.noseGeometry.rotateZ(-Math.PI / 2);
-		this.noseGeometry.translate(20, 0, 0);
+		this.noseGeometry.translate(14, -6, -13);
+		this.torsoGeometry.rotateX(Math.PI / 2);
+		this.torsoGeometry.translate(0, 0, 46);
+		this.legGeometry.rotateX(Math.PI / 2);
+		this.legGeometry.translate(0, 0, -17.5);
 
 		const arm = new THREE.BoxGeometry(34, 6, 2);
 		const cross = mergeGeometries([
@@ -314,6 +326,10 @@ export class Actors {
 			if (!player) return;
 			actor.side = player.side;
 			actor.body.material.color.setHex(sideColors[player.side]);
+			actor.skull.material.color
+				.setHex(sideColors[player.side])
+				.lerp(new THREE.Color(0xf1e3d3), 0.55);
+			actor.legMaterial.color.setHex(sideColors[player.side]).multiplyScalar(0.55);
 			actor.ghost.material.color.setHex(sideColors[player.side]);
 			actor.marker.material.color.setHex(sideColors[player.side]);
 			(actor.aim.material as THREE.LineBasicMaterial).color.setHex(sideColors[player.side]);
@@ -329,11 +345,13 @@ export class Actors {
 	}
 
 	bodies(): THREE.Object3D[] {
-		return this.players.filter((actor) => actor.group.visible).map((actor) => actor.body);
+		return this.players
+			.filter((actor) => actor.group.visible && actor.rig.visible)
+			.flatMap((actor) => [actor.body, actor.skull, ...actor.legs.map((leg) => leg.children[0]!)]);
 	}
 
 	indexOf(object: THREE.Object3D): number {
-		return this.players.findIndex((actor) => actor.body === object);
+		return this.players.findIndex((actor) => actor === object.userData.actor);
 	}
 
 	update(
@@ -344,7 +362,7 @@ export class Actors {
 		pov: number | null,
 		sizeOf: (player: PlayerState) => number
 	) {
-		this.updatePlayers(players, focus, pov, sizeOf);
+		this.updatePlayers(players, focus, pov, sizeOf, tick);
 		this.updateDeaths(replay.meta.kills, replay.meta.players, tick);
 		this.updateGrenades(replay, tick);
 		this.updateEffects(replay, tick);
@@ -356,39 +374,71 @@ export class Actors {
 
 	private createPlayer(): PlayerActor {
 		const group = new THREE.Group();
-		const body = new THREE.Mesh(
-			this.bodyGeometry,
-			new THREE.MeshLambertMaterial({ color: 0xffffff })
-		);
+		const rig = new THREE.Group();
+		const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
+		const body = new THREE.Mesh(this.torsoGeometry, material);
+		const legMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+		const legs = [-1, 1].map((side) => {
+			const leg = new THREE.Group();
+			leg.position.set(0, side * 6, 34);
+			leg.add(new THREE.Mesh(this.legGeometry, legMaterial));
+			return leg;
+		}) as [THREE.Group, THREE.Group];
+		rig.add(body, ...legs);
 		const ghost = new THREE.Mesh(
 			this.bodyGeometry,
 			hiddenPart(new THREE.MeshBasicMaterial({ opacity: 0.32 })) as THREE.MeshBasicMaterial
 		);
 		ghost.renderOrder = 3;
 		const head = new THREE.Group();
-		const nose = new THREE.Mesh(this.noseGeometry, body.material);
+		const skull = new THREE.Mesh(
+			this.skullGeometry,
+			new THREE.MeshLambertMaterial({ color: 0xffffff })
+		);
+		const nose = new THREE.Mesh(
+			this.noseGeometry,
+			new THREE.MeshLambertMaterial({ color: 0x2a2d33 })
+		);
 		const aim = new THREE.Line(
 			this.aimGeometry,
 			new THREE.LineBasicMaterial({ transparent: true, opacity: 0.55 })
 		);
-		head.add(nose, aim);
+		head.add(skull, nose, aim);
 		const marker = new THREE.Mesh(
 			this.ring,
 			new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, side: THREE.DoubleSide })
 		);
 		marker.position.z = 2;
 		marker.scale.setScalar(28);
-		group.add(body, ghost, head, marker);
+		group.add(rig, ghost, head, marker);
 		group.visible = false;
 		this.root.add(group);
-		return { group, body, ghost, head, nose, aim, marker, side: 'CT' };
+		const actor: PlayerActor = {
+			group,
+			rig,
+			body,
+			skull,
+			legs,
+			legMaterial,
+			ghost,
+			head,
+			nose,
+			aim,
+			marker,
+			side: 'CT',
+			walk: { x: 0, y: 0, tick: -1, distance: 0, speed: 0 }
+		};
+		for (const part of [body, skull, ...legs.map((leg) => leg.children[0]!)])
+			part.userData.actor = actor;
+		return actor;
 	}
 
 	private updatePlayers(
 		players: PlayerState[],
 		focus: number | null,
 		pov: number | null,
-		sizeOf: (player: PlayerState) => number
+		sizeOf: (player: PlayerState) => number,
+		tick: number
 	) {
 		players.forEach((player, i) => {
 			const actor = this.players[i];
@@ -401,17 +451,39 @@ export class Actors {
 			actor.group.rotation.set(0, 0, player.yaw * DEG);
 			actor.group.scale.setScalar(sizeOf(player));
 			const crouch = player.ducking ? CROUCH_HEIGHT / STAND_HEIGHT : 1;
-			actor.body.scale.set(1, 1, crouch);
 			actor.ghost.scale.set(1, 1, crouch);
 			actor.head.position.set(0, 0, eyeHeight(player));
 			actor.head.rotation.set(0, player.pitch * DEG, 0);
-			actor.body.visible = this.capsules;
+			actor.rig.visible = this.capsules;
+			actor.skull.visible = this.capsules;
 			actor.ghost.visible = this.capsules;
 			actor.nose.visible = this.capsules;
+			actor.rig.scale.set(1, 1, crouch);
+			this.stride(actor, player, tick);
 			actor.aim.visible = i === focus;
 			actor.marker.visible = i === focus;
 			actor.body.material.emissive.setScalar(player.blind * 0.8);
 		});
+	}
+
+	private stride(actor: PlayerActor, player: PlayerState, tick: number) {
+		const walk = actor.walk;
+		const elapsed = tick - walk.tick;
+		const moved = Math.hypot(player.x - walk.x, player.y - walk.y);
+		if (walk.tick < 0 || elapsed <= 0 || elapsed > 64 || moved > 200) {
+			if (elapsed !== 0) walk.speed = 0;
+		} else {
+			walk.distance += moved;
+			const speed = (moved / elapsed) * 64;
+			walk.speed += (speed - walk.speed) * Math.min(1, elapsed / 8);
+		}
+		walk.x = player.x;
+		walk.y = player.y;
+		walk.tick = tick;
+		const amount = Math.min(1, walk.speed / 250) * (player.ducking ? 0.5 : 1);
+		const swing = Math.sin((walk.distance / STRIDE) * Math.PI) * 0.55 * amount;
+		actor.legs[0].rotation.y = swing;
+		actor.legs[1].rotation.y = -swing;
 	}
 
 	private updateDeaths(kills: ReplayKill[], players: ReplayPlayer[], tick: number) {
@@ -559,6 +631,9 @@ export class Actors {
 	dispose() {
 		this.bodyGeometry.dispose();
 		this.noseGeometry.dispose();
+		this.torsoGeometry.dispose();
+		this.skullGeometry.dispose();
+		this.legGeometry.dispose();
 		this.aimGeometry.dispose();
 		this.sphere.dispose();
 		this.disc.dispose();
