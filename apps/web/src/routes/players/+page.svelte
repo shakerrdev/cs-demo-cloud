@@ -1,11 +1,39 @@
 <script lang="ts">
+	import { formatDate } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 	let query = $state('');
-	const shown = $derived(
-		data.players.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
+	type SortKey = 'matches' | 'kd' | 'adr' | 'hs' | 'win' | 'last' | 'name';
+	let sort = $state<SortKey>('matches');
+
+	const rows = $derived(
+		data.players.map((p) => ({
+			...p,
+			kd: p.kills / Math.max(1, p.deaths),
+			adr: p.damage / Math.max(1, p.rounds),
+			hs: p.kills ? p.headshotKills / p.kills : 0,
+			win: p.matches ? p.wins / p.matches : 0
+		}))
 	);
+	const shown = $derived(
+		rows
+			.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
+			.sort((a, b) => {
+				const byName = a.name.localeCompare(b.name, undefined, { numeric: true });
+				if (sort === 'name') return byName;
+				if (sort === 'last') return b.lastPlayed.getTime() - a.lastPlayed.getTime() || byName;
+				return b[sort] - a[sort] || b.matches - a.matches || byName;
+			})
+	);
+	const columns: { key: SortKey; label: string }[] = [
+		{ key: 'matches', label: 'Matches' },
+		{ key: 'win', label: 'Win rate' },
+		{ key: 'kd', label: 'K/D' },
+		{ key: 'adr', label: 'ADR' },
+		{ key: 'hs', label: 'HS%' },
+		{ key: 'last', label: 'Last played' }
+	];
 </script>
 
 <svelte:head><title>Players · cs-demo-cloud</title></svelte:head>
@@ -18,21 +46,44 @@
 {#if !data.players.length}
 	<p class="empty">Players show up here once a demo has been parsed.</p>
 {:else}
-	<ul class="players">
-		{#each shown as player (player.steamid)}
-			<li>
-				<a href="/players/{player.steamid}">
-					<span class="name">{player.name}</span>
-					<span class="meta"
-						>{player.matches}
-						{player.matches === 1 ? 'match' : 'matches'} · K/D {(
-							player.kills / Math.max(1, player.deaths)
-						).toFixed(2)}</span
-					>
-				</a>
-			</li>
-		{/each}
-	</ul>
+	<div class="table">
+		<table>
+			<thead>
+				<tr>
+					<th class="name">
+						<button type="button" class:on={sort === 'name'} onclick={() => (sort = 'name')}
+							>Player</button
+						>
+					</th>
+					{#each columns as column (column.key)}
+						<th>
+							<button
+								type="button"
+								class:on={sort === column.key}
+								onclick={() => (sort = column.key)}>{column.label}</button
+							>
+						</th>
+					{/each}
+				</tr>
+			</thead>
+			<tbody>
+				{#each shown as p (p.steamid)}
+					<tr>
+						<td class="name"
+							><a href="/players/{p.steamid}">{p.name}</a
+							>{#if p.steamid === data.ownSteamId}<span class="you">you</span>{/if}</td
+						>
+						<td>{p.matches}</td>
+						<td>{Math.round(p.win * 100)}%</td>
+						<td class:pos={p.kd >= 1.1} class:neg={p.kd < 0.9}>{p.kd.toFixed(2)}</td>
+						<td>{Math.round(p.adr)}</td>
+						<td>{Math.round(p.hs * 100)}%</td>
+						<td class="date">{formatDate(p.lastPlayed)}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 {/if}
 
 <style>
@@ -59,40 +110,87 @@
 		min-width: 220px;
 	}
 
-	.players {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-		gap: 8px;
-	}
-
-	.players a {
-		display: grid;
-		gap: 2px;
-		padding: 12px 14px;
+	.table {
+		overflow-x: auto;
 		background: var(--surface);
-		border: 1px solid var(--border);
 		border-radius: var(--radius);
-		color: inherit;
-		text-decoration: none;
 	}
 
-	.players a:hover {
-		border-color: var(--muted);
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-variant-numeric: tabular-nums;
 	}
 
-	.name {
-		font-weight: 600;
-		overflow: hidden;
-		text-overflow: ellipsis;
+	th,
+	td {
+		padding: 9px 14px;
+		text-align: right;
 		white-space: nowrap;
 	}
 
-	.meta,
+	th.name,
+	td.name {
+		text-align: left;
+	}
+
+	th button {
+		border: 0;
+		background: none;
+		padding: 0;
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.85em;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	th button.on {
+		color: var(--text);
+	}
+
+	th button.on::after {
+		content: ' ↓';
+	}
+
+	tbody tr {
+		border-top: 1px solid var(--border);
+	}
+
+	tbody tr:hover {
+		background: var(--surface-2);
+	}
+
+	td.name a {
+		color: inherit;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	td.name a:hover {
+		text-decoration: underline;
+	}
+
+	.you {
+		margin-left: 8px;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
+		color: var(--accent);
+		font-size: 0.75em;
+		font-weight: 700;
+	}
+
+	.date,
 	.empty {
 		color: var(--muted);
-		font-size: 0.9em;
+	}
+
+	.pos {
+		color: var(--ok);
+	}
+
+	.neg {
+		color: var(--danger);
 	}
 </style>
