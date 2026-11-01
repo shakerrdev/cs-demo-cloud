@@ -5,6 +5,7 @@
 		defaultConfig,
 		roundBuys,
 		maps,
+		worldToRadar,
 		type AppConfig,
 		weaponTitle,
 		type MapMesh,
@@ -215,6 +216,7 @@
 	const drawColors = ['#ffd23f', '#ff4d4d', '#4dd2ff', '#7dff6b', '#ffffff'];
 	let radarView = $state<RadarView>({ ...fullView });
 	let panning: { x: number; y: number; id: number } | null = null;
+	let radarFollow = $state(false);
 	const zoomed = $derived(radarView.zoom > 1.001);
 
 	function clampView(view: RadarView): RadarView {
@@ -243,6 +245,7 @@
 
 	function panStart(event: PointerEvent) {
 		if (event.button !== 0 || !zoomed) return;
+		radarFollow = false;
 		panning = { x: event.clientX, y: event.clientY, id: event.pointerId };
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 	}
@@ -888,6 +891,20 @@
 				}
 			} else if (canvas && current) {
 				const image = level === 'lower' && lowerRadar ? lowerRadar : radar;
+				if (radarFollow && zoomed && focus !== null && mapInfo) {
+					const followed = playerStates(current, tick)[focus];
+					if (followed?.alive) {
+						const { u, v } = worldToRadar(
+							mapInfo,
+							image?.naturalWidth || 1024,
+							followed.x,
+							followed.y
+						);
+						const next = clampView({ ...radarView, cx: u, cy: v });
+						if (Math.abs(next.cx - radarView.cx) > 1e-5 || Math.abs(next.cy - radarView.cy) > 1e-5)
+							radarView = next;
+					}
+				}
 				const key = `${tick}|${canvasPx}|${level}|${image?.src}|${current.meta.round}|${focus}|${radarView.zoom}|${radarView.cx}|${radarView.cy}`;
 				if (key !== lastKey || canvas !== lastCanvas) {
 					lastKey = key;
@@ -1234,9 +1251,19 @@
 					ondblclick={() => (radarView = { ...fullView })}
 				></canvas>
 				{#if zoomed}
-					<button type="button" class="reset-zoom" onclick={() => (radarView = { ...fullView })}
-						>Reset zoom ({radarView.zoom.toFixed(1)}×)</button
-					>
+					<div class="zoom-tools">
+						{#if focus !== null}
+							<button
+								type="button"
+								class:active={radarFollow}
+								aria-pressed={radarFollow}
+								onclick={() => (radarFollow = !radarFollow)}>Follow player</button
+							>
+						{/if}
+						<button type="button" onclick={() => (radarView = { ...fullView })}
+							>Reset zoom ({radarView.zoom.toFixed(1)}×)</button
+						>
+					</div>
 				{/if}
 				<DrawLayer
 					size={cssSize}
@@ -2162,11 +2189,16 @@
 		cursor: grab;
 	}
 
-	.reset-zoom {
+	.zoom-tools {
 		position: absolute;
 		top: 8px;
 		right: 8px;
 		z-index: 3;
+		display: flex;
+		gap: 6px;
+	}
+
+	.zoom-tools button {
 		padding: 4px 10px;
 		border-radius: 6px;
 		border: 1px solid var(--border);
@@ -2175,5 +2207,10 @@
 		font: inherit;
 		font-size: 12px;
 		cursor: pointer;
+	}
+
+	.zoom-tools button.active {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 </style>
