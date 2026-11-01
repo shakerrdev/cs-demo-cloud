@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { getDemo, getMatch, getMatchKills, requeueDemo } from '@cs-demo-cloud/db';
-import { matchStats } from '@cs-demo-cloud/replay';
+import { matchHighlights, matchStats } from '@cs-demo-cloud/replay';
 import {
 	AGENTS_PACK,
 	PLAYER_PACK,
@@ -38,6 +38,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		details,
 		stats,
 		kills: killRows,
+		highlights: details && stats ? matchHighlights(details.players, killRows, stats) : [],
 		mapPack: pack?.version ?? null,
 		playerPack: players?.version ?? null,
 		skinsPack: skins?.version ?? null,

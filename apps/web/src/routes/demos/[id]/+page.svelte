@@ -118,6 +118,27 @@
 		config={data.config}
 	/>
 
+	{#if data.highlights.length}
+		<section class="highlights" aria-label="Highlights">
+			<h2>Highlights</h2>
+			<ul>
+				{#each data.highlights as h (h.kind + h.round + h.steamid)}
+					{@const who = players.find((p) => p.steamid === h.steamid)}
+					<li>
+						<a
+							href="#round-{h.round}@{Math.max(0, h.tick - 3 * match.tickRate)}"
+							class:big={h.kind === 'multi' ? h.kills >= 4 : h.opponents >= 3}
+						>
+							<span class="what">{h.kind === 'multi' ? `${h.kills}K` : `1v${h.opponents}`}</span>
+							<span class="who">{who?.name ?? '?'}</span>
+							<span class="when">Round {h.round}</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+
 	<div class="board-switch" role="tablist" aria-label="Scoreboard">
 		<button
 			type="button"
@@ -456,6 +477,58 @@
 	th.player {
 		color: var(--text);
 		font-size: 13px;
+	}
+
+	.highlights {
+		margin-top: 20px;
+	}
+
+	.highlights h2 {
+		margin: 0 0 8px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--muted);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.highlights ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.highlights a {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 8px;
+		padding: 6px 12px;
+		border-radius: 8px;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.highlights a:hover {
+		border-color: var(--muted);
+	}
+
+	.highlights a.big .what {
+		color: var(--accent);
+	}
+
+	.what {
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.when {
+		color: var(--muted);
+		font-size: 0.85em;
 	}
 
 	.board-switch {
