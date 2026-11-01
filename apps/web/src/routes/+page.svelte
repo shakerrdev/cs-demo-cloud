@@ -17,6 +17,30 @@
 		return () => clearInterval(timer);
 	});
 
+	let search = $state('');
+	let mapFilter = $state('');
+	let platformFilter = $state('');
+
+	const mapOptions = $derived(
+		[...new Set(data.demos.flatMap(({ match }) => (match ? [match.map] : [])))].sort()
+	);
+	const platformOptions = $derived([
+		...new Set(data.demos.flatMap(({ match }) => (match ? [match.platform] : [])))
+	]);
+	const filtering = $derived(Boolean(search.trim() || mapFilter || platformFilter));
+	const shown = $derived.by(() => {
+		const needle = search.trim().toLowerCase();
+		return data.demos.filter(({ demo, match, players }) => {
+			if (mapFilter && match?.map !== mapFilter) return false;
+			if (platformFilter && match?.platform !== platformFilter) return false;
+			if (!needle) return true;
+			return (
+				demo.fileName.toLowerCase().includes(needle) ||
+				players.some((name) => name.toLowerCase().includes(needle))
+			);
+		});
+	});
+
 	let confirmAll = $state(false);
 	let selecting = $state(false);
 	let selected = $state<string[]>([]);
@@ -25,10 +49,12 @@
 	const selectedBytes = $derived(
 		data.demos.reduce((sum, { demo }) => (selectedSet.has(demo.id) ? sum + demo.fileSize : sum), 0)
 	);
-	const allSelected = $derived(selected.length === data.demos.length);
+	const allSelected = $derived(
+		shown.length > 0 && shown.every(({ demo }) => selectedSet.has(demo.id))
+	);
 
 	function toggleAll() {
-		selected = allSelected ? [] : data.demos.map(({ demo }) => demo.id);
+		selected = allSelected ? [] : shown.map(({ demo }) => demo.id);
 	}
 
 	function stopSelecting() {
@@ -92,8 +118,47 @@
 {#if data.demos.length === 0}
 	<p class="empty">No demos yet. Drop a few .dem files here to get started.</p>
 {:else}
+	{#if data.demos.length > 3}
+		<div class="filters">
+			<input
+				type="search"
+				placeholder="Player or file name"
+				aria-label="Search by player or file name"
+				bind:value={search}
+			/>
+			<select bind:value={mapFilter} aria-label="Map">
+				<option value="">All maps</option>
+				{#each mapOptions as name (name)}
+					<option value={name}>{mapTitle(name)}</option>
+				{/each}
+			</select>
+			{#if platformOptions.length > 1}
+				<select bind:value={platformFilter} aria-label="Platform">
+					<option value="">All platforms</option>
+					{#each platformOptions as platform (platform)}
+						<option value={platform}>{platformName(platform)}</option>
+					{/each}
+				</select>
+			{/if}
+			{#if filtering}
+				<span class="shown">{shown.length} of {data.demos.length}</span>
+				<button
+					type="button"
+					class="button small"
+					onclick={() => {
+						search = '';
+						mapFilter = '';
+						platformFilter = '';
+					}}>Clear</button
+				>
+			{/if}
+		</div>
+	{/if}
+	{#if filtering && !shown.length}
+		<p class="empty">No matches fit these filters.</p>
+	{/if}
 	<ul class="matches">
-		{#each data.demos as { demo, match } (demo.id)}
+		{#each shown as { demo, match } (demo.id)}
 			<li>
 				{#if selecting}
 					<label class="row" class:picked={selectedSet.has(demo.id)}>
@@ -244,6 +309,34 @@
 	label.row:hover {
 		border-color: var(--border);
 		background: var(--surface-2);
+	}
+
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 12px;
+	}
+
+	.filters input,
+	.filters select {
+		background: var(--surface);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 6px 10px;
+	}
+
+	.filters input {
+		flex: 1 1 220px;
+		max-width: 320px;
+	}
+
+	.shown {
+		color: var(--muted);
+		font-size: 0.9em;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.thumb {
