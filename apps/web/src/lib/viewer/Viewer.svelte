@@ -3,6 +3,7 @@
 	import {
 		buyLabels,
 		defaultConfig,
+		weaponKey,
 		roundBuys,
 		maps,
 		worldToRadar,
@@ -28,6 +29,7 @@
 	import {
 		bombState,
 		directorPick,
+		inventoryAt,
 		lastTick,
 		observerSlots,
 		playerStates,
@@ -179,6 +181,25 @@
 	const previousRound = $derived(rounds.find((r) => r.number === round - 1) ?? null);
 	const end = $derived(replay ? lastTick(replay) : 0);
 	const hudPlayers = $derived(replay ? playerStates(replay, hudTick) : []);
+	const nadeOrder = ['smokegrenade', 'flashbang', 'hegrenade', 'molotov', 'incgrenade', 'decoy'];
+	const nadeTitles: Record<string, string> = {
+		smokegrenade: 'Smoke',
+		flashbang: 'Flashbang',
+		hegrenade: 'HE grenade',
+		molotov: 'Molotov',
+		incgrenade: 'Incendiary',
+		decoy: 'Decoy'
+	};
+	const utilities = $derived(
+		replay
+			? hudPlayers.map((player) =>
+					inventoryAt(replay!, player.index, hudTick)
+						.map((name) => weaponKey(name) ?? '')
+						.filter((key) => nadeOrder.includes(key))
+						.sort((a, b) => nadeOrder.indexOf(a) - nadeOrder.indexOf(b))
+				)
+			: []
+	);
 
 	function savedView(): '2d' | '3d' {
 		try {
@@ -1212,6 +1233,13 @@
 									{#if player.kills > 0}<span class="badge kills">{player.kills}K</span>{/if}
 								</span>
 							</span>
+							{#if player.alive && utilities[player.index]?.length}
+								<span class="nades" aria-label="Utility">
+									{#each utilities[player.index] as nade, i (i)}
+										<i class="nade {nade}" title={nadeTitles[nade]}></i>
+									{/each}
+								</span>
+							{/if}
 						</button>
 					</li>
 				{/each}
@@ -2273,5 +2301,35 @@
 		all: unset;
 		display: contents;
 		cursor: pointer;
+	}
+
+	.nades {
+		display: flex;
+		gap: 4px;
+		margin-top: 4px;
+	}
+
+	.nade {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--muted);
+	}
+
+	.nade.smokegrenade {
+		background: #c9ced6;
+	}
+
+	.nade.flashbang {
+		background: #fff6b0;
+	}
+
+	.nade.hegrenade {
+		background: #ef5f4f;
+	}
+
+	.nade.molotov,
+	.nade.incgrenade {
+		background: #ff9a2e;
 	}
 </style>
