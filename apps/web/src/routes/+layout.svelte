@@ -14,7 +14,7 @@
 <header>
 	<a class="brand" href="/">
 		<img src={favicon} alt="" width="22" height="22" />
-		cs-demo-cloud
+		<span class="name">cs-demo-cloud</span>
 	</a>
 	{#if data.user}
 		<nav>
@@ -190,6 +190,8 @@
 	}
 
 	.brand {
+		flex: none;
+		white-space: nowrap;
 		display: flex;
 		align-items: center;
 		gap: 10px;
@@ -202,6 +204,38 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	nav::-webkit-scrollbar {
+		display: none;
+	}
+
+	nav form {
+		flex: none;
+	}
+
+	@media (max-width: 760px) {
+		header {
+			gap: 8px;
+			padding: 0 12px;
+		}
+
+		.brand .name {
+			display: none;
+		}
+
+		nav {
+			gap: 0;
+			mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+		}
+
+		nav a,
+		nav button {
+			padding: 0 9px;
+		}
 	}
 
 	nav a,
@@ -217,6 +251,8 @@
 		font-weight: 600;
 		line-height: 34px;
 		text-decoration: none;
+		white-space: nowrap;
+		flex: none;
 		cursor: pointer;
 	}
 
