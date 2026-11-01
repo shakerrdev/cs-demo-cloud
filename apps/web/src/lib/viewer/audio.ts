@@ -98,6 +98,79 @@ function bounces(path: number[]): number[] {
 	return out;
 }
 
+export interface Footstep {
+	tick: number;
+	player: number;
+	x: number;
+	y: number;
+	z: number;
+}
+
+const footstepCache = new WeakMap<RoundReplay, Footstep[]>();
+
+export function footsteps(replay: RoundReplay): Footstep[] {
+	const cached = footstepCache.get(replay);
+	if (cached) return cached;
+	const { meta, columns } = replay;
+	const n = meta.frameCount;
+	const step = meta.tickStep;
+	const list: Footstep[] = [];
+	const at = (tick: number, p: number, i: number) => {
+		if (!meta.players[p] || i < 0 || i >= n) return;
+		const k = p * n + i;
+		list.push({ tick, player: p, x: columns.x[k]!, y: columns.y[k]!, z: columns.z[k]! });
+	};
+	if (meta.steps) {
+		for (let i = 0; i + 1 < meta.steps.length; i += 2) {
+			const tick = meta.steps[i]!;
+			at(tick, meta.steps[i + 1]!, Math.round((tick - meta.startTick) / step));
+		}
+	} else {
+		meta.players.forEach((_, p) => {
+			let travelled = 0;
+			let next = STRIDE;
+			for (let i = 1; i < n; i++) {
+				const a = p * n + i - 1;
+				const b = a + 1;
+				if (!(columns.flags[b]! & FLAG_ALIVE)) continue;
+				const seconds = step / meta.tickRate;
+				const dx = columns.x[b]! - columns.x[a]!;
+				const dy = columns.y[b]! - columns.y[a]!;
+				const speed = Math.hypot(dx, dy) / seconds;
+				const vertical = (columns.z[b]! - columns.z[a]!) / seconds;
+				if (speed > 600) continue;
+				travelled += Math.hypot(dx, dy);
+				if (speed < RUNNING || Math.abs(vertical) > 120) {
+					next = travelled + STRIDE / 2;
+					continue;
+				}
+				while (travelled >= next) {
+					at(meta.startTick + i * step, p, i);
+					next += STRIDE;
+				}
+			}
+		});
+	}
+	list.sort((a, b) => a.tick - b.tick);
+	footstepCache.set(replay, list);
+	return list;
+}
+
+export function recentFootsteps(replay: RoundReplay, tick: number, seconds: number): Footstep[] {
+	const list = footsteps(replay);
+	const from = tick - seconds * replay.meta.tickRate;
+	let lo = 0;
+	let hi = list.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (list[mid]!.tick < from) lo = mid + 1;
+		else hi = mid;
+	}
+	const out: Footstep[] = [];
+	for (let i = lo; i < list.length && list[i]!.tick <= tick; i++) out.push(list[i]!);
+	return out;
+}
+
 export function soundCues(replay: RoundReplay, roundSeconds = 115, bombSeconds = 40): Cue[] {
 	const cacheKey = `${roundSeconds}:${bombSeconds}`;
 	const cached = cueCache.get(replay);
@@ -251,51 +324,22 @@ export function soundCues(replay: RoundReplay, roundSeconds = 115, bombSeconds =
 			}
 		}
 	});
-	meta.players.forEach((player, p) => {
-		let travelled = 0;
-		let next = STRIDE;
+	meta.players.forEach((_, p) => {
 		let falling = 0;
 		for (let i = 1; i < n; i++) {
-			const a = p * n + i - 1;
-			const b = a + 1;
+			const b = p * n + i;
 			if (!(columns.flags[b]! & FLAG_ALIVE)) {
 				falling = 0;
 				continue;
 			}
-			const dx = columns.x[b]! - columns.x[a]!;
-			const dy = columns.y[b]! - columns.y[a]!;
-			const dz = columns.z[b]! - columns.z[a]!;
-			const seconds = step / meta.tickRate;
-			const speed = Math.hypot(dx, dy) / seconds;
-			const vertical = dz / seconds;
-			const tick = meta.startTick + i * step;
-			if (falling < LANDING && vertical > -40) {
-				add(tick, 'land', columns.x[b]!, columns.y[b]!, columns.z[b]! + 4, 1);
-				next = travelled + STRIDE;
-			}
+			const vertical = ((columns.z[b]! - columns.z[b - 1]!) * meta.tickRate) / step;
+			if (falling < LANDING && vertical > -40)
+				add(meta.startTick + i * step, 'land', columns.x[b]!, columns.y[b]!, columns.z[b]! + 4, 1);
 			falling = vertical;
-			if (speed > 600) continue;
-			travelled += Math.hypot(dx, dy);
-			if (speed < RUNNING || Math.abs(vertical) > 120) {
-				next = travelled + STRIDE / 2;
-				continue;
-			}
-			while (travelled >= next) {
-				if (!meta.steps)
-					add(tick, `step:${player.side}`, columns.x[b]!, columns.y[b]!, columns.z[b]! + 4, 1);
-				next += STRIDE;
-			}
 		}
 	});
-	const steps = meta.steps ?? [];
-	for (let i = 0; i + 1 < steps.length; i += 2) {
-		const tick = steps[i]!;
-		const p = steps[i + 1]!;
-		const player = meta.players[p];
-		const frame = Math.round((tick - meta.startTick) / step);
-		if (!player || frame < 0 || frame >= n) continue;
-		const at = p * n + frame;
-		add(tick, `step:${player.side}`, columns.x[at]!, columns.y[at]!, columns.z[at]! + 4, 1);
+	for (const { tick, player, x, y, z } of footsteps(replay)) {
+		add(tick, `step:${meta.players[player]!.side}`, x, y, z + 4, 1);
 	}
 
 	cues.sort((a, b) => a.tick - b.tick);
