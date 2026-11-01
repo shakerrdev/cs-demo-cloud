@@ -21,6 +21,7 @@ export interface StatsKill {
 
 export interface Clutch {
 	round: number;
+	tick: number;
 	opponents: number;
 	won: boolean;
 }
@@ -82,16 +83,16 @@ export function matchStats(
 		const killCount = new Map<string, number>();
 		const assisted = new Set<string>();
 		const traded = new Set<string>();
-		const clutching = new Map<TeamKey, { steamid: string; opponents: number }>();
+		const clutching = new Map<TeamKey, { steamid: string; opponents: number; tick: number }>();
 
 		const aliveOn = (team: TeamKey) => [...alive].filter((id) => teamOf.get(id) === team);
-		const checkClutch = () => {
+		const checkClutch = (tick: number) => {
 			for (const team of ['a', 'b'] as TeamKey[]) {
 				if (clutching.has(team)) continue;
 				const own = aliveOn(team);
 				const enemies = aliveOn(team === 'a' ? 'b' : 'a').length;
 				if (own.length === 1 && enemies > 0) {
-					clutching.set(team, { steamid: own[0]!, opponents: enemies });
+					clutching.set(team, { steamid: own[0]!, opponents: enemies, tick });
 				}
 			}
 		};
@@ -141,12 +142,13 @@ export function matchStats(
 			}
 
 			alive.delete(kill.victimSteamid);
-			checkClutch();
+			checkClutch(kill.tick);
 		});
 
 		for (const [team, clutch] of clutching) {
 			stats.get(clutch.steamid)!.clutches.push({
 				round: round.number,
+				tick: clutch.tick,
 				opponents: clutch.opponents,
 				won: round.winnerTeam === team
 			});
@@ -170,4 +172,51 @@ export function matchStats(
 		player.kast = player.rounds ? player.kastRounds / player.rounds : 0;
 	}
 	return { players: [...stats.values()], openings };
+}
+
+export type Highlight =
+	| { kind: 'multi'; steamid: string; round: number; tick: number; kills: number }
+	| { kind: 'clutch'; steamid: string; round: number; tick: number; opponents: number };
+
+export function matchHighlights(
+	players: StatsPlayer[],
+	kills: StatsKill[],
+	stats: MatchStats,
+	minKills = 3,
+	minOpponents = 2
+): Highlight[] {
+	const teamOf = new Map(players.map((p) => [p.steamid, p.team]));
+	const multi = new Map<string, { steamid: string; round: number; tick: number; kills: number }>();
+	for (const kill of kills) {
+		const attacker = kill.attackerSteamid;
+		if (!attacker) continue;
+		const team = teamOf.get(attacker);
+		if (!team || team === teamOf.get(kill.victimSteamid)) continue;
+		const key = `${kill.round}:${attacker}`;
+		const entry = multi.get(key) ?? {
+			steamid: attacker,
+			round: kill.round,
+			tick: kill.tick,
+			kills: 0
+		};
+		entry.kills++;
+		entry.tick = Math.min(entry.tick, kill.tick);
+		multi.set(key, entry);
+	}
+	const highlights: Highlight[] = [...multi.values()]
+		.filter((entry) => entry.kills >= minKills)
+		.map((entry) => ({ kind: 'multi', ...entry }));
+	for (const player of stats.players) {
+		for (const clutch of player.clutches) {
+			if (!clutch.won || clutch.opponents < minOpponents) continue;
+			highlights.push({
+				kind: 'clutch',
+				steamid: player.steamid,
+				round: clutch.round,
+				tick: clutch.tick,
+				opponents: clutch.opponents
+			});
+		}
+	}
+	return highlights.sort((a, b) => a.round - b.round || a.tick - b.tick);
 }

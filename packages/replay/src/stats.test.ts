@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { matchStats, type StatsKill, type StatsPlayer } from './stats.ts';
+import { matchHighlights, matchStats, type StatsKill, type StatsPlayer } from './stats.ts';
 
 const players: StatsPlayer[] = [
 	...['a1', 'a2', 'a3', 'a4', 'a5'].map((steamid) => ({ steamid, team: 'a' as const })),
@@ -80,8 +80,8 @@ test('clutches: 1v4 won, and the last enemy lost a 1v1', () => {
 		],
 		64
 	);
-	assert.deepEqual(of(stats, 'a5').clutches, [{ round: 1, opponents: 4, won: true }]);
-	assert.deepEqual(of(stats, 'b5').clutches, [{ round: 1, opponents: 1, won: false }]);
+	assert.deepEqual(of(stats, 'a5').clutches, [{ round: 1, tick: 500, opponents: 4, won: true }]);
+	assert.deepEqual(of(stats, 'b5').clutches, [{ round: 1, tick: 800, opponents: 1, won: false }]);
 	assert.deepEqual(of(stats, 'a5').multiKills, [0, 0, 0, 1]);
 });
 
@@ -94,4 +94,23 @@ test('team kills and suicides are not opening kills', () => {
 	);
 	assert.equal(of(stats, 'a1').openingKills, 0);
 	assert.equal(of(stats, 'b2').openingKills, 1);
+});
+
+test('highlights: multi-kills and won clutches in round order', () => {
+	const kills = [
+		kill(100, 'b1', 'a1'),
+		kill(200, 'b1', 'a2'),
+		kill(300, 'b2', 'a3'),
+		kill(400, 'a5', 'b1'),
+		kill(500, 'b3', 'a4'),
+		kill(600, 'a5', 'b2'),
+		kill(700, 'a5', 'b3'),
+		kill(800, 'a5', 'b4'),
+		kill(900, 'a5', 'b5')
+	];
+	const stats = matchStats(players, [{ number: 1, winnerTeam: 'a' }], kills, 64);
+	assert.deepEqual(matchHighlights(players, kills, stats), [
+		{ kind: 'multi', steamid: 'a5', round: 1, tick: 400, kills: 5 },
+		{ kind: 'clutch', steamid: 'a5', round: 1, tick: 500, opponents: 4 }
+	]);
 });
