@@ -9,6 +9,7 @@
 		type TeamKey
 	} from '@cs-demo-cloud/replay';
 	import { drawFrame, sideColors } from './draw.ts';
+	import KillIcon from './KillIcon.svelte';
 	import { inventoryAt, observerSlots, slotLabel, type PlayerState } from './frame.ts';
 	import { roundEndReason } from '#lib/format.ts';
 
@@ -240,16 +241,16 @@
 			{@const attacker = replay.meta.players[kill.attacker]}
 			{@const victim = replay.meta.players[kill.victim]}
 			<li class:mine={focus !== null && (kill.attacker === focus || kill.victim === focus)}>
-				{#if kill.attackerBlind}<span class="tag">◐</span>{/if}
+				{#if kill.attackerBlind}<KillIcon kind="blind" />{/if}
 				{#if attacker && kill.attacker !== kill.victim}
 					<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
 				{/if}
-				{#if kill.flashAssist}<span class="tag">✺</span>{/if}
+				{#if kill.flashAssist}<KillIcon kind="flash" />{/if}
 				<span class="weapon">{weaponTitle(kill.weapon)}</span>
-				{#if kill.noScope}<span class="tag">⊘</span>{/if}
-				{#if kill.throughSmoke}<span class="tag">☁</span>{/if}
-				{#if kill.wallbang}<span class="tag">▥</span>{/if}
-				{#if kill.headshot}<span class="tag hs">✛</span>{/if}
+				{#if kill.noScope}<KillIcon kind="noscope" />{/if}
+				{#if kill.throughSmoke}<KillIcon kind="smoke" />{/if}
+				{#if kill.wallbang}<KillIcon kind="wallbang" />{/if}
+				{#if kill.headshot}<KillIcon kind="headshot" />{/if}
 				{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
 			</li>
 		{/each}
@@ -538,11 +539,6 @@
 
 	.feed .weapon {
 		color: #f2f4f6;
-		font-weight: 500;
-	}
-
-	.feed .tag {
-		color: #e7ebef;
 		font-weight: 500;
 	}
 

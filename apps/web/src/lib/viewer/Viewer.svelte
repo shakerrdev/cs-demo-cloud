@@ -18,6 +18,7 @@
 	import { drawFrame, fullView, screenToView, sideColors, type RadarView } from './draw.ts';
 	import DrawLayer, { type DrawTool, type Stroke } from './DrawLayer.svelte';
 	import GameHud from './GameHud.svelte';
+	import KillIcon from './KillIcon.svelte';
 	import PerfPanel from './PerfPanel.svelte';
 	import { Benchmark } from './bench.ts';
 	import { defaultGraphics, type GraphicsSettings, type Resolution } from './graphics.ts';
@@ -1315,11 +1316,12 @@
 							{#if attacker && kill.attacker !== kill.victim}
 								<span style:color={sideColors[attacker.side]}>{attacker.name}</span>
 							{/if}
-							<span class="kill-weapon">
-								{weaponTitle(kill.weapon)}{kill.headshot ? ' · HS' : ''}{kill.wallbang
-									? ' · wall'
-									: ''}{kill.throughSmoke ? ' · smoke' : ''}
-							</span>
+							{#if kill.attackerBlind}<KillIcon kind="blind" />{/if}
+							<span class="kill-weapon">{weaponTitle(kill.weapon)}</span>
+							{#if kill.noScope}<KillIcon kind="noscope" />{/if}
+							{#if kill.throughSmoke}<KillIcon kind="smoke" />{/if}
+							{#if kill.wallbang}<KillIcon kind="wallbang" />{/if}
+							{#if kill.headshot}<KillIcon kind="headshot" />{/if}
 							{#if victim}<span style:color={sideColors[victim.side]}>{victim.name}</span>{/if}
 						</li>
 					{/each}
