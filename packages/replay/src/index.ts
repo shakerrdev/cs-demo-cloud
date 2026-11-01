@@ -14,3 +14,4 @@ export * from './timing.ts';
 export * from './stats.ts';
 export * from './economy.ts';
 export * from './raycast.ts';
+export * from './rating.ts';
