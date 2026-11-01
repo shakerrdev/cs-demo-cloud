@@ -1030,12 +1030,45 @@ export class ReplayScene {
 			)
 			.sort((a, b) => b.ndc.z - a.ndc.z);
 
-		for (const { player, ndc } of labels) {
-			const x = ((ndc.x + 1) / 2) * width;
-			const y = ((1 - ndc.y) / 2) * height;
+		const lineHeight = fontSize + 8 * ratio;
+		const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+		const positioned = labels
+			.map(({ player, ndc }) => {
+				const name = player.name.length > 14 ? `${player.name.slice(0, 13)}…` : player.name;
+				const label = player.bomb ? `${name} · C4` : name;
+				const half = Math.max(17 * ratio, ctx.measureText(label).width / 2) + 2 * ratio;
+				return {
+					player,
+					label,
+					half,
+					x: ((ndc.x + 1) / 2) * width,
+					y: ((1 - ndc.y) / 2) * height,
+					depth: ndc.z
+				};
+			})
+			.sort((a, b) => a.depth - b.depth);
+		for (const item of positioned) {
+			for (let attempt = 0; attempt < 6; attempt++) {
+				const box = {
+					x0: item.x - item.half,
+					x1: item.x + item.half,
+					y0: item.y - lineHeight,
+					y1: item.y + 2 * ratio
+				};
+				const hit = placed.find(
+					(other) =>
+						box.x0 < other.x1 && box.x1 > other.x0 && box.y0 < other.y1 && box.y1 > other.y0
+				);
+				if (!hit) {
+					placed.push(box);
+					break;
+				}
+				item.y = hit.y0 - 2 * ratio;
+			}
+		}
+
+		for (const { player, label, x, y } of positioned.reverse()) {
 			const focused = player.index === focus;
-			const name = player.name.length > 14 ? `${player.name.slice(0, 13)}…` : player.name;
-			const label = player.bomb ? `${name} · C4` : name;
 			const barWidth = 34 * ratio;
 			const barY = y - 2 * ratio;
 
