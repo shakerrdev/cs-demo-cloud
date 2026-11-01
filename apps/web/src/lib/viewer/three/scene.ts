@@ -83,6 +83,18 @@ export function scopeOf(player: PlayerState | undefined): { fov: number; sniper:
 	return { fov: verticalFov(fovs[level - 1]!), sniper: SNIPERS.has(key) };
 }
 
+const FLY_SPEED = 900;
+const FLY_KEYS = new Set([
+	'KeyW',
+	'KeyA',
+	'KeyS',
+	'KeyD',
+	'KeyQ',
+	'KeyE',
+	'ShiftLeft',
+	'ShiftRight'
+]);
+
 export class ReplayScene {
 	onPick: ((index: number) => void) | null = null;
 	onCycle: ((direction: 1 | -1) => void) | null = null;
@@ -137,6 +149,8 @@ export class ReplayScene {
 	debug: DebugToggles = { ...defaultDebug };
 	private overlayDirty = true;
 	private crosshairs = new Map<string, Crosshair | null>();
+	private flyKeys = new Set<string>();
+	private lastFly = 0;
 	private viewmodelKey = '';
 
 	constructor(
@@ -192,6 +206,22 @@ export class ReplayScene {
 		const menu = (event: MouseEvent) => {
 			if (this.mode !== 'free') event.preventDefault();
 		};
+		const isTyping = (target: EventTarget | null) =>
+			target instanceof HTMLElement &&
+			(['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable);
+		const keyDown = (event: KeyboardEvent) => {
+			if (this.mode !== 'free' || !canvas.isConnected || isTyping(event.target)) return;
+			if (event.ctrlKey || event.metaKey || event.altKey) return;
+			if (FLY_KEYS.has(event.code)) {
+				this.flyKeys.add(event.code);
+				this.dirty = true;
+			}
+		};
+		const keyUp = (event: KeyboardEvent) => this.flyKeys.delete(event.code);
+		const blur = () => this.flyKeys.clear();
+		window.addEventListener('keydown', keyDown);
+		window.addEventListener('keyup', keyUp);
+		window.addEventListener('blur', blur);
 		canvas.addEventListener('pointerdown', down);
 		canvas.addEventListener('pointerup', up);
 		canvas.addEventListener('contextmenu', menu);
@@ -201,6 +231,9 @@ export class ReplayScene {
 			canvas.removeEventListener('pointerdown', down);
 			canvas.removeEventListener('pointerup', up);
 			canvas.removeEventListener('contextmenu', menu);
+			window.removeEventListener('keydown', keyDown);
+			window.removeEventListener('keyup', keyUp);
+			window.removeEventListener('blur', blur);
 		};
 	}
 
@@ -526,6 +559,7 @@ export class ReplayScene {
 			this.lastKey = key;
 			this.dirty = true;
 		}
+		this.fly();
 		if (this.controls.enabled) this.controls.update();
 		if (!this.dirty) return false;
 		this.dirty = false;
@@ -688,6 +722,33 @@ export class ReplayScene {
 			.distanceTo(this.camera.position);
 		return Math.min(MAX_PLAYER_SCALE, Math.max(1, distance / 1600));
 	};
+
+	get flying(): boolean {
+		return this.mode === 'free';
+	}
+
+	private fly() {
+		const now = performance.now();
+		const dt = Math.min(0.25, (now - this.lastFly) / 1000);
+		this.lastFly = now;
+		if (this.mode !== 'free' || !this.flyKeys.size) return;
+		const keys = this.flyKeys;
+		const forward = this.controls.target.clone().sub(this.camera.position).normalize();
+		const right = forward.clone().cross(this.camera.up).normalize();
+		const move = new THREE.Vector3();
+		if (keys.has('KeyW')) move.add(forward);
+		if (keys.has('KeyS')) move.sub(forward);
+		if (keys.has('KeyD')) move.add(right);
+		if (keys.has('KeyA')) move.sub(right);
+		if (keys.has('KeyE')) move.z += 1;
+		if (keys.has('KeyQ')) move.z -= 1;
+		if (!move.lengthSq()) return;
+		const fast = keys.has('ShiftLeft') || keys.has('ShiftRight');
+		move.normalize().multiplyScalar(FLY_SPEED * (fast ? 3 : 1) * dt);
+		this.camera.position.add(move);
+		this.controls.target.add(move);
+		this.dirty = true;
+	}
 
 	private frame(replay: RoundReplay) {
 		const z = startHeight(replay);

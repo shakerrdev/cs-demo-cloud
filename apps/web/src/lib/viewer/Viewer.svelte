@@ -884,6 +884,14 @@
 	function onKey(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName)) return;
+		if (
+			view === '3d' &&
+			cameraMode === 'free' &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			/^[wasdqe]$/i.test(event.key)
+		)
+			return;
 		if (event.key === ' ') playing = !playing;
 		else if (event.key === 'ArrowLeft') seek(event.shiftKey ? -1 : -5);
 		else if (event.key === 'ArrowRight') seek(event.shiftKey ? 1 : 5);
@@ -1461,9 +1469,9 @@
 	bookmark · [ / ] round · 1–5 speed · V 2D/3D · click a player to highlight them and draw their
 	path (J / K then follow their kills and deaths)
 	{#if view === '3d'}
-		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode · F
-		full screen · H HUD · X x-ray · in Follow and POV, left/right click switches to the
-		next/previous player
+		<br />3D: WASD to fly (Q/E down/up, Shift faster) · drag to pan · right-drag or Shift-drag to
+		rotate · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in Follow and POV,
+		left/right click switches to the next/previous player
 	{/if}
 </p>
 
