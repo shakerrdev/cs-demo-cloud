@@ -9,6 +9,7 @@
 	import { formatBytes, formatDate, formatDuration, platformName } from '#lib/format.ts';
 	import Heatmap from '#lib/components/Heatmap.svelte';
 	import RoundLog from '#lib/components/RoundLog.svelte';
+	import RoundOverlay from '#lib/components/RoundOverlay.svelte';
 	import UtilityMap from '#lib/components/UtilityMap.svelte';
 	import Viewer from '#lib/viewer/Viewer.svelte';
 	import type { PageProps } from './$types';
@@ -16,9 +17,8 @@
 	let { data, form }: PageProps = $props();
 	let confirmDelete = $state(false);
 	const details = $derived(data.details);
-	let board = $state<'basic' | 'advanced' | 'rounds' | 'economy' | 'positions' | 'utility'>(
-		'basic'
-	);
+	type Board = 'basic' | 'advanced' | 'rounds' | 'economy' | 'positions' | 'utility' | 'overlay';
+	let board = $state<Board>('basic');
 	const buys = $derived(
 		details ? roundBuys(details.rounds) : new Map<number, Record<TeamKey, BuyType> | null>()
 	);
@@ -179,6 +179,12 @@
 			aria-selected={board === 'utility'}
 			onclick={() => (board = 'utility')}>Utility</button
 		>
+		<button
+			type="button"
+			role="tab"
+			aria-selected={board === 'overlay'}
+			onclick={() => (board = 'overlay')}>Compare rounds</button
+		>
 		{#if board === 'advanced' && data.stats}
 			<span class="openings"
 				>Opening duels {teamNames.a} {openingsWon('a')} – {openingsWon('b')} {teamNames.b}</span
@@ -186,7 +192,18 @@
 		{/if}
 	</div>
 
-	{#if board === 'utility'}
+	{#if board === 'overlay'}
+		<section class="economy" aria-label="Compare rounds">
+			<RoundOverlay
+				demoId={data.demo.id}
+				version={match.parsedAt.getTime()}
+				map={match.map}
+				rounds={details.rounds}
+				{buys}
+				{teamNames}
+			/>
+		</section>
+	{:else if board === 'utility'}
 		<section class="economy" aria-label="Utility">
 			<UtilityMap
 				demoId={data.demo.id}
