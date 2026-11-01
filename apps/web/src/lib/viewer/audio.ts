@@ -424,8 +424,8 @@ export class ReplayAudio {
 		if (continuous) {
 			const cues = soundCues(
 				replay,
-				this.config.viewer.roundSeconds,
-				this.config.viewer.bombSeconds
+				replay.meta.timing?.roundSeconds ?? this.config.viewer.roundSeconds,
+				replay.meta.timing?.bombSeconds ?? this.config.viewer.bombSeconds
 			);
 			let lo = 0;
 			let hi = cues.length;

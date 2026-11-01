@@ -60,8 +60,6 @@
 		config = defaultConfig
 	}: Props = $props();
 
-	const ROUND_SECONDS = $derived(config.viewer.roundSeconds);
-	const BOMB_SECONDS = $derived(config.viewer.bombSeconds);
 	const speeds = [0.5, 1, 2, 4, 8];
 	const teamKeys: TeamKey[] = ['a', 'b'];
 	const cameraModes: { mode: CameraMode; label: string }[] = [
@@ -98,6 +96,8 @@
 
 	let round = $state(1);
 	let replay = $state.raw<RoundReplay | null>(null);
+	const ROUND_SECONDS = $derived(replay?.meta.timing?.roundSeconds ?? config.viewer.roundSeconds);
+	const BOMB_SECONDS = $derived(replay?.meta.timing?.bombSeconds ?? config.viewer.bombSeconds);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let tick = $state(0);

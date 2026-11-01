@@ -28,6 +28,7 @@ import {
 	type TeamKey,
 	type ViewColumns,
 	itemWeaponKey,
+	measureTiming,
 	weaponKey
 } from '@cs-demo-cloud/replay';
 import {
@@ -574,6 +575,12 @@ export function analyzeDemo(
 			...(view ? { view: view.columns } : {})
 		};
 	});
+
+	const timing = measureTiming(
+		replays.map((replay) => replay.meta),
+		tickRate
+	);
+	for (const replay of replays) replay.meta.timing = timing;
 
 	const playerRows = [...players.values()].map((entry) => ({
 		steamid: entry.key,
