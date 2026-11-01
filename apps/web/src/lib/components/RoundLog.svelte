@@ -2,6 +2,7 @@
 	import { weaponTitle, type Side, type TeamKey } from '@cs-demo-cloud/replay';
 	import { formatClock, roundEndReason } from '#lib/format.ts';
 	import { sideColors } from '#lib/viewer/draw.ts';
+	import ReasonIcon from '#lib/viewer/ReasonIcon.svelte';
 
 	interface Round {
 		number: number;
@@ -97,7 +98,9 @@
 				<span class="number">{round.number}</span>
 				<span class="winner"
 					>{round.winnerTeam ? teamNames[round.winnerTeam] : 'No winner'}
-					<small>{roundEndReason(round.reason)}</small></span
+					<small class="why"
+						><ReasonIcon reason={round.reason} />{roundEndReason(round.reason)}</small
+					></span
 				>
 				<span class="score">{round.scoreA}:{round.scoreB}</span>
 			</a>
@@ -196,6 +199,16 @@
 	small {
 		color: var(--muted);
 		font-weight: 400;
+	}
+
+	.why {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.why :global(.reason) {
+		margin: 0;
 	}
 
 	.score {
