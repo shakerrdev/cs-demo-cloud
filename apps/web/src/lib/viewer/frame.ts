@@ -247,3 +247,16 @@ export function inventoryAt(replay: RoundReplay, index: number, tick: number): s
 	}
 	return found.map((weapon) => replay.meta.weapons[weapon] ?? '').filter(Boolean);
 }
+
+export function setposCommand(replay: RoundReplay, index: number, tick: number): string | null {
+	const view = viewState(replay, index, tick);
+	const state = playerStates(replay, tick)[index];
+	if (!state) return null;
+	const x = view?.x ?? state.x;
+	const y = view?.y ?? state.y;
+	const z = view?.z ?? state.z;
+	const pitch = view?.pitch ?? state.pitch;
+	const yaw = view?.yaw ?? state.yaw;
+	const n = (value: number) => (Math.round(value * 100) / 100).toString();
+	return `setpos ${n(x)} ${n(y)} ${n(z)};setang ${n(pitch)} ${n(yaw)} 0`;
+}

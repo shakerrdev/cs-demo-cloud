@@ -20,7 +20,7 @@
 	import { Benchmark } from './bench.ts';
 	import { defaultGraphics, type GraphicsSettings, type Resolution } from './graphics.ts';
 	import { profiler, summarize } from './perf.ts';
-	import { bombState, lastTick, playerStates } from './frame.ts';
+	import { bombState, lastTick, playerStates, setposCommand } from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
 	import type { CameraMode, PackStatus, ReplayScene, TextureQuality } from './three/scene.ts';
 
@@ -193,6 +193,30 @@
 			localStorage.setItem(xrayKey, xrayOn ? 'on' : 'off');
 		} catch {
 			return;
+		}
+	}
+
+	let notice = $state<string | null>(null);
+	let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function showNotice(text: string) {
+		notice = text;
+		clearTimeout(noticeTimer);
+		noticeTimer = setTimeout(() => (notice = null), 2500);
+	}
+
+	async function copySetpos() {
+		if (!replay || focus === null) {
+			showNotice('Click a player first, then copy their position');
+			return;
+		}
+		const command = setposCommand(replay, focus, tick);
+		if (!command) return;
+		try {
+			await navigator.clipboard.writeText(command);
+			showNotice(`Copied: ${command}`);
+		} catch {
+			showNotice(command);
 		}
 	}
 
@@ -778,6 +802,7 @@
 		else if (event.key === 'PageDown' || event.key === ']') goToRound(round + 1);
 		else if (/^[1-5]$/.test(event.key)) speed = speeds[Number(event.key) - 1]!;
 		else if (event.key === 'k' || event.key === 'K') jumpToEvent(1);
+		else if (event.key === 's' || event.key === 'S') void copySetpos();
 		else if (event.key === 'j' || event.key === 'J') jumpToEvent(-1);
 		else if (event.key === 'm' || event.key === 'M') toggleSound();
 		else if (event.key === 'f' || event.key === 'F') setTheater(!theater);
@@ -886,6 +911,7 @@
 />
 
 <div class="viewer" class:theater bind:this={host}>
+	{#if notice}<div class="notice" role="status">{notice}</div>{/if}
 	{#each teamKeys as team (team)}
 		{@const side = teamSide(team)}
 		<aside class="team {team}" style:--side={side ? sideColors[side] : 'var(--muted)'}>
@@ -1183,6 +1209,13 @@
 						>{theater ? 'Exit full screen' : 'Full screen'}</button
 					>
 				{/if}
+				{#if focus !== null}
+					<button
+						type="button"
+						title="Copy setpos and setang for this player at this moment, to paste into the CS2 console (S)"
+						onclick={copySetpos}>Copy setpos</button
+					>
+				{/if}
 				<div class="segmented" role="group" aria-label="View">
 					<button
 						type="button"
@@ -1228,9 +1261,9 @@
 	{/each}
 </nav>
 <p class="hint">
-	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · [ / ] round · 1–5 speed · V
-	2D/3D · click a player to highlight them and draw their path (J / K then follow their kills and
-	deaths)
+	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · [ / ] round
+	· 1–5 speed · V 2D/3D · click a player to highlight them and draw their path (J / K then follow
+	their kills and deaths)
 	{#if view === '3d'}
 		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode · F
 		full screen · H HUD · X x-ray · in Follow and POV, left/right click switches to the
@@ -1693,5 +1726,22 @@
 		margin: 10px 0 0;
 		color: var(--muted);
 		font-size: 12.5px;
+	}
+
+	.notice {
+		position: fixed;
+		left: 50%;
+		bottom: 24px;
+		transform: translateX(-50%);
+		z-index: 50;
+		max-width: min(92vw, 640px);
+		padding: 8px 14px;
+		border-radius: 8px;
+		background: rgb(0 0 0 / 0.88);
+		color: #fff;
+		font-size: 13px;
+		font-family: ui-monospace, monospace;
+		overflow-wrap: anywhere;
+		pointer-events: none;
 	}
 </style>
