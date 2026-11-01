@@ -1758,18 +1758,21 @@
 		{#if halfBreak(info.number) && info.number !== rounds.length}<span class="half"></span>{/if}
 	{/each}
 </nav>
-<p class="hint">
-	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · D draw · B
-	bookmark · [ / ] round · 1–5 speed (3D: − / =; 1–0 spectate a player like CS2) · V 2D/3D · 2D:
-	scroll to zoom, drag to pan, double-click to reset · click a player to highlight them and draw
-	their path (J / K then follow their kills and deaths)
-	{#if view === '3d'}
-		<br />3D: WASD to fly (Q/E down/up, Shift faster) · right-drag to look around · drag to pan ·
-		Shift-drag to orbit · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in
-		Follow, Chase and POV, left/right click switches to the next/previous player · T top view ·
-		click the HUD radar to fly there · click a kill in the feed to rewatch it
-	{/if}
-</p>
+<details class="hint">
+	<summary>Keyboard and mouse shortcuts</summary>
+	<p>
+		Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · D draw · B
+		bookmark · [ / ] round · 1–5 speed (3D: − / =; 1–0 spectate a player like CS2) · V 2D/3D · 2D:
+		scroll to zoom, drag to pan, double-click to reset · click a player to highlight them and draw
+		their path (J / K then follow their kills and deaths)
+		{#if view === '3d'}
+			<br />3D: WASD to fly (Q/E down/up, Shift faster) · right-drag to look around · drag to pan ·
+			Shift-drag to orbit · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in
+			Follow, Chase and POV, left/right click switches to the next/previous player · T top view ·
+			click the HUD radar to fly there · click a kill in the feed to rewatch it
+		{/if}
+	</p>
+</details>
 
 <style>
 	.viewer {
@@ -2439,5 +2442,14 @@
 		margin-top: 6px;
 		padding-top: 6px;
 		border-top: 1px solid var(--border);
+	}
+
+	details.hint summary {
+		cursor: pointer;
+		width: fit-content;
+	}
+
+	details.hint p {
+		margin: 6px 0 0;
 	}
 </style>
