@@ -674,7 +674,15 @@ export class ReplayScene {
 		const models = this.models?.active && debug.models ? this.models : null;
 		profiler.begin('actors');
 		this.actors.setCapsules(!this.models?.active);
-		this.actors.update(replay, tick, this.players, focus, this.pov, this.sizeOf);
+		this.actors.update(
+			replay,
+			tick,
+			this.players,
+			focus,
+			this.pov,
+			this.sizeOf,
+			mode === 'free' || mode === 'follow' ? focus : null
+		);
 		profiler.end('actors');
 		profiler.begin('models');
 		if (this.models) this.models.root.visible = debug.models;

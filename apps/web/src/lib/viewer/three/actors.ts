@@ -375,7 +375,8 @@ export class Actors {
 		players: PlayerState[],
 		focus: number | null,
 		pov: number | null,
-		sizeOf: (player: PlayerState) => number
+		sizeOf: (player: PlayerState) => number,
+		path: number | null = null
 	) {
 		this.updatePlayers(players, focus, pov, sizeOf, tick, replay.meta.kills, replay.meta.tickRate);
 		this.updateDeaths(replay.meta.kills, replay.meta.players, tick);
@@ -385,7 +386,7 @@ export class Actors {
 		this.grenadeHeads.visible = this.simpleEffects;
 		if (!this.simpleEffects) this.bomb.visible = false;
 		this.updateShots(replay, tick, players, pov);
-		this.updatePath(replay, tick, pov === null ? focus : null);
+		this.updatePath(replay, tick, path);
 	}
 
 	private updatePath(replay: RoundReplay, tick: number, player: number | null) {
