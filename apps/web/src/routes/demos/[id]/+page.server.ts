@@ -19,11 +19,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const demo = getDemo(db, params.id);
 	if (!demo) error(404, 'Demo not found');
 	const details = getMatch(db, params.id) ?? null;
+	const killRows = details ? getMatchKills(db, params.id) : [];
 	const stats = details
 		? matchStats(
 				details.players,
 				details.rounds.map((r) => ({ number: r.number, winnerTeam: r.winnerTeam })),
-				getMatchKills(db, params.id),
+				killRows,
 				details.match.tickRate
 			)
 		: null;
@@ -36,6 +37,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		demo,
 		details,
 		stats,
+		kills: killRows,
 		mapPack: pack?.version ?? null,
 		playerPack: players?.version ?? null,
 		skinsPack: skins?.version ?? null,

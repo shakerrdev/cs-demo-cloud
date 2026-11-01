@@ -8,13 +8,14 @@
 	} from '@cs-demo-cloud/replay';
 	import { formatBytes, formatDate, formatDuration, platformName } from '#lib/format.ts';
 	import Heatmap from '#lib/components/Heatmap.svelte';
+	import RoundLog from '#lib/components/RoundLog.svelte';
 	import Viewer from '#lib/viewer/Viewer.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 	let confirmDelete = $state(false);
 	const details = $derived(data.details);
-	let board = $state<'basic' | 'advanced' | 'economy' | 'positions'>('basic');
+	let board = $state<'basic' | 'advanced' | 'rounds' | 'economy' | 'positions'>('basic');
 	const buys = $derived(
 		details ? roundBuys(details.rounds) : new Map<number, Record<TeamKey, BuyType> | null>()
 	);
@@ -133,6 +134,12 @@
 		<button
 			type="button"
 			role="tab"
+			aria-selected={board === 'rounds'}
+			onclick={() => (board = 'rounds')}>Rounds</button
+		>
+		<button
+			type="button"
+			role="tab"
 			aria-selected={board === 'economy'}
 			onclick={() => (board = 'economy')}>Economy</button
 		>
@@ -149,7 +156,17 @@
 		{/if}
 	</div>
 
-	{#if board === 'positions'}
+	{#if board === 'rounds'}
+		<section class="economy" aria-label="Round log">
+			<RoundLog
+				rounds={details.rounds}
+				kills={data.kills}
+				{players}
+				{teamNames}
+				tickRate={match.tickRate}
+			/>
+		</section>
+	{:else if board === 'positions'}
 		<section class="economy" aria-label="Kill positions">
 			<Heatmap
 				demoId={data.demo.id}
