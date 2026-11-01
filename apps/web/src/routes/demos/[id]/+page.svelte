@@ -1,17 +1,35 @@
 <script lang="ts">
-	import { mapTitle, type TeamKey } from '@cs-demo-cloud/replay';
+	import {
+		buyLabels,
+		mapTitle,
+		roundBuys,
+		type BuyType,
+		type TeamKey
+	} from '@cs-demo-cloud/replay';
 	import { formatBytes, formatDate, formatDuration, platformName } from '#lib/format.ts';
 	import Viewer from '#lib/viewer/Viewer.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
 	let confirmDelete = $state(false);
-	let board = $state<'basic' | 'advanced'>('basic');
+	const details = $derived(data.details);
+	let board = $state<'basic' | 'advanced' | 'economy'>('basic');
+	const buys = $derived(
+		details ? roundBuys(details.rounds) : new Map<number, Record<TeamKey, BuyType> | null>()
+	);
+	const hasEconomy = $derived(details?.rounds.some((r) => r.teamAEquipment !== null) ?? false);
+	const maxEquipment = $derived(
+		Math.max(
+			20000,
+			...(details?.rounds.flatMap((r) => [r.teamAEquipment ?? 0, r.teamBEquipment ?? 0]) ?? [])
+		)
+	);
+	const money = (value: number | null) =>
+		value === null ? '–' : `$${value.toLocaleString('en-US')}`;
 	const statsOf = $derived(new Map(data.stats?.players.map((p) => [p.steamid, p]) ?? []));
 	const openingsWon = (team: TeamKey) =>
 		data.stats?.openings.filter((o) => o.team === team).length ?? 0;
 
-	const details = $derived(data.details);
 	const teamKeys: TeamKey[] = ['a', 'b'];
 
 	const teamNames = $derived.by((): Record<TeamKey, string> => {
@@ -111,6 +129,12 @@
 			aria-selected={board === 'advanced'}
 			onclick={() => (board = 'advanced')}>Duels &amp; clutches</button
 		>
+		<button
+			type="button"
+			role="tab"
+			aria-selected={board === 'economy'}
+			onclick={() => (board = 'economy')}>Economy</button
+		>
 		{#if board === 'advanced' && data.stats}
 			<span class="openings"
 				>Opening duels {teamNames.a} {openingsWon('a')} – {openingsWon('b')} {teamNames.b}</span
@@ -118,87 +142,140 @@
 		{/if}
 	</div>
 
-	<section class="scoreboard">
-		{#each teamKeys as team (team)}
-			<div class="table">
-				<table>
-					<thead>
-						<tr>
-							<th class="player">
-								{teamNames[team]}
-								<span class="started">started {startSide(team)}</span>
-							</th>
-							{#if board === 'basic'}
-								<th>K</th>
-								<th>D</th>
-								<th>A</th>
-								<th>+/−</th>
-								<th>ADR</th>
-								<th>HS%</th>
-								<th>MVP</th>
-								<th>Score</th>
-							{:else}
-								<th title="Rounds with a kill, assist, survival or traded death">KAST</th>
-								<th title="Opening kills – opening deaths">Open</th>
-								<th title="Kills within 5 s of an enemy killing a teammate">Trades</th>
-								<th title="Rounds with 2, 3, 4 and 5 kills">2K/3K/4K/5K</th>
-								<th title="Clutches won / played (last player alive)">Clutch</th>
-								<th title="Kills on enemies this player flashed">Flash A</th>
-							{/if}
-						</tr>
-					</thead>
-					<tbody>
-						{#each players.filter((p) => p.team === team) as player (player.steamid)}
-							{@const diff = player.kills - player.deaths}
+	{#if board === 'economy'}
+		<section class="economy" aria-label="Economy per round">
+			{#if !hasEconomy}
+				<p class="hint">
+					Economy is recorded while parsing. Use <b>Parse again</b> below to add it to this match.
+				</p>
+			{:else}
+				{#each teamKeys as team (team)}
+					<div class="eco-row">
+						<span class="eco-team">{teamNames[team]}</span>
+						<div class="eco-rounds">
+							{#each details.rounds as r (r.number)}
+								{@const value = team === 'a' ? r.teamAEquipment : r.teamBEquipment}
+								{@const cash = team === 'a' ? r.teamAMoney : r.teamBMoney}
+								{@const buy = buys.get(r.number)?.[team]}
+								<div
+									class="eco-cell"
+									class:won={r.winnerTeam === team}
+									class:flip={team === 'b'}
+									title="Round {r.number} · {buy ? buyLabels[buy] : 'No data'} · equipment {money(
+										value
+									)} · bank {money(cash)}{r.winnerTeam === team ? ' · won' : ''}"
+								>
+									<span
+										class="eco-bar buy-{buy ?? 'none'}"
+										style="height: {Math.max(4, ((value ?? 0) / maxEquipment) * 100)}%"
+									></span>
+								</div>
+							{/each}
+						</div>
+					</div>
+					{#if team === 'a'}
+						<div class="eco-row numbers">
+							<span class="eco-team"></span>
+							<div class="eco-rounds">
+								{#each details.rounds as r (r.number)}
+									<span class="eco-number">{r.number}</span>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				{/each}
+				<p class="legend">
+					{#each Object.entries(buyLabels) as [key, label] (key)}
+						<span><i class="eco-bar buy-{key}"></i>{label}</span>
+					{/each}
+					<span class="won-key">Outlined: round won</span>
+				</p>
+			{/if}
+		</section>
+	{:else}
+		<section class="scoreboard">
+			{#each teamKeys as team (team)}
+				<div class="table">
+					<table>
+						<thead>
 							<tr>
-								<td class="player">
-									{#if /^\d{17}$/.test(player.steamid)}
-										<a
-											href="https://steamcommunity.com/profiles/{player.steamid}"
-											target="_blank"
-											rel="noopener noreferrer">{player.name}</a
-										>
-									{:else}
-										{player.name}
-									{/if}
-								</td>
+								<th class="player">
+									{teamNames[team]}
+									<span class="started">started {startSide(team)}</span>
+								</th>
 								{#if board === 'basic'}
-									<td>{player.kills}</td>
-									<td>{player.deaths}</td>
-									<td>{player.assists}</td>
-									<td class:pos={diff > 0} class:neg={diff < 0}>{diff > 0 ? `+${diff}` : diff}</td>
-									<td>{Math.round(player.damage / Math.max(1, match.roundCount))}</td>
-									<td>{percent(player.headshotKills, player.kills)}%</td>
-									<td>{player.mvps}</td>
-									<td>{player.score}</td>
+									<th>K</th>
+									<th>D</th>
+									<th>A</th>
+									<th>+/−</th>
+									<th>ADR</th>
+									<th>HS%</th>
+									<th>MVP</th>
+									<th>Score</th>
 								{:else}
-									{@const s = statsOf.get(player.steamid)}
-									{@const won = s?.clutches.filter((c) => c.won) ?? []}
-									<td>{s ? Math.round(s.kast * 100) : 0}%</td>
-									<td
-										class:pos={(s?.openingKills ?? 0) > (s?.openingDeaths ?? 0)}
-										class:neg={(s?.openingKills ?? 0) < (s?.openingDeaths ?? 0)}
-										>{s?.openingKills ?? 0}–{s?.openingDeaths ?? 0}</td
-									>
-									<td>{s?.trades ?? 0}</td>
-									<td class="multi">{s?.multiKills.join(' / ') ?? '0 / 0 / 0 / 0'}</td>
-									<td
-										title={s?.clutches
-											.map((c) => `Round ${c.round}: 1v${c.opponents} ${c.won ? 'won' : 'lost'}`)
-											.join('\n')}
-										>{won.length}/{s?.clutches.length ?? 0}{#if won.length}<span class="best"
-												>1v{Math.max(...won.map((c) => c.opponents))}</span
-											>{/if}</td
-									>
-									<td>{s?.flashAssists ?? 0}</td>
+									<th title="Rounds with a kill, assist, survival or traded death">KAST</th>
+									<th title="Opening kills – opening deaths">Open</th>
+									<th title="Kills within 5 s of an enemy killing a teammate">Trades</th>
+									<th title="Rounds with 2, 3, 4 and 5 kills">2K/3K/4K/5K</th>
+									<th title="Clutches won / played (last player alive)">Clutch</th>
+									<th title="Kills on enemies this player flashed">Flash A</th>
 								{/if}
 							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		{/each}
-	</section>
+						</thead>
+						<tbody>
+							{#each players.filter((p) => p.team === team) as player (player.steamid)}
+								{@const diff = player.kills - player.deaths}
+								<tr>
+									<td class="player">
+										{#if /^\d{17}$/.test(player.steamid)}
+											<a
+												href="https://steamcommunity.com/profiles/{player.steamid}"
+												target="_blank"
+												rel="noopener noreferrer">{player.name}</a
+											>
+										{:else}
+											{player.name}
+										{/if}
+									</td>
+									{#if board === 'basic'}
+										<td>{player.kills}</td>
+										<td>{player.deaths}</td>
+										<td>{player.assists}</td>
+										<td class:pos={diff > 0} class:neg={diff < 0}>{diff > 0 ? `+${diff}` : diff}</td
+										>
+										<td>{Math.round(player.damage / Math.max(1, match.roundCount))}</td>
+										<td>{percent(player.headshotKills, player.kills)}%</td>
+										<td>{player.mvps}</td>
+										<td>{player.score}</td>
+									{:else}
+										{@const s = statsOf.get(player.steamid)}
+										{@const won = s?.clutches.filter((c) => c.won) ?? []}
+										<td>{s ? Math.round(s.kast * 100) : 0}%</td>
+										<td
+											class:pos={(s?.openingKills ?? 0) > (s?.openingDeaths ?? 0)}
+											class:neg={(s?.openingKills ?? 0) < (s?.openingDeaths ?? 0)}
+											>{s?.openingKills ?? 0}–{s?.openingDeaths ?? 0}</td
+										>
+										<td>{s?.trades ?? 0}</td>
+										<td class="multi">{s?.multiKills.join(' / ') ?? '0 / 0 / 0 / 0'}</td>
+										<td
+											title={s?.clutches
+												.map((c) => `Round ${c.round}: 1v${c.opponents} ${c.won ? 'won' : 'lost'}`)
+												.join('\n')}
+											>{won.length}/{s?.clutches.length ?? 0}{#if won.length}<span class="best"
+													>1v{Math.max(...won.map((c) => c.opponents))}</span
+												>{/if}</td
+										>
+										<td>{s?.flashAssists ?? 0}</td>
+									{/if}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/each}
+		</section>
+	{/if}
 
 	<footer class="actions">
 		<span class="file">
@@ -378,6 +455,107 @@
 		color: var(--muted);
 		font-size: 0.9em;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.economy {
+		margin-top: 14px;
+		background: var(--surface);
+		border-radius: 10px;
+		padding: 14px 16px;
+		overflow-x: auto;
+	}
+
+	.eco-row {
+		display: grid;
+		grid-template-columns: 110px 1fr;
+		align-items: stretch;
+		gap: 10px;
+	}
+
+	.eco-team {
+		align-self: center;
+		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.eco-rounds {
+		display: grid;
+		grid-auto-flow: column;
+		grid-auto-columns: minmax(18px, 1fr);
+		gap: 3px;
+		min-width: max-content;
+	}
+
+	.eco-cell {
+		height: 64px;
+		display: flex;
+		align-items: flex-end;
+		border-radius: 4px;
+		outline: 1px solid transparent;
+		outline-offset: -1px;
+	}
+
+	.eco-cell.flip {
+		align-items: flex-start;
+	}
+
+	.eco-cell.won {
+		outline-color: var(--text);
+	}
+
+	.eco-bar {
+		display: block;
+		width: 100%;
+		border-radius: 3px;
+	}
+
+	.numbers .eco-rounds {
+		padding: 2px 0;
+	}
+
+	.eco-number {
+		text-align: center;
+		font-size: 11px;
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.buy-pistol {
+		background: #8d8f96;
+	}
+	.buy-eco {
+		background: #c0504d;
+	}
+	.buy-semi {
+		background: #d08a3a;
+	}
+	.buy-force {
+		background: #d4b13c;
+	}
+	.buy-full {
+		background: #3f9b62;
+	}
+	.buy-none {
+		background: var(--border);
+	}
+
+	.legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px 16px;
+		margin: 12px 0 0;
+		color: var(--muted);
+		font-size: 0.85em;
+	}
+
+	.legend i {
+		display: inline-block;
+		width: 10px;
+		height: 10px;
+		margin-right: 6px;
+		vertical-align: -1px;
 	}
 
 	.multi {
