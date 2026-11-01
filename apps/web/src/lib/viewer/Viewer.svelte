@@ -21,7 +21,7 @@
 	import { Benchmark } from './bench.ts';
 	import { defaultGraphics, type GraphicsSettings, type Resolution } from './graphics.ts';
 	import { profiler, summarize } from './perf.ts';
-	import { bombState, lastTick, playerStates, setposCommand } from './frame.ts';
+	import { bombState, lastTick, observerSlots, playerStates, setposCommand } from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
 	import type { CameraMode, PackStatus, ReplayScene, TextureQuality } from './three/scene.ts';
 
@@ -881,6 +881,21 @@
 		tick = Math.max(replay.meta.startTick, Math.min(end, target - lead));
 	}
 
+	function selectSlot(slot: number) {
+		for (const [index, value] of observerSlots(hudPlayers)) {
+			if (value === slot) {
+				focus = index;
+				if (cameraMode === 'free') setCameraMode('follow');
+				return;
+			}
+		}
+	}
+
+	function stepSpeed(direction: 1 | -1) {
+		const index = speeds.indexOf(speed);
+		speed = speeds[Math.max(0, Math.min(speeds.length - 1, (index < 0 ? 1 : index) + direction))]!;
+	}
+
 	function onKey(event: KeyboardEvent) {
 		const target = event.target as HTMLElement;
 		if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName)) return;
@@ -897,7 +912,10 @@
 		else if (event.key === 'ArrowRight') seek(event.shiftKey ? 1 : 5);
 		else if (event.key === 'PageUp' || event.key === '[') goToRound(round - 1);
 		else if (event.key === 'PageDown' || event.key === ']') goToRound(round + 1);
+		else if (view === '3d' && /^[0-9]$/.test(event.key)) selectSlot(Number(event.key) || 10);
 		else if (/^[1-5]$/.test(event.key)) speed = speeds[Number(event.key) - 1]!;
+		else if (event.key === '-' || event.key === '=' || event.key === '+')
+			stepSpeed(event.key === '-' ? -1 : 1);
 		else if (event.key === 'k' || event.key === 'K') jumpToEvent(1);
 		else if (event.key === 's' || event.key === 'S') void copySetpos();
 		else if (event.key === 'd' || event.key === 'D') toggleDrawing();
@@ -1466,8 +1484,8 @@
 </nav>
 <p class="hint">
 	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · D draw · B
-	bookmark · [ / ] round · 1–5 speed · V 2D/3D · click a player to highlight them and draw their
-	path (J / K then follow their kills and deaths)
+	bookmark · [ / ] round · 1–5 speed (3D: − / =; 1–0 spectate a player like CS2) · V 2D/3D · click a
+	player to highlight them and draw their path (J / K then follow their kills and deaths)
 	{#if view === '3d'}
 		<br />3D: WASD to fly (Q/E down/up, Shift faster) · drag to pan · right-drag or Shift-drag to
 		rotate · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in Follow and POV,

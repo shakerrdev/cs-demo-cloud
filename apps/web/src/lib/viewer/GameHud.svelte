@@ -9,7 +9,7 @@
 		type TeamKey
 	} from '@cs-demo-cloud/replay';
 	import { drawFrame, sideColors } from './draw.ts';
-	import { inventoryAt, type PlayerState } from './frame.ts';
+	import { inventoryAt, observerSlots, slotLabel, type PlayerState } from './frame.ts';
 
 	interface Props {
 		replay: RoundReplay;
@@ -71,6 +71,7 @@
 		return slotColors[slot % slotColors.length]!;
 	};
 
+	const slots10 = $derived(observerSlots(players));
 	const focused = $derived(focus !== null ? (players[focus] ?? null) : null);
 	const inventory = $derived(focused ? inventoryAt(replay, focused.index, tick) : []);
 	const slots = $derived(slotList(inventory, focused?.weapon ?? ''));
@@ -169,7 +170,7 @@
 						<span class="pcard-name">{player.name}</span>
 						<span class="pcard-face"
 							><span class="pcard-hp" style:height="{player.alive ? player.health : 0}%"
-							></span><span class="pcard-initial">{player.name.slice(0, 1).toUpperCase()}</span
+							></span><span class="pcard-initial">{slotLabel(slots10.get(player.index) ?? 0)}</span
 							></span
 						>
 						<span class="pcard-money">${player.money}</span>

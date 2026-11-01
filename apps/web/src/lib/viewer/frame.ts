@@ -260,3 +260,19 @@ export function setposCommand(replay: RoundReplay, index: number, tick: number):
 	const n = (value: number) => (Math.round(value * 100) / 100).toString();
 	return `setpos ${n(x)} ${n(y)} ${n(z)};setang ${n(pitch)} ${n(yaw)} 0`;
 }
+
+export function observerSlots(players: PlayerState[]): Map<number, number> {
+	const slots = new Map<number, number>();
+	let next = 1;
+	for (const side of ['CT', 'T'] as const) {
+		for (const player of players
+			.filter((p) => p.present && p.side === side)
+			.sort((a, b) => a.index - b.index)) {
+			if (next > 10) break;
+			slots.set(player.index, next++);
+		}
+	}
+	return slots;
+}
+
+export const slotLabel = (slot: number) => String(slot % 10);
