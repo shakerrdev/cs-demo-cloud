@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cs-demo-cloud companion
 // @namespace    https://github.com/shakerrdev/cs-demo-cloud
-// @version      1.0.0
+// @version      1.1.0
 // @description  Send CS2 demos from FACEIT and other sites to your cs-demo-cloud
 // @match        https://www.faceit.com/*
 // @match        https://www.hltv.org/*
@@ -42,7 +42,7 @@
 	GM_registerMenuCommand('Set server and token', configure);
 	GM_registerMenuCommand('Send a demo link…', () => {
 		const url = prompt('Demo link (.dem, .dem.gz, .dem.zst or .dem.bz2)', lastDemo ?? '');
-		if (url) send(url.trim());
+		if (url) sendBest(url.trim());
 	});
 
 	function toast(text, link) {
@@ -67,6 +67,35 @@
 		});
 		document.body.append(box);
 		setTimeout(() => box.remove(), 6000);
+	}
+
+	async function signFaceit(resourceUrl) {
+		for (const path of ['/api/download/v2/demos/download-url', '/api/download/v2/demos/download']) {
+			try {
+				const response = await originalFetch.call(page, path, {
+					method: 'POST',
+					credentials: 'include',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ resource_url: resourceUrl })
+				});
+				if (!response.ok) continue;
+				const url = (await response.json())?.payload?.download_url;
+				if (typeof url === 'string' && /^https:/.test(url)) return url;
+			} catch {}
+		}
+		return null;
+	}
+
+	async function sendBest(url) {
+		if (location.hostname.endsWith('faceit.com') && !isSigned(url)) {
+			const signed = await signFaceit(url);
+			if (!signed) {
+				toast('Click FACEIT\'s own demo download button once, then send again');
+				return;
+			}
+			url = signed;
+		}
+		send(url);
 	}
 
 	function send(url) {
@@ -115,13 +144,16 @@
 			font: '600 13px system-ui, sans-serif',
 			cursor: 'pointer'
 		});
-		button.addEventListener('click', () => lastDemo && send(lastDemo));
+		button.addEventListener('click', () => lastDemo && sendBest(lastDemo));
 		document.body.append(button);
 	}
+
+	const isSigned = (url) => new URL(url).search.length > 1;
 
 	function found(url) {
 		if (!demoLink.test(url) || seen.has(url)) return;
 		seen.add(url);
+		if (lastDemo && isSigned(lastDemo) && !isSigned(url)) return;
 		lastDemo = url;
 		if (document.body) showButton();
 		else addEventListener('DOMContentLoaded', showButton, { once: true });
@@ -142,6 +174,17 @@
 			response.clone().json().then(scan, () => {});
 		}
 		return response;
+	};
+
+	const originalXhrOpen = page.XMLHttpRequest.prototype.open;
+	page.XMLHttpRequest.prototype.open = function (...args) {
+		this.addEventListener('load', () => {
+			if (!(this.getResponseHeader('content-type') ?? '').includes('json')) return;
+			try {
+				scan(typeof this.response === 'string' ? JSON.parse(this.response) : this.response);
+			} catch {}
+		});
+		return originalXhrOpen.apply(this, args);
 	};
 
 	const originalOpen = page.open;
