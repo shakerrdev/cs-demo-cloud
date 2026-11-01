@@ -7,7 +7,7 @@ import {
 	packYaw,
 	type RoundReplay
 } from '@cs-demo-cloud/replay';
-import { setposCommand } from './frame.ts';
+import { directorPick, setposCommand } from './frame.ts';
 
 test('setpos command for a player at a tick', () => {
 	const columns = createColumns(2);
@@ -40,4 +40,42 @@ test('setpos command for a player at a tick', () => {
 	} as unknown as RoundReplay;
 	assert.equal(setposCommand(replay, 0, 2), 'setpos 150 -100 10;setang -10 90 0');
 	assert.equal(setposCommand(replay, 3, 2), null);
+});
+
+test('the director picks whoever is about to get a kill', () => {
+	const frames = 40;
+	const columns = createColumns(3 * frames);
+	columns.flags.fill(1);
+	for (let f = 20; f < frames; f++) columns.flags[2 * frames + f] = 0;
+	const kill = (tick: number, attacker: number, victim: number) => ({ tick, attacker, victim });
+	const replay = {
+		meta: {
+			version: REPLAY_VERSION,
+			round: 1,
+			tickRate: 64,
+			tickStep: 16,
+			startTick: 0,
+			frameCount: frames,
+			freezeEndTick: 0,
+			endTick: 640,
+			players: [0, 1, 2].map((i) => ({
+				steamid: String(i),
+				name: String(i),
+				team: 'a',
+				side: 'CT'
+			})),
+			weapons: [''],
+			kills: [kill(320, 1, 2), kill(600, 0, 1)],
+			shots: [],
+			grenades: [],
+			effects: [],
+			bomb: [],
+			blinds: []
+		},
+		columns
+	} as unknown as RoundReplay;
+	assert.equal(directorPick(replay, 0, 0), 0);
+	assert.equal(directorPick(replay, 100, 0), 1);
+	assert.equal(directorPick(replay, 330, 2), 0);
+	assert.equal(directorPick(replay, 330, 1), 1);
 });

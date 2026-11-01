@@ -276,3 +276,23 @@ export function observerSlots(players: PlayerState[]): Map<number, number> {
 }
 
 export const slotLabel = (slot: number) => String(slot % 10);
+
+export const DIRECTOR_LOOKAHEAD_SECONDS = 4;
+
+export function directorPick(
+	replay: RoundReplay,
+	tick: number,
+	current: number | null
+): number | null {
+	const players = playerStates(replay, tick);
+	const alive = (index: number) => index >= 0 && players[index]?.alive === true;
+	const horizon = tick + DIRECTOR_LOOKAHEAD_SECONDS * replay.meta.tickRate;
+	const upcoming = replay.meta.kills
+		.filter((kill) => kill.tick > tick && alive(kill.attacker))
+		.sort((a, b) => a.tick - b.tick);
+	const soon = upcoming.find((kill) => kill.tick <= horizon);
+	if (soon) return soon.attacker;
+	if (current !== null && alive(current)) return current;
+	if (upcoming[0]) return upcoming[0].attacker;
+	return players.find((p) => p.alive && p.present)?.index ?? current;
+}

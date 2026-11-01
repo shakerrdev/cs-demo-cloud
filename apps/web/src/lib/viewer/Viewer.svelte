@@ -21,7 +21,14 @@
 	import { Benchmark } from './bench.ts';
 	import { defaultGraphics, type GraphicsSettings, type Resolution } from './graphics.ts';
 	import { profiler, summarize } from './perf.ts';
-	import { bombState, lastTick, observerSlots, playerStates, setposCommand } from './frame.ts';
+	import {
+		bombState,
+		directorPick,
+		lastTick,
+		observerSlots,
+		playerStates,
+		setposCommand
+	} from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
 	import type { CameraMode, PackStatus, ReplayScene, TextureQuality } from './three/scene.ts';
 
@@ -72,6 +79,7 @@
 	}: Props = $props();
 
 	const speeds = [0.5, 1, 2, 4, 8];
+	const DIRECTOR_HOLD_SECONDS = 1.5;
 	const teamKeys: TeamKey[] = ['a', 'b'];
 	const cameraModes: { mode: CameraMode; label: string }[] = [
 		{ mode: 'free', label: 'Free' },
@@ -549,8 +557,14 @@
 		}
 	}
 
+	function pickFocus(index: number) {
+		director = false;
+		focus = focus === index ? null : index;
+	}
+
 	function setCameraMode(mode: CameraMode) {
 		cameraMode = mode;
+		if (mode === 'free') director = false;
 		if (mode === 'free' || !replay) return;
 		const players = playerStates(replay, tick);
 		if (focus === null || !players[focus]?.alive)
@@ -566,6 +580,7 @@
 		const at = order.findIndex((p) => p.index === focus);
 		const next = at < 0 ? 0 : (at + direction + order.length) % order.length;
 		focus = order[next]!.index;
+		director = false;
 	}
 
 	function startOf(next: RoundReplay): number {
@@ -660,7 +675,7 @@
 				if (disposed) return;
 				created = new ReplayScene(canvas, overlay, { antialias: !mapPack });
 				created.setGraphics($state.snapshot(graphics));
-				created.onPick = (index) => (focus = focus === index ? null : index);
+				created.onPick = (index) => pickFocus(index);
 				created.onCycle = cycleFocus;
 				created.onPackStatus = (status) => (packStatus = status);
 				scene3d = created;
@@ -795,6 +810,8 @@
 				}
 			}
 
+			if (director && current && !loading) steerDirector(current);
+
 			if (!playing || now - lastHud > 100) {
 				if (hudTick !== tick) hudTick = tick;
 				lastHud = now;
@@ -881,9 +898,33 @@
 		tick = Math.max(replay.meta.startTick, Math.min(end, target - lead));
 	}
 
+	let director = $state(false);
+	let directorSwitchedAt = -Infinity;
+
+	function steerDirector(current: RoundReplay) {
+		const pick = directorPick(current, tick, focus);
+		if (pick === null || pick === focus) return;
+		const focusedAlive = focus !== null && playerStates(current, tick)[focus]?.alive;
+		const settled =
+			Math.abs(tick - directorSwitchedAt) > DIRECTOR_HOLD_SECONDS * current.meta.tickRate;
+		if (focusedAlive && !settled) return;
+		focus = pick;
+		directorSwitchedAt = tick;
+	}
+
+	function toggleDirector() {
+		director = !director;
+		if (director) {
+			if (view !== '3d') setView('3d');
+			if (cameraMode === 'free') setCameraMode('pov');
+			directorSwitchedAt = -Infinity;
+		}
+	}
+
 	function selectSlot(slot: number) {
 		for (const [index, value] of observerSlots(hudPlayers)) {
 			if (value === slot) {
+				director = false;
 				focus = index;
 				if (cameraMode === 'free') setCameraMode('follow');
 				return;
@@ -920,6 +961,7 @@
 		else if (event.key === 's' || event.key === 'S') void copySetpos();
 		else if (event.key === 'd' || event.key === 'D') toggleDrawing();
 		else if (event.key === 'b' || event.key === 'B') startBookmark();
+		else if (event.key === 'g' || event.key === 'G') toggleDirector();
 		else if (event.key === 'Escape' && bookmarking) bookmarking = null;
 		else if (
 			(event.key === 'z' || event.key === 'Z') &&
@@ -1049,10 +1091,7 @@
 			<ul>
 				{#each hudPlayers.filter((p) => p.team === team) as player (player.steamid)}
 					<li class:dead={!player.alive} class:focused={focus === player.index}>
-						<button
-							type="button"
-							onclick={() => (focus = focus === player.index ? null : player.index)}
-						>
+						<button type="button" onclick={() => pickFocus(player.index)}>
 							<span class="row">
 								<span class="name">{player.name}</span>
 								<span class="money">${player.money}</span>
@@ -1115,7 +1154,7 @@
 						{lowerRadar}
 						{pixelRatio}
 						height={stageHeight}
-						onSelect={(index) => (focus = focus === index ? null : index)}
+						onSelect={(index) => pickFocus(index)}
 					/>
 				{/if}
 				{#if perfOpen}
@@ -1279,6 +1318,13 @@
 							>
 						{/each}
 					</div>
+					<button
+						type="button"
+						class:active={director}
+						aria-pressed={director}
+						title="Auto-director (G): follows whoever is about to get a kill, like a broadcast"
+						onclick={toggleDirector}>Auto</button
+					>
 					<button
 						type="button"
 						class:active={!roofs}
