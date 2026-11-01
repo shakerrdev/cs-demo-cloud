@@ -9,6 +9,7 @@ import { createDemo } from './demos.ts';
 import { saveMatch } from './matches.ts';
 import { runMigrations } from './migrations.ts';
 import {
+	getDuels,
 	getMatchesForStats,
 	getOwnResults,
 	getOwnSteamId,
@@ -135,4 +136,17 @@ test('own SteamID is chosen per user and gives their results', () => {
 	assert.ok(getOwnResults(db, 'me').every((row) => row.team === 'a' && row.kills === 2));
 	setOwnSteamId(db, 'u1', null);
 	assert.equal(getOwnSteamId(db, 'u1'), null);
+});
+
+test('duels count who a player kills and who kills them', () => {
+	const duels = getDuels(db, 'me');
+	assert.deepEqual(
+		duels.killed.map((d) => [d.steamid, d.name, d.count]),
+		[['you', 'you', 2]]
+	);
+	assert.deepEqual(duels.killedBy, []);
+	assert.deepEqual(
+		getDuels(db, 'you').killedBy.map((d) => [d.steamid, d.count]),
+		[['me', 2]]
+	);
 });

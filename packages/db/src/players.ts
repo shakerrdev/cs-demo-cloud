@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Db } from './client.ts';
 import { demos, kills, matchPlayers, matches, rounds, steamLinks } from './schema.ts';
 import { getSetting, setSetting } from './settings.ts';
@@ -141,4 +142,48 @@ export function getPlayerRounds(db: Db, steamid: string, map: string) {
 		.orderBy(desc(sql`coalesce(${demos.fileModifiedAt}, ${demos.createdAt})`), asc(rounds.number))
 		.all()
 		.map((row) => ({ ...row, playedAt: new Date(row.playedAt) }));
+}
+
+export function getDuels(db: Db, steamid: string, limit = 5) {
+	const name = (column: AnySQLiteColumn) =>
+		sql<string>`(select mp.name from match_players mp where mp.steamid = ${column} and mp.demo_id = ${kills.demoId})`;
+	const killed = db
+		.select({
+			steamid: kills.victimSteamid,
+			name: name(kills.victimSteamid),
+			count: sql<number>`count(*)`
+		})
+		.from(kills)
+		.innerJoin(demos, eq(demos.id, kills.demoId))
+		.where(
+			and(
+				eq(kills.attackerSteamid, steamid),
+				sql`${kills.victimSteamid} != ${steamid}`,
+				eq(demos.status, 'ready')
+			)
+		)
+		.groupBy(kills.victimSteamid)
+		.orderBy(desc(sql`count(*)`))
+		.limit(limit)
+		.all();
+	const killedBy = db
+		.select({
+			steamid: sql<string>`${kills.attackerSteamid}`,
+			name: name(kills.attackerSteamid),
+			count: sql<number>`count(*)`
+		})
+		.from(kills)
+		.innerJoin(demos, eq(demos.id, kills.demoId))
+		.where(
+			and(
+				eq(kills.victimSteamid, steamid),
+				sql`${kills.attackerSteamid} is not null and ${kills.attackerSteamid} != ${steamid}`,
+				eq(demos.status, 'ready')
+			)
+		)
+		.groupBy(kills.attackerSteamid)
+		.orderBy(desc(sql`count(*)`))
+		.limit(limit)
+		.all();
+	return { killed, killedBy };
 }
