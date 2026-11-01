@@ -1,5 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
-import { getOwnSteamId, setOwnSteamId } from '@cs-demo-cloud/db';
+import { getDuels, getOwnSteamId, setOwnSteamId } from '@cs-demo-cloud/db';
 import { db } from '#lib/server/db.ts';
 import { playerProfile } from '#lib/server/players.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -7,7 +7,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = ({ params }) => {
 	const profile = playerProfile(params.steamid);
 	if (!profile) error(404, 'No matches with this player');
-	return { profile };
+	return { profile, duels: getDuels(db, params.steamid) };
 };
 
 export const actions: Actions = {

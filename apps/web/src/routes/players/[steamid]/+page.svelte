@@ -193,25 +193,50 @@
 		</ul>
 	</section>
 
-	<section class="panel">
-		<h2>Maps</h2>
-		<table>
-			<thead>
-				<tr><th>Map</th><th>Played</th><th>Won</th><th>ADR</th><th>K/D</th></tr>
-			</thead>
-			<tbody>
-				{#each profile.maps as record (record.map)}
-					<tr>
-						<td>{mapTitle(record.map)}</td>
-						<td>{record.matches}</td>
-						<td>{pct(record.wins / record.matches)}</td>
-						<td>{Math.round(record.adr)}</td>
-						<td>{record.kd.toFixed(2)}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</section>
+	<div class="side">
+		<section class="panel">
+			<h2>Maps</h2>
+			<table>
+				<thead>
+					<tr><th>Map</th><th>Played</th><th>Won</th><th>ADR</th><th>K/D</th></tr>
+				</thead>
+				<tbody>
+					{#each profile.maps as record (record.map)}
+						<tr>
+							<td>{mapTitle(record.map)}</td>
+							<td>{record.matches}</td>
+							<td>{pct(record.wins / record.matches)}</td>
+							<td>{Math.round(record.adr)}</td>
+							<td>{record.kd.toFixed(2)}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</section>
+		{#if data.duels.killed.length || data.duels.killedBy.length}
+			<section class="panel duels">
+				<h2>Duels</h2>
+				<div class="duel-lists">
+					<div>
+						<h3>Kills most</h3>
+						<ol>
+							{#each data.duels.killed as d (d.steamid)}
+								<li><a href="/players/{d.steamid}">{d.name}</a><b>{d.count}</b></li>
+							{/each}
+						</ol>
+					</div>
+					<div>
+						<h3>Killed most by</h3>
+						<ol>
+							{#each data.duels.killedBy as d (d.steamid)}
+								<li><a href="/players/{d.steamid}">{d.name}</a><b>{d.count}</b></li>
+							{/each}
+						</ol>
+					</div>
+				</div>
+			</section>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -292,6 +317,51 @@
 		stroke-width: 1;
 		vector-effect: non-scaling-stroke;
 		stroke-dasharray: 4 4;
+	}
+
+	.side {
+		display: grid;
+		gap: 16px;
+		align-content: start;
+	}
+
+	.duel-lists {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 16px;
+	}
+
+	.duels h3 {
+		margin: 0 0 6px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--muted);
+	}
+
+	.duels ol {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 4px;
+	}
+
+	.duels li {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+		font-size: 0.9em;
+	}
+
+	.duels li a {
+		color: inherit;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.duels li b {
+		font-variant-numeric: tabular-nums;
 	}
 
 	.rating {
