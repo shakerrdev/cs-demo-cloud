@@ -10,6 +10,7 @@
 	} from '@cs-demo-cloud/replay';
 	import { drawFrame, sideColors } from './draw.ts';
 	import { inventoryAt, observerSlots, slotLabel, type PlayerState } from './frame.ts';
+	import { roundEndReason } from '#lib/format.ts';
 
 	interface Props {
 		replay: RoundReplay;
@@ -72,6 +73,26 @@
 	};
 
 	const slots10 = $derived(observerSlots(players));
+
+	const roundEnd = $derived.by(() => {
+		const { meta } = replay;
+		if (tick < meta.endTick || !meta.winner) return null;
+		const counts = new Map<number, number>();
+		for (const kill of meta.kills) {
+			const killer = meta.players[kill.attacker];
+			const victim = meta.players[kill.victim];
+			if (!killer || !victim || killer.side !== meta.winner || victim.side === killer.side)
+				continue;
+			counts.set(kill.attacker, (counts.get(kill.attacker) ?? 0) + 1);
+		}
+		const best = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+		return {
+			side: meta.winner,
+			title: meta.winner === 'CT' ? 'Counter-Terrorists win' : 'Terrorists win',
+			reason: roundEndReason(meta.reason),
+			mvp: best ? { name: meta.players[best[0]]!.name, kills: best[1] } : null
+		};
+	});
 	const focused = $derived(focus !== null ? (players[focus] ?? null) : null);
 	const inventory = $derived(focused ? inventoryAt(replay, focused.index, tick) : []);
 	const slots = $derived(slotList(inventory, focused?.weapon ?? ''));
@@ -148,6 +169,18 @@
 </script>
 
 <div class="hud" class:pov style:--h="{height}px">
+	{#if roundEnd}
+		<div class="round-end" style:--win={roundEnd.side === 'CT' ? '#5aa9e6' : '#e8b04a'}>
+			<span class="win">{roundEnd.title}</span>
+			{#if roundEnd.reason}<span class="why">{roundEnd.reason}</span>{/if}
+			{#if roundEnd.mvp}
+				<span class="mvp"
+					>★ MVP <b>{roundEnd.mvp.name}</b> · {roundEnd.mvp.kills}
+					{roundEnd.mvp.kills === 1 ? 'kill' : 'kills'}</span
+				>
+			{/if}
+		</div>
+	{/if}
 	<div class="radar">
 		<canvas bind:this={radarCanvas} width={radarPx} height={radarPx} class="radar-map"></canvas>
 		{#if focused?.alive && focused.place}<span class="place">{placeName(focused.place)}</span>{/if}
@@ -701,5 +734,55 @@
 	.slots small {
 		font-size: 0.5625em;
 		color: rgb(220 226 232 / 0.5);
+	}
+
+	.round-end {
+		position: absolute;
+		top: calc(var(--h) * 0.16);
+		left: 50%;
+		transform: translateX(-50%);
+		display: grid;
+		justify-items: center;
+		gap: calc(var(--h) * 0.006);
+		min-width: calc(var(--h) * 0.62);
+		padding: calc(var(--h) * 0.014) calc(var(--h) * 0.04);
+		background: linear-gradient(
+			90deg,
+			transparent,
+			color-mix(in srgb, var(--win) 32%, rgb(0 0 0 / 0.78)) 18%,
+			color-mix(in srgb, var(--win) 32%, rgb(0 0 0 / 0.78)) 82%,
+			transparent
+		);
+		border-top: 2px solid var(--win);
+		border-bottom: 2px solid var(--win);
+		color: #fff;
+		text-align: center;
+		pointer-events: none;
+		animation: round-end-in 0.35s ease-out;
+	}
+
+	.round-end .win {
+		font-size: calc(var(--h) * 0.042);
+		font-weight: 800;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		text-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+	}
+
+	.round-end .why {
+		font-size: calc(var(--h) * 0.022);
+		color: #dfe3ea;
+	}
+
+	.round-end .mvp {
+		font-size: calc(var(--h) * 0.022);
+		color: #ffd75a;
+	}
+
+	@keyframes round-end-in {
+		from {
+			opacity: 0;
+			transform: translateX(-50%) scale(0.96);
+		}
 	}
 </style>
