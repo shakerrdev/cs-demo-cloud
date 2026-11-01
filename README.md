@@ -43,6 +43,13 @@ Both views share the same playback, HUD, kill feed and timeline; **V** switches 
 - **Navigation**: **J** / **K** jump to the previous / next kill or bomb event (2 s early); with a player highlighted they follow that player's kills and deaths, and the 2D radar draws the player's path for the round. Links like `#round-7` or `#round-7@51200` open the viewer on that round or tick; the analysis below uses them everywhere.
 - **Clock**: round and bomb timers use the timings measured from the match itself (time-out rounds, bomb fuse), so non-matchmaking servers show the right clock after **Parse again**.
 
+Map assets come from Valve's game files, which is fine for a private instance but not something to redistribute publicly, so none are committed here. The worker downloads them the first time it parses a demo on a map (and on start for maps it already has demos of) into `data/maps`:
+
+- radar images (and lower-level images) from [CS Demo Manager](https://github.com/akiver/cs-demo-manager)'s repository at a pinned commit
+- 3D geometry from [awpy-data](https://github.com/pnxenopoulos/awpy-data)'s release for game build 2000930: per-map collision meshes, read straight out of the release zip with range requests (about 1 MB per map downloaded, CRC-checked), quantized to 16 bits and stored gzipped (0.2 to 2.5 MB per map)
+
+Map calibration (origin, scale, lower-level height) lives in `packages/replay/src/maps.ts`. Maps without awpy geometry still play in 2D.
+
 ### Match analysis
 
 Under the viewer on every match page:
@@ -54,13 +61,6 @@ Under the viewer on every match page:
 - **Kill positions**: where kills happened on the radar, filtered by player, side and level; click a spot to watch that round.
 
 **Players** lists everyone in the library; a player's page has their career numbers (K/D, ADR, KAST, win rate, opening duels, clutches, multi-kills), a record per map and their matches. **This is me** on your own page (or a SteamID linked under Auto-import) adds **My stats** to the menu and shows your result and K–D on every match in the list.
-
-Map assets come from Valve's game files, which is fine for a private instance but not something to redistribute publicly, so none are committed here. The worker downloads them the first time it parses a demo on a map (and on start for maps it already has demos of) into `data/maps`:
-
-- radar images (and lower-level images) from [CS Demo Manager](https://github.com/akiver/cs-demo-manager)'s repository at a pinned commit
-- 3D geometry from [awpy-data](https://github.com/pnxenopoulos/awpy-data)'s release for game build 2000930: per-map collision meshes, read straight out of the release zip with range requests (about 1 MB per map downloaded, CRC-checked), quantized to 16 bits and stored gzipped (0.2 to 2.5 MB per map)
-
-Map calibration (origin, scale, lower-level height) lives in `packages/replay/src/maps.ts`. Maps without awpy geometry still play in 2D.
 
 ### Performance
 
