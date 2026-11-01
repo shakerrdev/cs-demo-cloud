@@ -351,6 +351,7 @@ Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web 
 - [x] Upload + parse a demo into replay blobs and stats
 - [x] 2D radar viewer
 - [x] Match list and scoreboards
+- [x] Match analysis: KAST, opening duels, trades, multi-kills, clutches and per-round economy (economy needs **Parse again** for demos parsed before it)
 - [x] Auto-fetch via share codes + Game Coordinator
 - [x] Auth with invite links
 - [x] Docker image and compose setup
