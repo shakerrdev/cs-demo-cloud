@@ -605,6 +605,21 @@ export class Actors {
 				path[position.segment * 4 + 3]!
 			);
 			this.trails.add(this.vector, position, color);
+			const ahead = this.color2.copy(color).multiplyScalar(0.3);
+			const points = path.length / 4;
+			if (position.segment + 1 < points) {
+				this.vector.set(
+					path[position.segment * 4 + 5]!,
+					path[position.segment * 4 + 6]!,
+					path[position.segment * 4 + 7]!
+				);
+				this.trails.add(position, this.vector, ahead);
+			}
+			for (let i = position.segment + 1; i + 1 < points; i++) {
+				this.vector.set(path[i * 4 + 1]!, path[i * 4 + 2]!, path[i * 4 + 3]!);
+				this.vector2.set(path[i * 4 + 5]!, path[i * 4 + 6]!, path[i * 4 + 7]!);
+				this.trails.add(this.vector, this.vector2, ahead);
+			}
 
 			if (count < this.grenadeHeads.instanceMatrix.count) {
 				this.matrix.makeTranslation(position.x, position.y, position.z);
