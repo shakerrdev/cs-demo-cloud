@@ -40,7 +40,12 @@ export function getMatchesForStats(db: Db, demoIds: string[]) {
 		.where(inArray(matchPlayers.demoId, demoIds))
 		.all();
 	const roundRows = db
-		.select({ demoId: rounds.demoId, number: rounds.number, winnerTeam: rounds.winnerTeam })
+		.select({
+			demoId: rounds.demoId,
+			number: rounds.number,
+			winnerTeam: rounds.winnerTeam,
+			teamASide: rounds.teamASide
+		})
 		.from(rounds)
 		.where(inArray(rounds.demoId, demoIds))
 		.orderBy(asc(rounds.number))

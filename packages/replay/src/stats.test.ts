@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { matchHighlights, matchStats, type StatsKill, type StatsPlayer } from './stats.ts';
+import {
+	addSideSplit,
+	emptySideSplit,
+	matchHighlights,
+	matchStats,
+	type StatsKill,
+	type StatsPlayer
+} from './stats.ts';
 
 const players: StatsPlayer[] = [
 	...['a1', 'a2', 'a3', 'a4', 'a5'].map((steamid) => ({ steamid, team: 'a' as const })),
@@ -113,4 +120,32 @@ test('highlights: multi-kills and won clutches in round order', () => {
 		{ kind: 'multi', steamid: 'a5', round: 1, tick: 400, kills: 5 },
 		{ kind: 'clutch', steamid: 'a5', round: 1, tick: 500, opponents: 4 }
 	]);
+});
+
+test('side split counts rounds, wins, kills, deaths, KAST and pistols per side', () => {
+	const rounds = [
+		{ number: 1, winnerTeam: 'a' as const, teamASide: 'CT' as const },
+		{ number: 2, winnerTeam: 'b' as const, teamASide: 'CT' as const },
+		{ number: 3, winnerTeam: 'a' as const, teamASide: 'T' as const }
+	];
+	const kills = [
+		{ ...kill(100, 'a1', 'b1'), round: 1 },
+		{ ...kill(200, 'b2', 'a1'), round: 2 },
+		{ ...kill(300, 'a1', 'b3'), round: 3 },
+		{ ...kill(310, 'a1', 'a2'), round: 3 }
+	];
+	const split = addSideSplit(
+		emptySideSplit(),
+		'a1',
+		'a',
+		players,
+		rounds,
+		kills,
+		[1, 3],
+		new Set([1, 3])
+	);
+	assert.deepEqual(split.CT, { rounds: 2, won: 1, kills: 1, deaths: 1, kastRounds: 1 });
+	assert.deepEqual(split.T, { rounds: 1, won: 1, kills: 1, deaths: 0, kastRounds: 1 });
+	assert.equal(split.pistols, 2);
+	assert.equal(split.pistolsWon, 2);
 });

@@ -38,6 +38,7 @@ export interface PlayerStats {
 	multiKills: [number, number, number, number];
 	clutches: Clutch[];
 	flashAssists: number;
+	kastRoundNumbers: number[];
 }
 
 export interface MatchStats {
@@ -68,7 +69,8 @@ export function matchStats(
 				tradedDeaths: 0,
 				multiKills: [0, 0, 0, 0],
 				clutches: [],
-				flashAssists: 0
+				flashAssists: 0,
+				kastRoundNumbers: []
 			}
 		])
 	);
@@ -164,6 +166,7 @@ export function matchStats(
 				traded.has(player.steamid)
 			) {
 				player.kastRounds++;
+				player.kastRoundNumbers.push(round.number);
 			}
 		}
 	}
@@ -219,4 +222,66 @@ export function matchHighlights(
 		}
 	}
 	return highlights.sort((a, b) => a.round - b.round || a.tick - b.tick);
+}
+
+export interface SideRecord {
+	rounds: number;
+	won: number;
+	kills: number;
+	deaths: number;
+	kastRounds: number;
+}
+
+export interface SideSplit {
+	CT: SideRecord;
+	T: SideRecord;
+	pistols: number;
+	pistolsWon: number;
+}
+
+export function emptySideSplit(): SideSplit {
+	const side = (): SideRecord => ({ rounds: 0, won: 0, kills: 0, deaths: 0, kastRounds: 0 });
+	return { CT: side(), T: side(), pistols: 0, pistolsWon: 0 };
+}
+
+export function addSideSplit(
+	into: SideSplit,
+	steamid: string,
+	team: TeamKey,
+	players: StatsPlayer[],
+	rounds: (StatsRound & { teamASide: 'CT' | 'T' })[],
+	kills: StatsKill[],
+	kastRoundNumbers: number[],
+	pistolRounds: Set<number>
+): SideSplit {
+	const teamOf = new Map(players.map((p) => [p.steamid, p.team]));
+	const kast = new Set(kastRoundNumbers);
+	const sideOf = new Map(
+		rounds.map((round) => [
+			round.number,
+			team === 'a' ? round.teamASide : round.teamASide === 'CT' ? ('T' as const) : ('CT' as const)
+		])
+	);
+	for (const round of rounds) {
+		const record = into[sideOf.get(round.number)!];
+		record.rounds++;
+		if (round.winnerTeam === team) record.won++;
+		if (kast.has(round.number)) record.kastRounds++;
+		if (pistolRounds.has(round.number)) {
+			into.pistols++;
+			if (round.winnerTeam === team) into.pistolsWon++;
+		}
+	}
+	for (const kill of kills) {
+		const side = sideOf.get(kill.round);
+		if (!side) continue;
+		if (kill.victimSteamid === steamid) into[side].deaths++;
+		else if (
+			kill.attackerSteamid === steamid &&
+			teamOf.get(kill.victimSteamid) !== undefined &&
+			teamOf.get(kill.victimSteamid) !== team
+		)
+			into[side].kills++;
+	}
+	return into;
 }
