@@ -27,6 +27,7 @@ import {
 import {
 	defuseProgress,
 	playerMotion,
+	recentHurts,
 	playerStates,
 	viewState,
 	type PlayerState
@@ -1097,6 +1098,36 @@ export class ReplayScene {
 		if (index >= 0) this.onPick(index);
 	}
 
+	private drawDamage(ctx: CanvasRenderingContext2D, width: number, height: number) {
+		const replay = this.replay;
+		if (!replay) return;
+		const ratio = this.pixelRatio;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.lineWidth = 3 * ratio;
+		ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+		const stack = new Map<number, number>();
+		for (const hurt of recentHurts(replay, this.tick)) {
+			const victim = this.players[hurt.victim];
+			if (!victim) continue;
+			const lift = 96 * this.sizeOf(victim);
+			this.projected.set(victim.x, victim.y, victim.z + lift).project(this.camera);
+			const ndc = this.projected;
+			if (ndc.z <= -1 || ndc.z >= 1 || Math.abs(ndc.x) > 1.1 || Math.abs(ndc.y) > 1.1) continue;
+			const order = stack.get(hurt.victim) ?? 0;
+			stack.set(hurt.victim, order + 1);
+			const x = ((ndc.x + 1) / 2) * width + (order % 2 ? 14 : -14) * ratio * Math.min(1, order);
+			const y = ((1 - ndc.y) / 2) * height - (hurt.age * 26 + order * 4) * ratio;
+			ctx.globalAlpha = Math.max(0, 1 - hurt.age / 1.2);
+			ctx.font = `800 ${Math.round((hurt.head ? 15 : 13) * ratio)}px system-ui, sans-serif`;
+			const text = `-${hurt.damage}`;
+			ctx.strokeText(text, x, y);
+			ctx.fillStyle = hurt.head ? '#ffd23f' : '#ff5a5a';
+			ctx.fillText(text, x, y);
+		}
+		ctx.globalAlpha = 1;
+	}
+
 	private drawUtilityTimers(ctx: CanvasRenderingContext2D, width: number, height: number) {
 		const replay = this.replay;
 		if (!replay) return;
@@ -1238,6 +1269,7 @@ export class ReplayScene {
 		}
 		ctx.globalAlpha = 1;
 		if (names) this.drawUtilityTimers(ctx, width, height);
+		if (names) this.drawDamage(ctx, width, height);
 		if (tags) this.drawXrayTags(ctx, width, height);
 
 		if (this.hurt > 0) {

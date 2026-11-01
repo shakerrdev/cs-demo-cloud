@@ -9,6 +9,7 @@ import {
 	bombState,
 	defuseProgress,
 	grenadePosition,
+	recentHurts,
 	playerStates,
 	type PlayerState
 } from './frame.ts';
@@ -231,6 +232,7 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	ctx.globalAlpha = 1;
 
 	const bomb = bombState(replay, tick);
+	const hurts = labels ? recentHurts(replay, tick) : [];
 	const bombLeft =
 		bomb?.kind === 'planted'
 			? ((meta.timing?.bombSeconds ?? 40) * meta.tickRate - (tick - bomb.tick)) / meta.tickRate
@@ -388,6 +390,30 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 		ctx.fillText(label, px, py + radius + 3 * pixelRatio);
 	}
 	ctx.globalAlpha = 1;
+
+	if (hurts.length) {
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'bottom';
+		ctx.lineWidth = 3 * pixelRatio;
+		ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+		const order = new Map<number, number>();
+		for (const hurt of hurts) {
+			const victim = players[hurt.victim];
+			if (!victim) continue;
+			const n = order.get(hurt.victim) ?? 0;
+			order.set(hurt.victim, n + 1);
+			const { px, py } = project(victim.x, victim.y);
+			ctx.globalAlpha = levelAlpha(victim.z) * Math.max(0, 1 - hurt.age / 1.2);
+			ctx.font = `800 ${Math.round(Math.max(10 * pixelRatio, radius * (hurt.head ? 1.2 : 1.05)))}px system-ui, sans-serif`;
+			const text = `-${hurt.damage}`;
+			const tx = px + radius * 1.3;
+			const ty = py - radius * (1 + hurt.age * 2.2) - n * radius;
+			ctx.strokeText(text, tx, ty);
+			ctx.fillStyle = hurt.head ? '#ffd23f' : '#ff5a5a';
+			ctx.fillText(text, tx, ty);
+		}
+		ctx.globalAlpha = 1;
+	}
 
 	return players;
 }

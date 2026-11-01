@@ -7,7 +7,7 @@ import {
 	packYaw,
 	type RoundReplay
 } from '@cs-demo-cloud/replay';
-import { defuseProgress, directorPick, playerStates, setposCommand } from './frame.ts';
+import { defuseProgress, directorPick, playerStates, recentHurts, setposCommand } from './frame.ts';
 
 test('setpos command for a player at a tick', () => {
 	const columns = createColumns(2);
@@ -109,4 +109,25 @@ test('defuse progress counts from the defuse start, faster with a kit', () => {
 	const noKit = { ...withKit, defuser: false };
 	assert.deepEqual(defuseProgress(replay, noKit, 128), { fraction: 0.2, left: 8 });
 	assert.equal(defuseProgress(replay, { ...withKit, defusing: false }, 128), null);
+});
+
+test('recent hurts keep the last second of damage, newest last', () => {
+	const replay = {
+		meta: {
+			tickRate: 64,
+			hurts: [10, 1, 2, 27, 5, 0, 70, 1, 2, 100, 0, 1, 200, 3, 2, 0, 9, 0]
+		}
+	} as unknown as RoundReplay;
+	assert.deepEqual(
+		recentHurts(replay, 100, 1.5).map((h) => [h.victim, h.damage, h.head, Math.round(h.age * 64)]),
+		[
+			[1, 27, false, 90],
+			[1, 100, true, 30]
+		]
+	);
+	assert.deepEqual(
+		recentHurts(replay, 120, 1).map((h) => h.damage),
+		[100]
+	);
+	assert.deepEqual(recentHurts({ meta: { tickRate: 64 } } as unknown as RoundReplay, 100), []);
 });

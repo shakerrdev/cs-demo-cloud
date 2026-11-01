@@ -313,3 +313,34 @@ export function defuseProgress(
 	const elapsed = (tick - start.tick) / replay.meta.tickRate;
 	return { fraction: Math.min(1, elapsed / total), left: Math.max(0, total - elapsed) };
 }
+
+export interface RecentHurt {
+	victim: number;
+	attacker: number;
+	damage: number;
+	head: boolean;
+	age: number;
+}
+
+export function recentHurts(replay: RoundReplay, tick: number, seconds = 1.2): RecentHurt[] {
+	const hurts = replay.meta.hurts;
+	if (!hurts) return [];
+	const rate = replay.meta.tickRate;
+	const list: RecentHurt[] = [];
+	for (let i = 0; i + 5 < hurts.length; i += 6) {
+		const at = hurts[i]!;
+		if (at > tick) break;
+		const age = (tick - at) / rate;
+		if (age > seconds) continue;
+		const damage = hurts[i + 3]!;
+		if (damage <= 0) continue;
+		list.push({
+			victim: hurts[i + 1]!,
+			attacker: hurts[i + 2]!,
+			damage,
+			head: hurts[i + 5] === 1,
+			age
+		});
+	}
+	return list;
+}
