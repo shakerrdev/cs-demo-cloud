@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import {
+		buyLabels,
 		defaultConfig,
+		roundBuys,
 		maps,
 		type AppConfig,
 		weaponTitle,
@@ -30,6 +32,8 @@
 		reason: string | null;
 		scoreA: number;
 		scoreB: number;
+		teamAEquipment?: number | null;
+		teamBEquipment?: number | null;
 	}
 
 	interface Props {
@@ -785,6 +789,23 @@
 			.slice(-5);
 	});
 
+	const buys = $derived(
+		roundBuys(
+			rounds.map((r) => ({
+				number: r.number,
+				teamASide: r.teamASide,
+				teamAEquipment: r.teamAEquipment ?? null,
+				teamBEquipment: r.teamBEquipment ?? null
+			}))
+		)
+	);
+
+	function buyText(number: number): string {
+		const buy = buys.get(number);
+		if (!buy || buy.a === 'pistol') return '';
+		return `\n${teamNames.a}: ${buyLabels[buy.a]} · ${teamNames.b}: ${buyLabels[buy.b]}`;
+	}
+
 	const reasons: Record<string, string> = {
 		bomb_exploded: 'Bomb exploded',
 		bomb_defused: 'Bomb defused',
@@ -1165,7 +1186,7 @@
 			style:--win={info.winnerSide ? sideColors[info.winnerSide] : 'var(--muted)'}
 			title="Round {info.number}: {info.winnerSide ?? '?'} · {reasonText(
 				info.reason
-			)} ({info.scoreA}:{info.scoreB})"
+			)} ({info.scoreA}:{info.scoreB}){buyText(info.number)}"
 			onclick={() => goToRound(info.number)}
 		>
 			{info.number}
