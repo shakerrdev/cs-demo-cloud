@@ -19,6 +19,7 @@
 	import { drawFrame, fullView, screenToView, sideColors, type RadarView } from './draw.ts';
 	import DrawLayer, { type DrawTool, type Stroke } from './DrawLayer.svelte';
 	import GameHud from './GameHud.svelte';
+	import ReasonIcon from './ReasonIcon.svelte';
 	import KillIcon from './KillIcon.svelte';
 	import PerfPanel from './PerfPanel.svelte';
 	import { Benchmark } from './bench.ts';
@@ -1666,6 +1667,7 @@
 			onclick={() => goToRound(info.number)}
 		>
 			{info.number}
+			<ReasonIcon reason={info.reason} />
 		</button>
 		{#if halfBreak(info.number) && info.number !== rounds.length}<span class="half"></span>{/if}
 	{/each}
@@ -2115,7 +2117,7 @@
 
 	.rounds button {
 		width: 34px;
-		padding: 5px 0 7px;
+		padding: 4px 0 6px;
 		border: 1px solid transparent;
 		border-radius: 6px;
 		background: var(--surface);
