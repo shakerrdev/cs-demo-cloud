@@ -8,7 +8,14 @@ import { openDb, type Db } from './client.ts';
 import { createDemo } from './demos.ts';
 import { saveMatch } from './matches.ts';
 import { runMigrations } from './migrations.ts';
-import { getMatchesForStats, getPlayerMatches, listPlayers } from './players.ts';
+import {
+	getMatchesForStats,
+	getOwnResults,
+	getOwnSteamId,
+	getPlayerMatches,
+	listPlayers,
+	setOwnSteamId
+} from './players.ts';
 import { demos } from './schema.ts';
 
 let dir: string;
@@ -119,4 +126,13 @@ test("a player's matches, newest first, without failed demos", () => {
 			['you', 2]
 		]
 	);
+});
+
+test('own SteamID is chosen per user and gives their results', () => {
+	assert.equal(getOwnSteamId(db, 'nobody'), null);
+	setOwnSteamId(db, 'u1', 'me');
+	assert.equal(getOwnSteamId(db, 'u1'), 'me');
+	assert.ok(getOwnResults(db, 'me').every((row) => row.team === 'a' && row.kills === 2));
+	setOwnSteamId(db, 'u1', null);
+	assert.equal(getOwnSteamId(db, 'u1'), null);
 });

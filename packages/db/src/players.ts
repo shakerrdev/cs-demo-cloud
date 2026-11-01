@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client.ts';
-import { demos, kills, matchPlayers, matches, rounds } from './schema.ts';
+import { demos, kills, matchPlayers, matches, rounds, steamLinks } from './schema.ts';
+import { getSetting, setSetting } from './settings.ts';
 
 export function getPlayerMatches(db: Db, steamid: string) {
 	return db
@@ -80,5 +81,36 @@ export function listPlayers(db: Db) {
 		.where(eq(demos.status, 'ready'))
 		.groupBy(matchPlayers.steamid)
 		.orderBy(desc(sql`count(*)`), asc(sql`max(${matchPlayers.name})`))
+		.all();
+}
+
+const ownSteamIdKey = (userId: string) => `user.${userId}.steamId`;
+
+export function getOwnSteamId(db: Db, userId: string): string | null {
+	const chosen = getSetting(db, ownSteamIdKey(userId));
+	if (chosen) return chosen;
+	return (
+		db
+			.select({ steamId: steamLinks.steamId })
+			.from(steamLinks)
+			.where(eq(steamLinks.userId, userId))
+			.get()?.steamId ?? null
+	);
+}
+
+export function setOwnSteamId(db: Db, userId: string, steamId: string | null): void {
+	setSetting(db, ownSteamIdKey(userId), steamId);
+}
+
+export function getOwnResults(db: Db, steamId: string) {
+	return db
+		.select({
+			demoId: matchPlayers.demoId,
+			team: matchPlayers.team,
+			kills: matchPlayers.kills,
+			deaths: matchPlayers.deaths
+		})
+		.from(matchPlayers)
+		.where(eq(matchPlayers.steamid, steamId))
 		.all();
 }
