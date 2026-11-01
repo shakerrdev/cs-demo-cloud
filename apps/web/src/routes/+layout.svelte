@@ -19,6 +19,7 @@
 	{#if data.user}
 		<nav>
 			<a href="/" class:active={page.url.pathname === '/'}>Matches</a>
+			<a href="/players" class:active={page.url.pathname.startsWith('/players')}>Players</a>
 			<a href="/auto-import" class:active={page.url.pathname === '/auto-import'}>Auto-import</a>
 			<a href="/settings" class:active={page.url.pathname === '/settings'}>Settings</a>
 			{#if data.user.role === 'admin'}
