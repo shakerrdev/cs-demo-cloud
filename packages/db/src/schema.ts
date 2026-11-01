@@ -189,6 +189,36 @@ export const kills = sqliteTable(
 	(table) => [index('kills_demo_round_idx').on(table.demoId, table.round)]
 );
 
+export const playlists = sqliteTable('playlists', {
+	id: text('id')
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	name: text('name').notNull(),
+	createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+	createdAt: createdAt()
+});
+
+export const bookmarks = sqliteTable(
+	'bookmarks',
+	{
+		id: text('id')
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		playlistId: text('playlist_id')
+			.notNull()
+			.references(() => playlists.id, { onDelete: 'cascade' }),
+		demoId: text('demo_id')
+			.notNull()
+			.references(() => demos.id, { onDelete: 'cascade' }),
+		round: integer('round').notNull(),
+		tick: integer('tick').notNull(),
+		note: text('note').notNull().default(''),
+		createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+		createdAt: createdAt()
+	},
+	(table) => [index('bookmarks_playlist_idx').on(table.playlistId)]
+);
+
 export const settings = sqliteTable('settings', {
 	key: text('key').primaryKey(),
 	value: text('value').notNull(),

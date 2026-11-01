@@ -43,6 +43,13 @@
       "when": 1793544826331,
       "tag": "0005_round_economy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793547229908,
+      "tag": "0006_playlists",
+      "breakpoints": true
     }
   ]
 }

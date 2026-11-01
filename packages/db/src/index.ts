@@ -9,3 +9,4 @@ export * from './settings.ts';
 export * from './tokens.ts';
 export * from './valve.ts';
 export * from './players.ts';
+export * from './playlists.ts';
