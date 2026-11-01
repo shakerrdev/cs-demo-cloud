@@ -344,3 +344,19 @@ export function recentHurts(replay: RoundReplay, tick: number, seconds = 1.2): R
 	}
 	return list;
 }
+
+export function placesAt(
+	replay: RoundReplay,
+	steamid: string,
+	seconds: number[]
+): (string | null)[] {
+	const index = replay.meta.players.findIndex((player) => player.steamid === steamid);
+	const start = replay.meta.freezeEndTick ?? replay.meta.startTick;
+	return seconds.map((second) => {
+		const tick = start + second * replay.meta.tickRate;
+		if (index < 0 || tick > lastTick(replay)) return null;
+		const state = playerStates(replay, tick)[index];
+		if (!state?.alive) return 'Dead';
+		return state.place || null;
+	});
+}

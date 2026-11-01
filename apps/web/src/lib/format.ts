@@ -48,3 +48,10 @@ const roundEndReasons: Record<string, string> = {
 export function roundEndReason(reason: string | null): string {
 	return reason ? (roundEndReasons[reason] ?? reason.replace(/_/g, ' ')) : '';
 }
+
+export function placeName(place: string): string {
+	return place
+		.replace(/([a-z])of([A-Z])/g, '$1 of $2')
+		.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+		.replace(/([a-z])([A-Z0-9])/g, '$1 $2');
+}

@@ -10,6 +10,7 @@
 		type TeamKey
 	} from '@cs-demo-cloud/replay';
 	import { drawFrame, sideColors } from './draw.ts';
+	import { placeName } from '#lib/format.ts';
 	import KillIcon from './KillIcon.svelte';
 	import { inventoryAt, observerSlots, slotLabel, type PlayerState } from './frame.ts';
 	import { roundEndReason } from '#lib/format.ts';
@@ -153,10 +154,6 @@
 			return { name, slot: order[kind] ?? 1, active: name === active };
 		});
 		return list.sort((a, b) => a.slot - b.slot);
-	}
-
-	function placeName(place: string): string {
-		return place.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/([a-z])([A-Z0-9])/g, '$1 $2');
 	}
 
 	function shortWeapon(name: string): string {

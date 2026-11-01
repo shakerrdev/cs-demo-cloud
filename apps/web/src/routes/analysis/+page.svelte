@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { buyLabels, mapTitle } from '@cs-demo-cloud/replay';
+	import PlaceTable from '#lib/components/PlaceTable.svelte';
 	import RoundStack, { type StackEntry } from '#lib/components/RoundStack.svelte';
 	import { formatDate } from '#lib/format.ts';
 	import type { PageProps } from './$types';
@@ -126,6 +127,7 @@
 			{/each}
 		</ol>
 	</div>
+	{#if data.player}<PlaceTable {entries} steamid={data.player} />{/if}
 {/if}
 
 <style>
