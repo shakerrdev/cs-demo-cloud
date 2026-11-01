@@ -30,6 +30,8 @@
 				class:active={page.url.pathname.startsWith('/players') &&
 					page.url.pathname !== `/players/${data.ownSteamId}`}>Players</a
 			>
+			<a href="/highlights" class:active={page.url.pathname.startsWith('/highlights')}>Highlights</a
+			>
 			<a href="/analysis" class:active={page.url.pathname.startsWith('/analysis')}>Analysis</a>
 			<a href="/playlists" class:active={page.url.pathname.startsWith('/playlists')}>Playlists</a>
 			<a href="/auto-import" class:active={page.url.pathname === '/auto-import'}>Auto-import</a>
