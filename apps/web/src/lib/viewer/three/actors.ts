@@ -185,6 +185,8 @@ interface PlayerActor {
 	side: Side;
 }
 
+const FALL_SECONDS = 0.45;
+
 export class Actors {
 	readonly root = new THREE.Group();
 	private bodyGeometry = new THREE.CapsuleGeometry(16, STAND_HEIGHT - 32, 4, 12);
@@ -362,7 +364,7 @@ export class Actors {
 		pov: number | null,
 		sizeOf: (player: PlayerState) => number
 	) {
-		this.updatePlayers(players, focus, pov, sizeOf, tick);
+		this.updatePlayers(players, focus, pov, sizeOf, tick, replay.meta.kills, replay.meta.tickRate);
 		this.updateDeaths(replay.meta.kills, replay.meta.players, tick);
 		this.updateGrenades(replay, tick);
 		this.updateEffects(replay, tick);
@@ -438,17 +440,28 @@ export class Actors {
 		focus: number | null,
 		pov: number | null,
 		sizeOf: (player: PlayerState) => number,
-		tick: number
+		tick: number,
+		kills: ReplayKill[],
+		tickRate: number
 	) {
 		players.forEach((player, i) => {
 			const actor = this.players[i];
 			if (!actor) return;
+			if (!player.alive && player.present && this.capsules && i !== pov) {
+				const death = kills.find((kill) => kill.victim === i && kill.tick <= tick);
+				actor.group.visible = death !== undefined;
+				if (death) {
+					const fall = Math.min(1, (tick - death.tick) / (FALL_SECONDS * tickRate));
+					this.placeCorpse(actor, death, player, sizeOf(player), fall);
+				}
+				return;
+			}
 			const visible = player.alive && player.present && i !== pov;
 			actor.group.visible = visible;
 			if (!visible) return;
 
 			actor.group.position.set(player.x, player.y, player.z);
-			actor.group.rotation.set(0, 0, player.yaw * DEG);
+			actor.group.rotation.set(0, 0, player.yaw * DEG, 'XYZ');
 			actor.group.scale.setScalar(sizeOf(player));
 			const crouch = player.ducking ? CROUCH_HEIGHT / STAND_HEIGHT : 1;
 			actor.ghost.scale.set(1, 1, crouch);
@@ -464,6 +477,32 @@ export class Actors {
 			actor.marker.visible = i === focus;
 			actor.body.material.emissive.setScalar(player.blind * 0.8);
 		});
+	}
+
+	private placeCorpse(
+		actor: PlayerActor,
+		death: ReplayKill,
+		player: PlayerState,
+		size: number,
+		fall: number
+	) {
+		const eased = fall * fall;
+		actor.group.position.set(death.x, death.y, death.z + 3 * eased);
+		actor.group.rotation.set(0, (-Math.PI / 2) * eased, player.yaw * DEG, 'ZYX');
+		actor.group.scale.setScalar(size);
+		actor.rig.visible = true;
+		actor.rig.scale.set(1, 1, 1);
+		actor.skull.visible = true;
+		actor.head.position.set(0, 0, STAND_EYE);
+		actor.head.rotation.set(0, 0, 0);
+		actor.nose.visible = false;
+		actor.ghost.visible = false;
+		actor.aim.visible = false;
+		actor.marker.visible = false;
+		actor.legs[0].rotation.y = 0.12;
+		actor.legs[1].rotation.y = -0.08;
+		actor.body.material.emissive.setScalar(0);
+		actor.walk.tick = -1;
 	}
 
 	private stride(actor: PlayerActor, player: PlayerState, tick: number) {
@@ -491,7 +530,7 @@ export class Actors {
 		for (const kill of this.capsules ? kills : []) {
 			if (kill.tick > tick || count >= this.deaths.instanceMatrix.count) continue;
 			const victim = players[kill.victim];
-			if (!victim) continue;
+			if (!victim || this.players[kill.victim]) continue;
 			this.matrix.makeTranslation(kill.x, kill.y, kill.z + 2);
 			this.deaths.setMatrixAt(count, this.matrix);
 			this.deaths.setColorAt(count, this.color.setHex(sideColors[victim.side]));
