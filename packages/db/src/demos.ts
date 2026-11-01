@@ -11,7 +11,9 @@ export function listDemos(db: Db) {
 				platform: matches.platform,
 				scoreA: matches.scoreA,
 				scoreB: matches.scoreB,
-				durationSeconds: matches.durationSeconds
+				durationSeconds: matches.durationSeconds,
+				tickRate: matches.tickRate,
+				parsedAt: matches.parsedAt
 			},
 			playerNames: sql<
 				string | null

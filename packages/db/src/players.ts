@@ -36,7 +36,12 @@ export function getPlayerMatches(db: Db, steamid: string) {
 export function getMatchesForStats(db: Db, demoIds: string[]) {
 	if (!demoIds.length) return [];
 	const playerRows = db
-		.select({ demoId: matchPlayers.demoId, steamid: matchPlayers.steamid, team: matchPlayers.team })
+		.select({
+			demoId: matchPlayers.demoId,
+			steamid: matchPlayers.steamid,
+			name: matchPlayers.name,
+			team: matchPlayers.team
+		})
 		.from(matchPlayers)
 		.where(inArray(matchPlayers.demoId, demoIds))
 		.all();
