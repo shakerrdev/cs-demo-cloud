@@ -304,6 +304,7 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	const drawOrder = [...players].sort(
 		(a, b) => Number(a.index === focus) - Number(b.index === focus)
 	);
+	const pending: { label: string; px: number; py: number; alpha: number }[] = [];
 	for (const player of drawOrder) {
 		if (!player.alive || !player.present) continue;
 		const { px, py } = project(player.x, player.y);
@@ -379,18 +380,51 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 		}
 
 		if (!labels) continue;
+		const label = player.name.length > 14 ? `${player.name.slice(0, 13)}…` : player.name;
+		pending.push({ label, px, py, alpha: ctx.globalAlpha });
+	}
+	ctx.globalAlpha = 1;
+
+	if (pending.length) {
 		const fontSize = Math.round(Math.max(10 * pixelRatio, radius * 1.05));
 		ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'top';
-		ctx.lineWidth = 3 * pixelRatio;
-		ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-		const label = player.name.length > 14 ? `${player.name.slice(0, 13)}…` : player.name;
-		ctx.strokeText(label, px, py + radius + 3 * pixelRatio);
-		ctx.fillStyle = '#f2f4f7';
-		ctx.fillText(label, px, py + radius + 3 * pixelRatio);
+		const lineHeight = fontSize + 2 * pixelRatio;
+		const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+		for (const item of pending.sort((a, b) => a.py - b.py || a.px - b.px)) {
+			const half = ctx.measureText(item.label).width / 2 + 2 * pixelRatio;
+			const anchor = item.py + radius + 3 * pixelRatio;
+			let y = anchor;
+			for (let attempt = 0; attempt < 8; attempt++) {
+				const hit = placed.find(
+					(box) =>
+						item.px - half < box.x1 &&
+						item.px + half > box.x0 &&
+						y < box.y1 &&
+						y + lineHeight > box.y0
+				);
+				if (!hit) break;
+				y = hit.y1;
+			}
+			placed.push({ x0: item.px - half, x1: item.px + half, y0: y, y1: y + lineHeight });
+			ctx.globalAlpha = item.alpha;
+			if (y - anchor > lineHeight * 0.5) {
+				ctx.strokeStyle = 'rgba(242, 244, 247, 0.35)';
+				ctx.lineWidth = pixelRatio;
+				ctx.beginPath();
+				ctx.moveTo(item.px, item.py + radius);
+				ctx.lineTo(item.px, y);
+				ctx.stroke();
+			}
+			ctx.lineWidth = 3 * pixelRatio;
+			ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+			ctx.strokeText(item.label, item.px, y);
+			ctx.fillStyle = '#f2f4f7';
+			ctx.fillText(item.label, item.px, y);
+		}
+		ctx.globalAlpha = 1;
 	}
-	ctx.globalAlpha = 1;
 
 	if (hurts.length) {
 		ctx.textAlign = 'left';
