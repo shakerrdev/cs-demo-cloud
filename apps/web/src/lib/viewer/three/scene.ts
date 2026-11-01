@@ -610,6 +610,19 @@ export class ReplayScene {
 		this.dirty = true;
 	}
 
+	flyTo(x: number, y: number) {
+		const delta = new THREE.Vector3(x - this.controls.target.x, y - this.controls.target.y, 0);
+		this.transition = {
+			position: this.shown.position.clone(),
+			quaternion: this.shown.quaternion.clone(),
+			start: performance.now()
+		};
+		this.controls.target.add(delta);
+		this.camera.position.add(delta);
+		this.controls.update();
+		this.dirty = true;
+	}
+
 	resetView() {
 		this.framedMap = null;
 		this.dirty = true;
@@ -654,7 +667,7 @@ export class ReplayScene {
 				start: performance.now()
 			};
 		}
-		if (!glides) this.transition = null;
+		if (!glides && mode !== 'free') this.transition = null;
 		this.transitionFocus = glides ? focus : null;
 
 		if (mode === 'follow' && focused?.alive) this.follow(focused);

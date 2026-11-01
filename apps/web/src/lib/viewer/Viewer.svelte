@@ -1225,6 +1225,10 @@
 						{pixelRatio}
 						height={stageHeight}
 						onSelect={(index) => pickFocus(index)}
+						onRadarPick={(x, y) => {
+							setCameraMode('free');
+							scene3d?.flyTo(x, y);
+						}}
 					/>
 				{/if}
 				{#if perfOpen}

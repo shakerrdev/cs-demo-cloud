@@ -29,6 +29,7 @@
 		pixelRatio: number;
 		height: number;
 		onSelect: (index: number) => void;
+		onRadarPick?: (x: number, y: number) => void;
 	}
 
 	let {
@@ -46,7 +47,8 @@
 		lowerRadar,
 		pixelRatio,
 		height,
-		onSelect
+		onSelect,
+		onRadarPick
 	}: Props = $props();
 
 	const RADAR_SHARE = 0.26;
@@ -130,6 +132,16 @@
 		});
 	});
 
+	function pickOnRadar(event: MouseEvent) {
+		if (!onRadarPick || !map) return;
+		const image = lower === 'lower' ? lowerRadar : radar;
+		const size = image?.naturalWidth || 1024;
+		const rect = (event.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+		const u = (event.clientX - rect.left) / rect.width;
+		const v = (event.clientY - rect.top) / rect.height;
+		onRadarPick(map.posX + u * size * map.scale, map.posY - v * size * map.scale);
+	}
+
 	function slotList(items: string[], active: string) {
 		const order: Record<string, number> = { rifle: 1, pistol: 2, knife: 3, grenade: 4, c4: 5 };
 		const list = items.map((name) => {
@@ -183,7 +195,15 @@
 		</div>
 	{/if}
 	<div class="radar">
-		<canvas bind:this={radarCanvas} width={radarPx} height={radarPx} class="radar-map"></canvas>
+		<canvas
+			bind:this={radarCanvas}
+			width={radarPx}
+			height={radarPx}
+			class="radar-map"
+			class:pickable={onRadarPick !== undefined}
+			title={onRadarPick ? 'Click to move the camera there' : undefined}
+			onclick={pickOnRadar}
+		></canvas>
 		{#if focused?.alive && focused.place}<span class="place">{placeName(focused.place)}</span>{/if}
 	</div>
 
@@ -318,6 +338,11 @@
 		display: grid;
 		justify-items: center;
 		gap: 0.1875em;
+	}
+
+	.radar canvas.pickable {
+		pointer-events: auto;
+		cursor: crosshair;
 	}
 
 	.radar canvas {
