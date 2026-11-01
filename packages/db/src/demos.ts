@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, lt, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import type { Db } from './client.ts';
-import { demos, matches, type Demo, type NewDemo } from './schema.ts';
+import { demos, matchPlayers, matches, type Demo, type NewDemo } from './schema.ts';
 
 export function listDemos(db: Db) {
 	return db
@@ -12,12 +12,19 @@ export function listDemos(db: Db) {
 				scoreA: matches.scoreA,
 				scoreB: matches.scoreB,
 				durationSeconds: matches.durationSeconds
-			}
+			},
+			playerNames: sql<
+				string | null
+			>`(select group_concat(${matchPlayers.name}, char(31)) from ${matchPlayers} where ${matchPlayers.demoId} = ${demos.id})`
 		})
 		.from(demos)
 		.leftJoin(matches, eq(matches.demoId, demos.id))
 		.orderBy(desc(demos.createdAt))
-		.all();
+		.all()
+		.map(({ playerNames, ...row }) => ({
+			...row,
+			players: playerNames ? playerNames.split('\x1f') : []
+		}));
 }
 
 export function getDemo(db: Db, id: string): Demo | undefined {
