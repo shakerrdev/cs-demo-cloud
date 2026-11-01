@@ -73,3 +73,19 @@ export function listMatchMaps(db: Db): string[] {
 		.all()
 		.map((row) => row.map);
 }
+
+export function getMatchKills(db: Db, demoId: string) {
+	return db
+		.select({
+			round: kills.round,
+			tick: kills.tick,
+			attackerSteamid: kills.attackerSteamid,
+			victimSteamid: kills.victimSteamid,
+			assisterSteamid: kills.assisterSteamid,
+			flashAssist: kills.flashAssist
+		})
+		.from(kills)
+		.where(eq(kills.demoId, demoId))
+		.orderBy(asc(kills.round), asc(kills.tick))
+		.all();
+}
