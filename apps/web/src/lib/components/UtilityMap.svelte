@@ -41,7 +41,15 @@
 
 	let { map, sources, players, currentDemo, player = $bindable('') }: Props = $props();
 
+	interface Blind {
+		attacker: string;
+		victim: string;
+		duration: number;
+		team: boolean;
+	}
+
 	let throws = $state.raw<Throw[]>([]);
+	let blinds = $state.raw<Blind[]>([]);
 	let loaded = $state(0);
 	let types = $state<GrenadeType[]>(['smoke', 'flash', 'he', 'molotov']);
 	let side = $state<'all' | Side>('all');
@@ -59,8 +67,10 @@
 	$effect(() => {
 		const list = sources;
 		throws = [];
+		blinds = [];
 		loaded = 0;
 		const collected: Throw[][] = [];
+		const collectedBlinds: Blind[][] = [];
 		return loadRounds(list, (replay, index) => {
 			loaded++;
 			if (!replay) return;
@@ -84,7 +94,21 @@
 					}
 				];
 			});
+			collectedBlinds[index] = meta.blinds.flatMap((blind): Blind[] => {
+				const attacker = meta.players[blind.attacker];
+				const victim = meta.players[blind.player];
+				if (!attacker || !victim || blind.attacker === blind.player) return [];
+				return [
+					{
+						attacker: attacker.steamid,
+						victim: victim.steamid,
+						duration: blind.duration,
+						team: attacker.team === victim.team
+					}
+				];
+			});
 			throws = collected.flat();
+			blinds = collectedBlinds.flat();
 		});
 	});
 
@@ -125,6 +149,28 @@
 		) as Record<GrenadeType, number>
 	);
 
+	const table = $derived(
+		players
+			.map((p) => {
+				const own = throws.filter((t) => t.steamid === p.steamid);
+				const count = (type: GrenadeType) => own.filter((t) => t.type === type).length;
+				const enemies = blinds.filter((b) => b.attacker === p.steamid && !b.team);
+				const team = blinds.filter((b) => b.attacker === p.steamid && b.team);
+				const flashes = count('flash');
+				return {
+					...p,
+					smoke: count('smoke'),
+					flash: flashes,
+					he: count('he'),
+					molotov: count('molotov'),
+					enemies: enemies.length,
+					perFlash: flashes ? enemies.length / flashes : 0,
+					blindTime: enemies.reduce((sum, b) => sum + b.duration, 0),
+					team: team.length
+				};
+			})
+			.sort((a, b) => b.smoke + b.flash + b.he + b.molotov - (a.smoke + a.flash + a.he + a.molotov))
+	);
 	const bothSides = $derived(new Set(throws.map((t) => t.side)).size > 1);
 	const image = $derived(level === 'lower' && lowerRadar ? lowerRadar : radar);
 
@@ -289,6 +335,48 @@
 				</div>
 			{/if}
 		</div>
+		{#if loaded >= sources.length && throws.length}
+			<div class="stats">
+				<table>
+					<thead>
+						<tr>
+							<th class="name">Player</th>
+							<th>Smokes</th>
+							<th>Flashes</th>
+							<th>HE</th>
+							<th>Molotovs</th>
+							<th title="Enemies blinded by this player's flashes">Enemies flashed</th>
+							<th title="Enemies blinded per flash thrown">Per flash</th>
+							<th title="Total seconds enemies spent blinded">Blind time</th>
+							<th title="Teammates blinded">Team flashed</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each table as row (row.steamid)}
+							<tr class:on={player === row.steamid}>
+								<td class="name">
+									{#if players.length > 1}
+										<button
+											type="button"
+											onclick={() => (player = player === row.steamid ? '' : row.steamid)}
+											>{row.name}</button
+										>
+									{:else}{row.name}{/if}
+								</td>
+								<td>{row.smoke}</td>
+								<td>{row.flash}</td>
+								<td>{row.he}</td>
+								<td>{row.molotov}</td>
+								<td>{row.enemies}</td>
+								<td>{row.flash ? row.perFlash.toFixed(1) : '–'}</td>
+								<td>{row.blindTime.toFixed(1)} s</td>
+								<td class:bad={row.team > row.enemies / 2 && row.team > 1}>{row.team}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
 		<p class="hint">
 			{copied
 				? `Copied: ${copied}`
@@ -413,6 +501,56 @@
 
 	.tip span {
 		color: #b8bcc4;
+	}
+
+	.stats {
+		overflow-x: auto;
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.9em;
+		font-variant-numeric: tabular-nums;
+	}
+
+	th,
+	td {
+		padding: 6px 10px;
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	th {
+		color: var(--muted);
+		font-weight: 600;
+		font-size: 0.85em;
+	}
+
+	.name {
+		text-align: left;
+	}
+
+	tbody tr {
+		border-top: 1px solid var(--border);
+	}
+
+	tbody tr.on {
+		background: var(--surface-2);
+	}
+
+	td.name button {
+		all: unset;
+		cursor: pointer;
+		font-weight: 600;
+	}
+
+	td.name button:hover {
+		text-decoration: underline;
+	}
+
+	td.bad {
+		color: var(--danger);
 	}
 
 	.hint {
