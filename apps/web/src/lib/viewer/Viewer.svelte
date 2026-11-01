@@ -367,6 +367,9 @@
 		}
 	}
 
+	let moreOpen = $state(false);
+	let moreBox: HTMLDivElement | undefined = $state();
+
 	let notice = $state<string | null>(null);
 	let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -1195,8 +1198,9 @@
 		if (soundOn) audio?.unlock();
 		onKey(event);
 	}}
-	onpointerdown={() => {
+	onpointerdown={(event) => {
 		if (soundOn) audio?.unlock();
+		if (moreOpen && moreBox && !moreBox.contains(event.target as Node)) moreOpen = false;
 	}}
 	onpointermove={() => {
 		if (theater) wake();
@@ -1510,54 +1514,6 @@
 					>
 					<button
 						type="button"
-						title="Look straight down, press again to go back (T)"
-						onclick={topView}>Top</button
-					>
-					<button type="button" onclick={() => scene3d?.resetView()}>Reset</button>
-					{#if mapPack}
-						<select
-							aria-label="Texture quality"
-							value={textureQuality}
-							onchange={(e) => setQuality(e.currentTarget.value as TextureQuality)}
-						>
-							{#each qualities as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-						<select
-							aria-label="Render resolution"
-							value={String(graphics.resolution)}
-							onchange={(e) => {
-								const value = e.currentTarget.value;
-								setGraphics({
-									resolution: value === 'auto' ? 'auto' : (Number(value) as Resolution)
-								});
-							}}
-						>
-							{#each resolutions as option (option.value)}
-								<option value={String(option.value)}>{option.label}</option>
-							{/each}
-						</select>
-						<select
-							aria-label="Anti-aliasing"
-							value={String(graphics.msaa)}
-							onchange={(e) =>
-								setGraphics({ msaa: Number(e.currentTarget.value) as GraphicsSettings['msaa'] })}
-						>
-							{#each msaaOptions as option (option.value)}
-								<option value={String(option.value)}>{option.label}</option>
-							{/each}
-						</select>
-					{/if}
-					<button
-						type="button"
-						class:active={perfOpen}
-						aria-pressed={perfOpen}
-						title="Performance stats and reports (P)"
-						onclick={togglePerf}>Stats</button
-					>
-					<button
-						type="button"
 						class:active={xrayOn}
 						aria-pressed={xrayOn}
 						title="Show players through walls (X)"
@@ -1569,21 +1525,6 @@
 						aria-pressed={hudOn}
 						title="Game HUD (H)"
 						onclick={toggleHud}>HUD</button
-					>
-					<button
-						type="button"
-						class:active={theater}
-						aria-pressed={theater}
-						title="Full screen (F)"
-						onclick={() => setTheater(!theater)}
-						>{theater ? 'Exit full screen' : 'Full screen'}</button
-					>
-				{/if}
-				{#if focus !== null}
-					<button
-						type="button"
-						title="Copy setpos and setang for this player at this moment, to paste into the CS2 console (S)"
-						onclick={copySetpos}>Copy setpos</button
 					>
 				{/if}
 				<div class="segmented" role="group" aria-label="View">
@@ -1602,22 +1543,124 @@
 				</div>
 				<button
 					type="button"
-					title="Copy a link that opens this round at this moment"
-					onclick={copyMomentLink}>Copy link</button
-				>
-				<button
-					type="button"
 					class:active={bookmarking !== null}
 					title="Bookmark this moment into a playlist (B)"
 					onclick={() => (bookmarking ? (bookmarking = null) : startBookmark())}>Bookmark</button
 				>
-				<button
-					type="button"
-					class:active={drawing}
-					aria-pressed={drawing}
-					title="Draw on the radar (D). Drawings are kept per round in this browser."
-					onclick={toggleDrawing}>Draw</button
-				>
+				{#if view === '2d'}
+					<button
+						type="button"
+						class:active={drawing}
+						aria-pressed={drawing}
+						title="Draw on the radar (D). Drawings are kept per round in this browser."
+						onclick={toggleDrawing}>Draw</button
+					>
+				{/if}
+				<div class="more" bind:this={moreBox}>
+					<button
+						type="button"
+						class:active={moreOpen}
+						aria-expanded={moreOpen}
+						aria-haspopup="menu"
+						onclick={() => (moreOpen = !moreOpen)}>More ▾</button
+					>
+					{#if moreOpen}
+						<div class="more-menu" role="menu">
+							{#if view === '3d'}
+								<button
+									type="button"
+									role="menuitem"
+									onclick={() => {
+										topView();
+										moreOpen = false;
+									}}>Top view <kbd>T</kbd></button
+								>
+								<button
+									type="button"
+									role="menuitem"
+									onclick={() => {
+										scene3d?.resetView();
+										moreOpen = false;
+									}}>Reset camera</button
+								>
+								<button
+									type="button"
+									role="menuitem"
+									onclick={() => {
+										setTheater(!theater);
+										moreOpen = false;
+									}}>{theater ? 'Exit full screen' : 'Full screen'} <kbd>F</kbd></button
+								>
+								<button
+									type="button"
+									role="menuitem"
+									class:active={perfOpen}
+									onclick={() => {
+										togglePerf();
+										moreOpen = false;
+									}}>Performance stats <kbd>P</kbd></button
+								>
+							{/if}
+							<button
+								type="button"
+								role="menuitem"
+								onclick={() => {
+									void copyMomentLink();
+									moreOpen = false;
+								}}>Copy link to this moment</button
+							>
+							<button
+								type="button"
+								role="menuitem"
+								disabled={focus === null}
+								title={focus === null ? 'Click a player first' : undefined}
+								onclick={() => {
+									void copySetpos();
+									moreOpen = false;
+								}}>Copy setpos of the player <kbd>S</kbd></button
+							>
+							{#if view === '3d' && mapPack}
+								<div class="more-settings">
+									<select
+										aria-label="Texture quality"
+										value={textureQuality}
+										onchange={(e) => setQuality(e.currentTarget.value as TextureQuality)}
+									>
+										{#each qualities as option (option.value)}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+									<select
+										aria-label="Render resolution"
+										value={String(graphics.resolution)}
+										onchange={(e) => {
+											const value = e.currentTarget.value;
+											setGraphics({
+												resolution: value === 'auto' ? 'auto' : (Number(value) as Resolution)
+											});
+										}}
+									>
+										{#each resolutions as option (option.value)}
+											<option value={String(option.value)}>{option.label}</option>
+										{/each}
+									</select>
+									<select
+										aria-label="Anti-aliasing"
+										value={String(graphics.msaa)}
+										onchange={(e) =>
+											setGraphics({
+												msaa: Number(e.currentTarget.value) as GraphicsSettings['msaa']
+											})}
+									>
+										{#each msaaOptions as option (option.value)}
+											<option value={String(option.value)}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
 				{#if drawing}
 					<div class="draw-tools" role="group" aria-label="Drawing">
 						<button
@@ -2346,5 +2389,55 @@
 	.nade.molotov,
 	.nade.incgrenade {
 		background: #ff9a2e;
+	}
+
+	.more {
+		position: relative;
+	}
+
+	.more-menu {
+		position: absolute;
+		right: 0;
+		bottom: calc(100% + 6px);
+		z-index: 20;
+		display: grid;
+		min-width: 270px;
+		padding: 6px;
+		border-radius: 10px;
+		border: 1px solid var(--border);
+		background: var(--surface);
+		box-shadow: 0 10px 30px rgb(0 0 0 / 0.4);
+	}
+
+	.more-menu > button {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		height: 32px;
+		border: 0;
+		background: transparent;
+		text-align: left;
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.more-menu > button:hover:not(:disabled) {
+		background: var(--surface-2);
+	}
+
+	.more-menu kbd {
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.8em;
+	}
+
+	.more-settings {
+		display: grid;
+		gap: 6px;
+		margin-top: 6px;
+		padding-top: 6px;
+		border-top: 1px solid var(--border);
 	}
 </style>
