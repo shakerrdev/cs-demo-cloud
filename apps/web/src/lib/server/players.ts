@@ -1,5 +1,5 @@
 import { getMatchesForStats, getPlayerMatches } from '@cs-demo-cloud/db';
-import { matchStats } from '@cs-demo-cloud/replay';
+import { addSideSplit, emptySideSplit, matchStats, pistolRounds } from '@cs-demo-cloud/replay';
 import { db } from './db.ts';
 
 export interface PlayerMatch {
@@ -31,14 +31,26 @@ export function playerProfile(steamid: string) {
 	const rows = getPlayerMatches(db, steamid);
 	if (!rows.length) return null;
 
+	const sides = emptySideSplit();
 	const statsByDemo = new Map(
 		getMatchesForStats(
 			db,
 			rows.map((r) => r.demoId)
 		).map((m) => {
-			const tickRate = rows.find((r) => r.demoId === m.demoId)!.tickRate;
-			const stats = matchStats(m.players, m.rounds, m.kills, tickRate);
-			return [m.demoId, stats.players.find((p) => p.steamid === steamid) ?? null];
+			const row = rows.find((r) => r.demoId === m.demoId)!;
+			const stats = matchStats(m.players, m.rounds, m.kills, row.tickRate);
+			const mine = stats.players.find((p) => p.steamid === steamid) ?? null;
+			addSideSplit(
+				sides,
+				steamid,
+				row.team,
+				m.players,
+				m.rounds,
+				m.kills,
+				mine?.kastRoundNumbers ?? [],
+				pistolRounds(m.rounds)
+			);
+			return [m.demoId, mine];
 		})
 	);
 
@@ -126,6 +138,7 @@ export function playerProfile(steamid: string) {
 				[0, 0, 0, 0] as [number, number, number, number]
 			)
 		},
+		sides,
 		maps: [...byMap.values()]
 			.map(({ damage, rounds, k, d, ...record }) => ({
 				...record,

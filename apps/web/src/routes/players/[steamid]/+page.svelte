@@ -73,6 +73,48 @@
 	</div>
 </section>
 
+<section class="sides" aria-label="CT and T side">
+	{#each ['CT', 'T'] as const as side (side)}
+		{@const r = profile.sides[side]}
+		<div class="side {side}">
+			<h2>{side === 'CT' ? 'Counter-Terrorist' : 'Terrorist'}</h2>
+			<dl>
+				<div>
+					<dt>Rounds won</dt>
+					<dd>{pct(r.rounds ? r.won / r.rounds : null)}</dd>
+				</div>
+				<div>
+					<dt>K/D</dt>
+					<dd>{(r.kills / Math.max(1, r.deaths)).toFixed(2)}</dd>
+				</div>
+				<div>
+					<dt>KAST</dt>
+					<dd>{pct(r.rounds ? r.kastRounds / r.rounds : null)}</dd>
+				</div>
+				<div>
+					<dt>Rounds</dt>
+					<dd>{r.rounds}</dd>
+				</div>
+			</dl>
+		</div>
+	{/each}
+	<div class="side pistol">
+		<h2>Pistol rounds</h2>
+		<dl>
+			<div>
+				<dt>Won</dt>
+				<dd>{profile.sides.pistolsWon}/{profile.sides.pistols}</dd>
+			</div>
+			<div>
+				<dt>Win rate</dt>
+				<dd>
+					{pct(profile.sides.pistols ? profile.sides.pistolsWon / profile.sides.pistols : null)}
+				</dd>
+			</div>
+		</dl>
+	</div>
+</section>
+
 <div class="columns">
 	<section class="panel">
 		<h2>Matches</h2>
@@ -181,6 +223,47 @@
 
 	.label {
 		font-size: 0.8em;
+	}
+
+	.sides {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 8px;
+		margin-bottom: 16px;
+	}
+
+	.side {
+		padding: 12px 14px;
+		background: var(--surface);
+		border-radius: var(--radius);
+		border-top: 3px solid var(--muted);
+	}
+
+	.side.CT {
+		border-top-color: #5aa9e6;
+	}
+
+	.side.T {
+		border-top-color: #e8b04a;
+	}
+
+	.side dl {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+		gap: 8px;
+		margin: 0;
+	}
+
+	.side dt {
+		color: var(--muted);
+		font-size: 0.8em;
+	}
+
+	.side dd {
+		margin: 0;
+		font-size: 1.2rem;
+		font-weight: 650;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.columns {
