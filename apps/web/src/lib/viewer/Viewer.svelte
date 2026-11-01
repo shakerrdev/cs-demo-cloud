@@ -468,6 +468,20 @@
 		round = number;
 	}
 
+	let host: HTMLDivElement | undefined = $state();
+
+	$effect(() => {
+		const follow = () => {
+			const match = /^#round-(\d+)$/.exec(location.hash);
+			if (!match) return;
+			goToRound(Number(match[1]));
+			host?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		};
+		follow();
+		addEventListener('hashchange', follow);
+		return () => removeEventListener('hashchange', follow);
+	});
+
 	$effect(() => {
 		const number = round;
 		loading = true;
@@ -817,7 +831,7 @@
 	}}
 />
 
-<div class="viewer" class:theater>
+<div class="viewer" class:theater bind:this={host}>
 	{#each teamKeys as team (team)}
 		{@const side = teamSide(team)}
 		<aside class="team {team}" style:--side={side ? sideColors[side] : 'var(--muted)'}>
