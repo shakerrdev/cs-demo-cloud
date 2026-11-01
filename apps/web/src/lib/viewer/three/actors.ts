@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type {
-	GrenadeType,
-	ReplayKill,
-	ReplayPlayer,
-	RoundReplay,
-	Side
+import {
+	FLAG_ALIVE,
+	type GrenadeType,
+	type ReplayKill,
+	type ReplayPlayer,
+	type RoundReplay,
+	type Side
 } from '@cs-demo-cloud/replay';
 import { bombState, grenadePosition, type PlayerState } from '../frame.ts';
 
@@ -205,6 +206,10 @@ export class Actors {
 		new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }),
 		0.4
 	);
+	private path = new Lines(
+		new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }),
+		0.35
+	);
 	private shots = new Lines(
 		new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }),
 		0.3
@@ -218,6 +223,7 @@ export class Actors {
 	private rings: Pool;
 	private bomb: THREE.Mesh;
 	private color = new THREE.Color();
+	private color2 = new THREE.Color();
 	private shotColor = new THREE.Color();
 	private matrix = new THREE.Matrix4();
 	private vector = new THREE.Vector3();
@@ -317,7 +323,14 @@ export class Actors {
 			)
 		);
 
-		this.root.add(this.deaths, this.grenadeHeads, this.trails.object, this.shots.object, this.bomb);
+		this.root.add(
+			this.deaths,
+			this.grenadeHeads,
+			this.trails.object,
+			this.shots.object,
+			this.path.object,
+			this.bomb
+		);
 	}
 
 	setPlayers(players: ReplayPlayer[]) {
@@ -372,6 +385,37 @@ export class Actors {
 		this.grenadeHeads.visible = this.simpleEffects;
 		if (!this.simpleEffects) this.bomb.visible = false;
 		this.updateShots(replay, tick, players, pov);
+		this.updatePath(replay, tick, pov === null ? focus : null);
+	}
+
+	private updatePath(replay: RoundReplay, tick: number, player: number | null) {
+		this.path.begin();
+		const { meta, columns } = replay;
+		if (player !== null && meta.players[player]) {
+			const n = meta.frameCount;
+			const from = Math.max(
+				0,
+				Math.floor(((meta.freezeEndTick ?? meta.startTick) - meta.startTick) / meta.tickStep)
+			);
+			const now = (tick - meta.startTick) / meta.tickStep;
+			const color = this.color.setHex(sideColors[meta.players[player]!.side]);
+			const future = this.color2.copy(color).multiplyScalar(0.35);
+			let previous = -1;
+			for (let f = from; f < n; f += 2) {
+				const at = player * n + f;
+				if (!(columns.flags[at]! & FLAG_ALIVE)) {
+					previous = -1;
+					continue;
+				}
+				if (previous >= 0) {
+					this.vector.set(columns.x[previous]!, columns.y[previous]!, columns.z[previous]! + 4);
+					this.vector2.set(columns.x[at]!, columns.y[at]!, columns.z[at]! + 4);
+					this.path.add(this.vector, this.vector2, f <= now ? color : future);
+				}
+				previous = at;
+			}
+		}
+		this.path.end();
 	}
 
 	private createPlayer(): PlayerActor {
@@ -692,6 +736,8 @@ export class Actors {
 		this.grenadeHeads.dispose();
 		this.trails.dispose();
 		this.shots.dispose();
+		this.path.dispose();
+		(this.path.object.material as THREE.Material).dispose();
 		(this.trails.object.material as THREE.Material).dispose();
 		(this.shots.object.material as THREE.Material).dispose();
 		for (const pool of [this.smokes, this.fires, this.blasts, this.rings]) pool.dispose();
