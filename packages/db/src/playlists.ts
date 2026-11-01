@@ -58,7 +58,7 @@ export function getPlaylist(db: Db, id: string) {
 		.leftJoin(matches, eq(matches.demoId, bookmarks.demoId))
 		.leftJoin(users, eq(users.id, bookmarks.createdBy))
 		.where(eq(bookmarks.playlistId, id))
-		.orderBy(asc(bookmarks.createdAt), asc(bookmarks.id))
+		.orderBy(asc(bookmarks.createdAt), asc(sql`bookmarks.rowid`))
 		.all();
 	return { ...playlist, items };
 }
