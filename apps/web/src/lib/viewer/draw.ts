@@ -6,6 +6,7 @@ import {
 	type Side
 } from '@cs-demo-cloud/replay';
 import {
+	framePosition,
 	bombState,
 	defuseProgress,
 	grenadePosition,
@@ -27,6 +28,7 @@ const grenadeColors = {
 const SMOKE_RADIUS = 144;
 const FIRE_RADIUS = 110;
 const SHOT_LENGTH = 360;
+const KILL_LINE_SECONDS = 2.5;
 
 export interface DrawOptions {
 	ctx: CanvasRenderingContext2D;
@@ -40,6 +42,7 @@ export interface DrawOptions {
 	focus: number | null;
 	labels?: boolean;
 	damage?: boolean;
+	killLines?: boolean;
 	view?: RadarView;
 }
 
@@ -254,6 +257,32 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	}
 
 	const players = playerStates(replay, tick);
+
+	if (options.killLines !== false) {
+		const window = KILL_LINE_SECONDS * meta.tickRate;
+		ctx.lineCap = 'round';
+		for (const kill of meta.kills) {
+			if (kill.tick > tick || kill.tick < tick - window) continue;
+			const attacker = meta.players[kill.attacker];
+			if (!attacker || kill.attacker === kill.victim) continue;
+			const i = kill.attacker * meta.frameCount + framePosition(replay, kill.tick).nearest;
+			const from = project(replay.columns.x[i]!, replay.columns.y[i]!);
+			const to = project(kill.x, kill.y);
+			const fade = 1 - (tick - kill.tick) / window;
+			const gradient = ctx.createLinearGradient(from.px, from.py, to.px, to.py);
+			gradient.addColorStop(0, sideColors[attacker.side]);
+			gradient.addColorStop(1, kill.headshot ? '#ffd23f' : '#ff5a5a');
+			ctx.globalAlpha = 0.85 * Math.min(1, fade * 1.6) * levelAlpha(kill.z);
+			ctx.strokeStyle = gradient;
+			ctx.lineWidth = 2 * pixelRatio;
+			ctx.beginPath();
+			ctx.moveTo(from.px, from.py);
+			ctx.lineTo(to.px, to.py);
+			ctx.stroke();
+		}
+		ctx.lineCap = 'butt';
+		ctx.globalAlpha = 1;
+	}
 
 	for (const kill of meta.kills) {
 		if (kill.tick > tick) continue;

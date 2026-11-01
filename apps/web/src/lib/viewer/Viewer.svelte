@@ -985,6 +985,7 @@
 							level,
 							focus,
 							damage: config.viewer.damageNumbers,
+							killLines: config.viewer.killLines,
 							view: radarView
 						});
 				}

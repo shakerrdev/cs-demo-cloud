@@ -27,6 +27,7 @@ import {
 } from '../graphics.ts';
 import {
 	defuseProgress,
+	framePosition,
 	inventoryAt,
 	playerMotion,
 	recentHurts,
@@ -52,6 +53,7 @@ import type { PovPose, Viewmodel } from './cs2/viewmodel.ts';
 
 export type { TextureQuality, DebugToggles, GraphicsSettings };
 
+const KILL_LINE_SECONDS = 2.5;
 const GLIDE_SECONDS = 0.7;
 
 export type CameraMode = 'free' | 'follow' | 'chase' | 'pov';
@@ -1227,6 +1229,54 @@ export class ReplayScene {
 		ctx.globalAlpha = 1;
 	}
 
+	private drawKillLines(ctx: CanvasRenderingContext2D, width: number, height: number) {
+		const replay = this.replay;
+		if (!replay) return;
+		const { meta, columns } = replay;
+		const ratio = this.pixelRatio;
+		const window = KILL_LINE_SECONDS * meta.tickRate;
+		const screen = (x: number, y: number, z: number) => {
+			const ndc = this.projected.set(x, y, z).project(this.camera);
+			if (ndc.z <= -1 || ndc.z >= 1) return null;
+			return { x: ((ndc.x + 1) / 2) * width, y: ((1 - ndc.y) / 2) * height };
+		};
+		ctx.lineCap = 'round';
+		for (const kill of meta.kills) {
+			if (kill.tick > this.tick || kill.tick < this.tick - window) continue;
+			const attacker = meta.players[kill.attacker];
+			if (!attacker || kill.attacker === kill.victim) continue;
+			const i = kill.attacker * meta.frameCount + framePosition(replay, kill.tick).nearest;
+			const from = screen(columns.x[i]!, columns.y[i]!, columns.z[i]! + 60);
+			const to = screen(kill.x, kill.y, kill.z + 36);
+			if (!from || !to) continue;
+			const color = `#${sideColors[attacker.side].toString(16).padStart(6, '0')}`;
+			const fade = 1 - (this.tick - kill.tick) / window;
+			const gradient = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+			gradient.addColorStop(0, color);
+			gradient.addColorStop(1, kill.headshot ? '#ffd23f' : '#ff5a5a');
+			ctx.globalAlpha = 0.9 * Math.min(1, fade * 1.6);
+			ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+			ctx.lineWidth = 4 * ratio;
+			ctx.beginPath();
+			ctx.moveTo(from.x, from.y);
+			ctx.lineTo(to.x, to.y);
+			ctx.stroke();
+			ctx.strokeStyle = gradient;
+			ctx.lineWidth = 2 * ratio;
+			ctx.stroke();
+			const r = 4 * ratio;
+			ctx.strokeStyle = kill.headshot ? '#ffd23f' : '#ff5a5a';
+			ctx.beginPath();
+			ctx.moveTo(to.x - r, to.y - r);
+			ctx.lineTo(to.x + r, to.y + r);
+			ctx.moveTo(to.x + r, to.y - r);
+			ctx.lineTo(to.x - r, to.y + r);
+			ctx.stroke();
+		}
+		ctx.globalAlpha = 1;
+		ctx.lineCap = 'butt';
+	}
+
 	private drawUtilityTimers(ctx: CanvasRenderingContext2D, width: number, height: number) {
 		const replay = this.replay;
 		if (!replay) return;
@@ -1372,6 +1422,7 @@ export class ReplayScene {
 			ctx.fillText(label, x, barY - 3 * ratio);
 		}
 		ctx.globalAlpha = 1;
+		if (names && this.config.viewer.killLines) this.drawKillLines(ctx, width, height);
 		if (names) this.drawUtilityTimers(ctx, width, height);
 		if (names && this.config.viewer.damageNumbers) this.drawDamage(ctx, width, height);
 		if (names) {
