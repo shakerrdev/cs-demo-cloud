@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import { mapTitle } from '@cs-demo-cloud/replay';
 	import { formatDate, platformName } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
+	const isMe = $derived(data.ownSteamId === data.profile.steamid);
 	const profile = $derived(data.profile);
 	const s = $derived(profile.summary);
 	const pct = (value: number | null) => (value === null ? '–' : `${Math.round(value * 100)}%`);
@@ -28,6 +30,16 @@
 			{/if}
 		</p>
 	</div>
+	<form method="POST" action={isMe ? '?/notMe' : '?/me'} use:enhance>
+		<button
+			type="submit"
+			class="button small"
+			title={isMe
+				? 'Stop treating this player as you'
+				: 'Use this player for My stats and your results in the match list'}
+			>{isMe ? 'This is you · undo' : 'This is me'}</button
+		>
+	</form>
 </header>
 
 <section class="tiles" aria-label="Summary">
@@ -112,6 +124,14 @@
 </div>
 
 <style>
+	.head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
 	h1 {
 		margin: 0;
 		font-size: 1.7rem;

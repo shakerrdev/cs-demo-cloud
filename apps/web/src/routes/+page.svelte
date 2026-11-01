@@ -17,6 +17,8 @@
 		return () => clearInterval(timer);
 	});
 
+	const own = $derived(new Map(data.own.map((row) => [row.demoId, row])));
+
 	let search = $state('');
 	let mapFilter = $state('');
 	let platformFilter = $state('');
@@ -211,11 +213,23 @@
 			{statusText[demo.status]}
 		</span>
 	{:else if match}
-		<span class="score">
-			<span class:win={match.scoreA > match.scoreB}>{match.scoreA}</span>
-			<span class="sep">:</span>
-			<span class:win={match.scoreB > match.scoreA}>{match.scoreB}</span>
-		</span>
+		{@const mine = own.get(demo.id)}
+		{#if mine}
+			{@const ours = mine.team === 'a' ? match.scoreA : match.scoreB}
+			{@const theirs = mine.team === 'a' ? match.scoreB : match.scoreA}
+			<span class="mine">
+				<span class="score result" class:won={ours > theirs} class:lost={ours < theirs}
+					>{ours}<span class="sep">:</span>{theirs}</span
+				>
+				<span class="kd">{mine.kills}–{mine.deaths}</span>
+			</span>
+		{:else}
+			<span class="score">
+				<span class:win={match.scoreA > match.scoreB}>{match.scoreA}</span>
+				<span class="sep">:</span>
+				<span class:win={match.scoreB > match.scoreA}>{match.scoreB}</span>
+			</span>
+		{/if}
 	{:else}
 		<span class="status {demo.status}" title={demo.error ?? undefined}>
 			{statusText[demo.status]}
@@ -309,6 +323,26 @@
 	label.row:hover {
 		border-color: var(--border);
 		background: var(--surface-2);
+	}
+
+	.mine {
+		display: grid;
+		justify-items: end;
+		gap: 2px;
+	}
+
+	.result.won {
+		color: var(--ok);
+	}
+
+	.result.lost {
+		color: var(--danger);
+	}
+
+	.kd {
+		color: var(--muted);
+		font-size: 0.85em;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.filters {
