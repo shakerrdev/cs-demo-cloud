@@ -7,7 +7,7 @@ import {
 	packYaw,
 	type RoundReplay
 } from '@cs-demo-cloud/replay';
-import { directorPick, setposCommand } from './frame.ts';
+import { defuseProgress, directorPick, playerStates, setposCommand } from './frame.ts';
 
 test('setpos command for a player at a tick', () => {
 	const columns = createColumns(2);
@@ -78,4 +78,35 @@ test('the director picks whoever is about to get a kill', () => {
 	assert.equal(directorPick(replay, 100, 0), 1);
 	assert.equal(directorPick(replay, 330, 2), 0);
 	assert.equal(directorPick(replay, 330, 1), 1);
+});
+
+test('defuse progress counts from the defuse start, faster with a kit', () => {
+	const columns = createColumns(2);
+	columns.flags.set([1 | 4 | 8, 1 | 8]);
+	const replay = {
+		meta: {
+			version: REPLAY_VERSION,
+			round: 1,
+			tickRate: 64,
+			tickStep: 64,
+			startTick: 0,
+			frameCount: 2,
+			freezeEndTick: 0,
+			endTick: 64,
+			players: [{ steamid: 's', name: 'p', team: 'a', side: 'CT' }],
+			weapons: [''],
+			kills: [],
+			shots: [],
+			grenades: [],
+			effects: [],
+			bomb: [{ type: 'defuse_start', tick: 0, player: 0, x: 0, y: 0, z: 0, site: 'A' }],
+			blinds: []
+		},
+		columns
+	} as unknown as RoundReplay;
+	const withKit = playerStates(replay, 0)[0]!;
+	assert.deepEqual(defuseProgress(replay, withKit, 128), { fraction: 0.4, left: 3 });
+	const noKit = { ...withKit, defuser: false };
+	assert.deepEqual(defuseProgress(replay, noKit, 128), { fraction: 0.2, left: 8 });
+	assert.equal(defuseProgress(replay, { ...withKit, defusing: false }, 128), null);
 });

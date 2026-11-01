@@ -24,7 +24,13 @@ import {
 	type DebugToggles,
 	type GraphicsSettings
 } from '../graphics.ts';
-import { playerMotion, playerStates, viewState, type PlayerState } from '../frame.ts';
+import {
+	defuseProgress,
+	playerMotion,
+	playerStates,
+	viewState,
+	type PlayerState
+} from '../frame.ts';
 import { Actors, aimDirection, eyeHeight, sideColors } from './actors.ts';
 import {
 	SUN_DIRECTION,
@@ -1175,6 +1181,19 @@ export class ReplayScene {
 			ctx.fillRect(x - barWidth / 2 - ratio, barY - ratio, barWidth + 2 * ratio, 5 * ratio);
 			ctx.fillStyle = player.health > 30 ? '#4cc38a' : '#ef4b4b';
 			ctx.fillRect(x - barWidth / 2, barY, (barWidth * player.health) / 100, 3 * ratio);
+			const defuse = this.replay ? defuseProgress(this.replay, player, this.tick) : null;
+			if (defuse) {
+				const defuseY = barY + 6 * ratio;
+				ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+				ctx.fillRect(x - barWidth / 2 - ratio, defuseY - ratio, barWidth + 2 * ratio, 5 * ratio);
+				ctx.fillStyle = '#5aa9e6';
+				ctx.fillRect(x - barWidth / 2, defuseY, barWidth * defuse.fraction, 3 * ratio);
+				ctx.font = `700 ${Math.round(10 * ratio)}px system-ui, sans-serif`;
+				ctx.textBaseline = 'top';
+				ctx.fillText(defuse.left.toFixed(1), x, defuseY + 5 * ratio);
+				ctx.textBaseline = 'bottom';
+				ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+			}
 
 			ctx.lineWidth = 3 * ratio;
 			ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';

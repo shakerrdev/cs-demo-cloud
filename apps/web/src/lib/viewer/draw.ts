@@ -5,7 +5,13 @@ import {
 	type RoundReplay,
 	type Side
 } from '@cs-demo-cloud/replay';
-import { bombState, grenadePosition, playerStates, type PlayerState } from './frame.ts';
+import {
+	bombState,
+	defuseProgress,
+	grenadePosition,
+	playerStates,
+	type PlayerState
+} from './frame.ts';
 
 export const sideColors: Record<Side, string> = { CT: '#5aa9e6', T: '#e8b04a' };
 
@@ -225,6 +231,10 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	ctx.globalAlpha = 1;
 
 	const bomb = bombState(replay, tick);
+	const bombLeft =
+		bomb?.kind === 'planted'
+			? ((meta.timing?.bombSeconds ?? 40) * meta.tickRate - (tick - bomb.tick)) / meta.tickRate
+			: Infinity;
 	if (bomb && bomb.kind !== 'exploded') {
 		const { px, py } = project(bomb.x, bomb.y);
 		ctx.globalAlpha = levelAlpha(bomb.z);
@@ -343,12 +353,26 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 			ctx.fillRect(px + radius * 0.35, py - radius * 1.25, radius * 0.9, radius * 0.7);
 		}
 		if (player.defusing) {
-			ctx.strokeStyle = '#5aa9e6';
-			ctx.setLineDash([2 * pixelRatio, 2 * pixelRatio]);
-			ctx.lineWidth = 1.5 * pixelRatio;
-			circle(ctx, px, py, radius * 1.7);
+			const defuse = defuseProgress(replay, player, tick);
+			ctx.strokeStyle = 'rgba(90, 169, 230, 0.35)';
+			ctx.lineWidth = 2.5 * pixelRatio;
+			circle(ctx, px, py, radius * 1.8);
 			ctx.stroke();
-			ctx.setLineDash([]);
+			if (defuse) {
+				ctx.strokeStyle = defuse.left <= bombLeft ? '#4cc38a' : '#ef4b4b';
+				ctx.beginPath();
+				ctx.arc(px, py, radius * 1.8, -Math.PI / 2, -Math.PI / 2 + defuse.fraction * Math.PI * 2);
+				ctx.stroke();
+				ctx.font = `700 ${Math.round(radius * 1.1)}px system-ui, sans-serif`;
+				ctx.textAlign = 'left';
+				ctx.textBaseline = 'middle';
+				ctx.lineWidth = 3 * pixelRatio;
+				ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+				const text = defuse.left.toFixed(1);
+				ctx.strokeText(text, px + radius * 2.2, py);
+				ctx.fillStyle = '#5aa9e6';
+				ctx.fillText(text, px + radius * 2.2, py);
+			}
 		}
 
 		if (!labels) continue;

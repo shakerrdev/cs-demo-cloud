@@ -296,3 +296,20 @@ export function directorPick(
 	if (upcoming[0]) return upcoming[0].attacker;
 	return players.find((p) => p.alive && p.present)?.index ?? current;
 }
+
+export const DEFUSE_SECONDS = { kit: 5, none: 10 };
+
+export function defuseProgress(
+	replay: RoundReplay,
+	player: PlayerState,
+	tick: number
+): { fraction: number; left: number } | null {
+	if (!player.defusing) return null;
+	const start = replay.meta.bomb.findLast(
+		(event) => event.type === 'defuse_start' && event.player === player.index && event.tick <= tick
+	);
+	if (!start) return null;
+	const total = player.defuser ? DEFUSE_SECONDS.kit : DEFUSE_SECONDS.none;
+	const elapsed = (tick - start.tick) / replay.meta.tickRate;
+	return { fraction: Math.min(1, elapsed / total), left: Math.max(0, total - elapsed) };
+}
