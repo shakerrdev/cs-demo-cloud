@@ -82,7 +82,12 @@ export function getMatchKills(db: Db, demoId: string) {
 			attackerSteamid: kills.attackerSteamid,
 			victimSteamid: kills.victimSteamid,
 			assisterSteamid: kills.assisterSteamid,
-			flashAssist: kills.flashAssist
+			flashAssist: kills.flashAssist,
+			weapon: kills.weapon,
+			headshot: kills.headshot,
+			wallbang: kills.wallbang,
+			throughSmoke: kills.throughSmoke,
+			noScope: kills.noScope
 		})
 		.from(kills)
 		.where(eq(kills.demoId, demoId))
