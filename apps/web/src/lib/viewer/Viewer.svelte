@@ -740,6 +740,16 @@
 		let disposed = false;
 		let created: ReplayScene | null = null;
 		sceneError = null;
+		const lost = (event: Event) => {
+			event.preventDefault();
+			sceneError = 'The graphics driver reset the 3D view. Restoring it…';
+		};
+		const restored = () => {
+			sceneError = null;
+			created?.contextRestored();
+		};
+		canvas.addEventListener('webglcontextlost', lost);
+		canvas.addEventListener('webglcontextrestored', restored);
 		import('./three/scene.ts')
 			.then(({ ReplayScene }) => {
 				if (disposed) return;
@@ -755,6 +765,8 @@
 			});
 		return () => {
 			disposed = true;
+			canvas.removeEventListener('webglcontextlost', lost);
+			canvas.removeEventListener('webglcontextrestored', restored);
 			created?.dispose();
 			scene3d = null;
 		};

@@ -445,14 +445,7 @@ export class ReplayScene {
 				placeMap(this.mapObject, mesh);
 				this.scene.add(this.mapObject);
 				this.mapObject.updateMatrixWorld();
-				this.sunShadow?.dispose();
-				this.sunShadow = null;
-				try {
-					this.sunShadow = bakeSunShadow(this.renderer, this.mapObject, SUN_DIRECTION, SHADOW_SIZE);
-				} catch (error) {
-					console.warn('No sun shadows for the collision map', error);
-				}
-				applyShadow(this.mapMaterial, this.sunShadow, SHADOW_SIZE);
+				this.bakeShadow();
 			}
 			this.mesh = mesh;
 		}
@@ -1109,6 +1102,23 @@ export class ReplayScene {
 	private updateHeightRange(replay: RoundReplay) {
 		const z = startHeight(replay);
 		(this.mapMaterial.uniforms.uHeightRange!.value as THREE.Vector2).set(z - 250, z + 450);
+	}
+
+	private bakeShadow() {
+		this.sunShadow?.dispose();
+		this.sunShadow = null;
+		if (!this.mapObject) return;
+		try {
+			this.sunShadow = bakeSunShadow(this.renderer, this.mapObject, SUN_DIRECTION, SHADOW_SIZE);
+		} catch (error) {
+			console.warn('No sun shadows for the collision map', error);
+		}
+		applyShadow(this.mapMaterial, this.sunShadow, SHADOW_SIZE);
+	}
+
+	contextRestored() {
+		if (this.mapObject && !this.pack) this.bakeShadow();
+		this.dirty = true;
 	}
 
 	private hoverTarget(): number | null {
