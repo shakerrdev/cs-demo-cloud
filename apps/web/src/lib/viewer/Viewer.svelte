@@ -14,7 +14,7 @@
 	} from '@cs-demo-cloud/replay';
 	import { formatClock, roundEndReason } from '#lib/format.ts';
 	import { EAR_HEIGHT, ReplayAudio, type Listener } from './audio.ts';
-	import { drawFrame, sideColors } from './draw.ts';
+	import { drawFrame, fullView, screenToView, sideColors, type RadarView } from './draw.ts';
 	import DrawLayer, { type DrawTool, type Stroke } from './DrawLayer.svelte';
 	import GameHud from './GameHud.svelte';
 	import PerfPanel from './PerfPanel.svelte';
@@ -213,6 +213,56 @@
 	}
 
 	const drawColors = ['#ffd23f', '#ff4d4d', '#4dd2ff', '#7dff6b', '#ffffff'];
+	let radarView = $state<RadarView>({ ...fullView });
+	let panning: { x: number; y: number; id: number } | null = null;
+	const zoomed = $derived(radarView.zoom > 1.001);
+
+	function clampView(view: RadarView): RadarView {
+		const zoom = Math.max(1, Math.min(8, view.zoom));
+		const half = 0.5 / zoom;
+		return {
+			zoom,
+			cx: Math.max(half, Math.min(1 - half, view.cx)),
+			cy: Math.max(half, Math.min(1 - half, view.cy))
+		};
+	}
+
+	function zoomRadar(event: WheelEvent) {
+		event.preventDefault();
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = (event.clientX - rect.left) / rect.width;
+		const y = (event.clientY - rect.top) / rect.height;
+		const anchor = screenToView(radarView, x, y);
+		const zoom = Math.max(1, Math.min(8, radarView.zoom * Math.exp(-event.deltaY * 0.001)));
+		radarView = clampView({
+			zoom,
+			cx: anchor.u - (x - 0.5) / zoom,
+			cy: anchor.v - (y - 0.5) / zoom
+		});
+	}
+
+	function panStart(event: PointerEvent) {
+		if (event.button !== 0 || !zoomed) return;
+		panning = { x: event.clientX, y: event.clientY, id: event.pointerId };
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	}
+
+	function panMove(event: PointerEvent) {
+		if (!panning || event.pointerId !== panning.id) return;
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		radarView = clampView({
+			...radarView,
+			cx: radarView.cx - (event.clientX - panning.x) / rect.width / radarView.zoom,
+			cy: radarView.cy - (event.clientY - panning.y) / rect.height / radarView.zoom
+		});
+		panning.x = event.clientX;
+		panning.y = event.clientY;
+	}
+
+	function panEnd() {
+		panning = null;
+	}
+
 	let drawing = $state(false);
 	let drawTool = $state<DrawTool>('pen');
 	let drawColor = $state(drawColors[0]!);
@@ -838,7 +888,7 @@
 				}
 			} else if (canvas && current) {
 				const image = level === 'lower' && lowerRadar ? lowerRadar : radar;
-				const key = `${tick}|${canvasPx}|${level}|${image?.src}|${current.meta.round}|${focus}`;
+				const key = `${tick}|${canvasPx}|${level}|${image?.src}|${current.meta.round}|${focus}|${radarView.zoom}|${radarView.cx}|${radarView.cy}`;
 				if (key !== lastKey || canvas !== lastCanvas) {
 					lastKey = key;
 					lastCanvas = canvas;
@@ -853,7 +903,8 @@
 							map: mapInfo,
 							radar: image,
 							level,
-							focus
+							focus,
+							view: radarView
 						});
 				}
 			}
@@ -1174,7 +1225,19 @@
 					height={canvasPx}
 					style:width="{cssSize}px"
 					style:height="{cssSize}px"
+					class:grab={zoomed}
+					onwheel={zoomRadar}
+					onpointerdown={panStart}
+					onpointermove={panMove}
+					onpointerup={panEnd}
+					onpointercancel={panEnd}
+					ondblclick={() => (radarView = { ...fullView })}
 				></canvas>
+				{#if zoomed}
+					<button type="button" class="reset-zoom" onclick={() => (radarView = { ...fullView })}
+						>Reset zoom ({radarView.zoom.toFixed(1)}×)</button
+					>
+				{/if}
 				<DrawLayer
 					size={cssSize}
 					{pixelRatio}
@@ -1182,6 +1245,7 @@
 					tool={drawTool}
 					color={drawColor}
 					strokes={roundStrokes}
+					view={radarView}
 					onchange={setStrokes}
 				/>
 			{/if}
@@ -1531,8 +1595,9 @@
 </nav>
 <p class="hint">
 	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · S copy setpos · D draw · B
-	bookmark · [ / ] round · 1–5 speed (3D: − / =; 1–0 spectate a player like CS2) · V 2D/3D · click a
-	player to highlight them and draw their path (J / K then follow their kills and deaths)
+	bookmark · [ / ] round · 1–5 speed (3D: − / =; 1–0 spectate a player like CS2) · V 2D/3D · 2D:
+	scroll to zoom, drag to pan, double-click to reset · click a player to highlight them and draw
+	their path (J / K then follow their kills and deaths)
 	{#if view === '3d'}
 		<br />3D: WASD to fly (Q/E down/up, Shift faster) · right-drag to look around · drag to pan ·
 		Shift-drag to orbit · scroll to zoom · C camera mode · F full screen · H HUD · X x-ray · in
@@ -2091,5 +2156,24 @@
 		background: var(--accent);
 		border-color: var(--accent);
 		color: #1a1206;
+	}
+
+	canvas.grab {
+		cursor: grab;
+	}
+
+	.reset-zoom {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		z-index: 3;
+		padding: 4px 10px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		background: rgb(0 0 0 / 0.65);
+		color: var(--text);
+		font: inherit;
+		font-size: 12px;
+		cursor: pointer;
 	}
 </style>

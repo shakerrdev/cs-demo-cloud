@@ -9,6 +9,8 @@
 </script>
 
 <script lang="ts">
+	import { fullView, screenToView, viewToScreen, type RadarView } from './draw.ts';
+
 	interface Props {
 		size: number;
 		pixelRatio: number;
@@ -16,17 +18,32 @@
 		tool: DrawTool;
 		color: string;
 		strokes: Stroke[];
+		view?: RadarView;
 		onchange: (strokes: Stroke[]) => void;
 	}
 
-	let { size, pixelRatio, active, tool, color, strokes, onchange }: Props = $props();
+	let {
+		size,
+		pixelRatio,
+		active,
+		tool,
+		color,
+		strokes,
+		view = fullView,
+		onchange
+	}: Props = $props();
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let current = $state.raw<Stroke | null>(null);
 
 	function point(event: PointerEvent): [number, number] {
 		const rect = canvas!.getBoundingClientRect();
-		return [(event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height];
+		const { u, v } = screenToView(
+			view,
+			(event.clientX - rect.left) / rect.width,
+			(event.clientY - rect.top) / rect.height
+		);
+		return [u, v];
 	}
 
 	function down(event: PointerEvent) {
@@ -45,8 +62,8 @@
 			return;
 		}
 		const n = current.points.length;
-		const du = (u - current.points[n - 2]!) * size;
-		const dv = (v - current.points[n - 1]!) * size;
+		const du = (u - current.points[n - 2]!) * size * view.zoom;
+		const dv = (v - current.points[n - 1]!) * size * view.zoom;
 		if (du * du + dv * dv < 9) return;
 		current = { ...current, points: [...current.points, u, v] };
 	}
@@ -55,7 +72,8 @@
 		if (!current) return;
 		const [x0, y0] = current.points;
 		const n = current.points.length;
-		const length = Math.hypot(current.points[n - 2]! - x0!, current.points[n - 1]! - y0!) * size;
+		const length =
+			Math.hypot(current.points[n - 2]! - x0!, current.points[n - 1]! - y0!) * size * view.zoom;
 		if (length > 4 || current.points.length > 6) onchange([...strokes, current]);
 		current = null;
 	}
@@ -68,7 +86,11 @@
 		ctx.lineWidth = width;
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
-		const p = stroke.points;
+		const p: number[] = [];
+		for (let i = 0; i < stroke.points.length; i += 2) {
+			const screen = viewToScreen(view, stroke.points[i]!, stroke.points[i + 1]!);
+			p.push(screen.x, screen.y);
+		}
 		ctx.beginPath();
 		ctx.moveTo(p[0]! * px, p[1]! * px);
 		for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i]! * px, p[i + 1]! * px);

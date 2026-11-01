@@ -32,20 +32,50 @@ export interface DrawOptions {
 	level: 'upper' | 'lower';
 	focus: number | null;
 	labels?: boolean;
+	view?: RadarView;
+}
+
+export interface RadarView {
+	zoom: number;
+	cx: number;
+	cy: number;
+}
+
+export const fullView: RadarView = { zoom: 1, cx: 0.5, cy: 0.5 };
+
+export function viewToScreen(view: RadarView, u: number, v: number) {
+	return { x: (u - view.cx) * view.zoom + 0.5, y: (v - view.cy) * view.zoom + 0.5 };
+}
+
+export function screenToView(view: RadarView, x: number, y: number) {
+	return { u: view.cx + (x - 0.5) / view.zoom, v: view.cy + (y - 0.5) / view.zoom };
 }
 
 export function drawFrame(options: DrawOptions): PlayerState[] {
-	const { ctx, size, pixelRatio, replay, tick, map, radar, level, focus, labels = true } = options;
+	const {
+		ctx,
+		size,
+		pixelRatio,
+		replay,
+		tick,
+		map,
+		radar,
+		level,
+		focus,
+		labels = true,
+		view = fullView
+	} = options;
 	const { meta } = replay;
 	const radarSize = radar?.naturalWidth || 1024;
 	const scale = map?.scale ?? 5;
-	const unitsToPx = (units: number) => (units / scale / radarSize) * size;
+	const unitsToPx = (units: number) => (units / scale / radarSize) * size * view.zoom;
 	const radius = Math.max(4.5 * pixelRatio, size * 0.0105);
 
 	const project = (x: number, y: number) => {
 		if (!map) return { px: size / 2 + unitsToPx(x), py: size / 2 - unitsToPx(y) };
 		const { u, v } = worldToRadar(map, radarSize, x, y);
-		return { px: u * size, py: v * size };
+		const screen = viewToScreen(view, u, v);
+		return { px: screen.x * size, py: screen.y * size };
 	};
 	const onOtherLevel = (z: number) => {
 		if (!map || map.lowerBelowZ === null) return false;
@@ -92,7 +122,8 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	ctx.fillRect(0, 0, size, size);
 	if (radar) {
 		ctx.globalAlpha = 0.92;
-		ctx.drawImage(radar, 0, 0, size, size);
+		const corner = viewToScreen(view, 0, 0);
+		ctx.drawImage(radar, corner.x * size, corner.y * size, size * view.zoom, size * view.zoom);
 		ctx.globalAlpha = 1;
 	}
 
