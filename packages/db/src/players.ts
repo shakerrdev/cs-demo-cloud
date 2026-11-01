@@ -76,7 +76,7 @@ export function listPlayers(db: Db) {
 	return db
 		.select({
 			steamid: matchPlayers.steamid,
-			name: sql<string>`max(${matchPlayers.name})`,
+			name: sql<string>`(select mp2.name from match_players mp2 join demos d2 on d2.id = mp2.demo_id where mp2.steamid = ${matchPlayers.steamid} order by coalesce(d2.file_modified_at, d2.created_at) desc limit 1)`,
 			matches: sql<number>`count(*)`,
 			kills: sql<number>`sum(${matchPlayers.kills})`,
 			deaths: sql<number>`sum(${matchPlayers.deaths})`
@@ -85,7 +85,7 @@ export function listPlayers(db: Db) {
 		.innerJoin(demos, eq(demos.id, matchPlayers.demoId))
 		.where(eq(demos.status, 'ready'))
 		.groupBy(matchPlayers.steamid)
-		.orderBy(desc(sql`count(*)`), asc(sql`max(${matchPlayers.name})`))
+		.orderBy(desc(sql`count(*)`), asc(sql`2`))
 		.all();
 }
 
@@ -118,4 +118,27 @@ export function getOwnResults(db: Db, steamId: string) {
 		.from(matchPlayers)
 		.where(eq(matchPlayers.steamid, steamId))
 		.all();
+}
+
+export function getPlayerRounds(db: Db, steamid: string, map: string) {
+	return db
+		.select({
+			demoId: rounds.demoId,
+			parsedAt: matches.parsedAt,
+			playedAt: sql<number>`coalesce(${demos.fileModifiedAt}, ${demos.createdAt})`,
+			team: matchPlayers.team,
+			number: rounds.number,
+			teamASide: rounds.teamASide,
+			winnerTeam: rounds.winnerTeam,
+			teamAEquipment: rounds.teamAEquipment,
+			teamBEquipment: rounds.teamBEquipment
+		})
+		.from(matchPlayers)
+		.innerJoin(matches, eq(matches.demoId, matchPlayers.demoId))
+		.innerJoin(demos, eq(demos.id, matchPlayers.demoId))
+		.innerJoin(rounds, eq(rounds.demoId, matchPlayers.demoId))
+		.where(and(eq(matchPlayers.steamid, steamid), eq(matches.map, map), eq(demos.status, 'ready')))
+		.orderBy(desc(sql`coalesce(${demos.fileModifiedAt}, ${demos.createdAt})`), asc(rounds.number))
+		.all()
+		.map((row) => ({ ...row, playedAt: new Date(row.playedAt) }));
 }
