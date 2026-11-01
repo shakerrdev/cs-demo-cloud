@@ -34,3 +34,17 @@ const platformNames = { valve: 'Valve', faceit: 'FACEIT', other: 'Other' } as co
 export function platformName(platform: keyof typeof platformNames): string {
 	return platformNames[platform];
 }
+
+const roundEndReasons: Record<string, string> = {
+	bomb_exploded: 'Bomb exploded',
+	bomb_defused: 'Bomb defused',
+	t_killed: 'Terrorists eliminated',
+	ct_killed: 'CTs eliminated',
+	target_saved: 'Time ran out',
+	t_surrender: 'Terrorists surrendered',
+	ct_surrender: 'CTs surrendered'
+};
+
+export function roundEndReason(reason: string | null): string {
+	return reason ? (roundEndReasons[reason] ?? reason.replace(/_/g, ' ')) : '';
+}

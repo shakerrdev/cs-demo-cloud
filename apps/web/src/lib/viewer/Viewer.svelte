@@ -12,7 +12,7 @@
 		type Side,
 		type TeamKey
 	} from '@cs-demo-cloud/replay';
-	import { formatClock } from '#lib/format.ts';
+	import { formatClock, roundEndReason } from '#lib/format.ts';
 	import { EAR_HEIGHT, ReplayAudio, type Listener } from './audio.ts';
 	import { drawFrame, sideColors } from './draw.ts';
 	import GameHud from './GameHud.svelte';
@@ -473,12 +473,20 @@
 	}
 
 	let host: HTMLDivElement | undefined = $state();
+	let pendingTick: number | null = null;
 
 	$effect(() => {
 		const follow = () => {
-			const match = /^#round-(\d+)$/.exec(location.hash);
+			const match = /^#round-(\d+)(?:@(\d+))?$/.exec(location.hash);
 			if (!match) return;
-			goToRound(Number(match[1]));
+			const number = Number(match[1]);
+			const at = match[2] ? Number(match[2]) : null;
+			if (number === round && replay && at !== null) {
+				tick = hudTick = Math.max(replay.meta.startTick, Math.min(end, at));
+			} else {
+				pendingTick = at;
+				goToRound(number);
+			}
 			host?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 		};
 		follow();
@@ -494,7 +502,12 @@
 			.then((next) => {
 				if (number !== round) return;
 				replay = next;
-				tick = hudTick = startOf(next);
+				const wanted = pendingTick;
+				pendingTick = null;
+				tick = hudTick =
+					wanted !== null
+						? Math.max(next.meta.startTick, Math.min(lastTick(next), wanted))
+						: startOf(next);
 				loading = false;
 				if (rounds.some((r) => r.number === number + 1))
 					loadRound(demoId, version, number + 1).catch(() => {});
@@ -836,17 +849,7 @@
 		return `\n${teamNames.a}: ${buyLabels[buy.a]} · ${teamNames.b}: ${buyLabels[buy.b]}`;
 	}
 
-	const reasons: Record<string, string> = {
-		bomb_exploded: 'Bomb exploded',
-		bomb_defused: 'Bomb defused',
-		t_killed: 'Terrorists eliminated',
-		ct_killed: 'CTs eliminated',
-		target_saved: 'Time ran out',
-		t_surrender: 'Terrorists surrendered',
-		ct_surrender: 'CTs surrendered'
-	};
-	const reasonText = (reason: string | null) =>
-		reason ? (reasons[reason] ?? reason.replace(/_/g, ' ')) : '';
+	const reasonText = roundEndReason;
 
 	const teamSide = (team: TeamKey): Side | null => {
 		if (!roundInfo) return null;
