@@ -1,4 +1,10 @@
-import { worldToRadar, type MapInfo, type RoundReplay, type Side } from '@cs-demo-cloud/replay';
+import {
+	FLAG_ALIVE,
+	worldToRadar,
+	type MapInfo,
+	type RoundReplay,
+	type Side
+} from '@cs-demo-cloud/replay';
 import { bombState, grenadePosition, playerStates, type PlayerState } from './frame.ts';
 
 export const sideColors: Record<Side, string> = { CT: '#5aa9e6', T: '#e8b04a' };
@@ -47,6 +53,40 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	};
 	const levelAlpha = (z: number) => (onOtherLevel(z) ? 0.3 : 1);
 
+	function drawPath(player: number) {
+		const n = meta.frameCount;
+		const { columns } = replay;
+		const from = Math.max(
+			0,
+			Math.floor(((meta.freezeEndTick ?? meta.startTick) - meta.startTick) / meta.tickStep)
+		);
+		const now = (tick - meta.startTick) / meta.tickStep;
+		const color = sideColors[meta.players[player]!.side];
+		ctx.lineJoin = 'round';
+		ctx.lineCap = 'round';
+		for (const played of [false, true]) {
+			ctx.beginPath();
+			let drawing = false;
+			for (let f = from; f < n; f++) {
+				if (played && f > now) break;
+				const at = player * n + f;
+				if (!(columns.flags[at]! & FLAG_ALIVE)) {
+					drawing = false;
+					continue;
+				}
+				const { px, py } = project(columns.x[at]!, columns.y[at]!);
+				if (drawing) ctx.lineTo(px, py);
+				else ctx.moveTo(px, py);
+				drawing = true;
+			}
+			ctx.strokeStyle = color;
+			ctx.globalAlpha = played ? 0.75 : 0.22;
+			ctx.lineWidth = (played ? 2 : 1.5) * pixelRatio;
+			ctx.stroke();
+		}
+		ctx.globalAlpha = 1;
+	}
+
 	ctx.clearRect(0, 0, size, size);
 	ctx.fillStyle = '#0b0d10';
 	ctx.fillRect(0, 0, size, size);
@@ -54,6 +94,10 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 		ctx.globalAlpha = 0.92;
 		ctx.drawImage(radar, 0, 0, size, size);
 		ctx.globalAlpha = 1;
+	}
+
+	if (focus !== null && meta.players[focus]) {
+		drawPath(focus);
 	}
 
 	for (const effect of meta.effects) {

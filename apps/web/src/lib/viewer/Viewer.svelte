@@ -1229,7 +1229,8 @@
 </nav>
 <p class="hint">
 	Space play/pause · ←/→ 5 s (Shift 1 s) · J / K previous / next kill · [ / ] round · 1–5 speed · V
-	2D/3D · click a player to highlight (J / K then follow their kills and deaths)
+	2D/3D · click a player to highlight them and draw their path (J / K then follow their kills and
+	deaths)
 	{#if view === '3d'}
 		<br />3D: drag to pan · right-drag or Shift-drag to rotate · scroll to zoom · C camera mode · F
 		full screen · H HUD · X x-ray · in Follow and POV, left/right click switches to the
