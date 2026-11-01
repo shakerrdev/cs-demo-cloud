@@ -41,6 +41,7 @@ Both views share the same playback, HUD, kill feed and timeline; **V** switches 
 - **Game HUD** (3D, **H**): CS2's spectator HUD over the 16:9 view: the top bar with both teams' players, money, guns, utility, armor and kit, the round timer, score and players alive, the radar with the location's name, the kill feed, and for the followed player health, armor, name, gun, ammo, money and the weapons they carry. **Full screen** (**F**) fills the screen with it and hides the controls while playing. **X-ray** (**X**) turns the see-through players on and off.
 
 - **Navigation**: **J** / **K** jump to the previous / next kill or bomb event (2 s early); with a player highlighted they follow that player's kills and deaths, and the 2D radar draws the player's path for the round. Links like `#round-7` or `#round-7@51200` open the viewer on that round or tick; the analysis below uses them everywhere.
+- **Review tools**: **S** (or **Copy setpos**) copies `setpos …;setang …` for the highlighted player at this moment, ready for the CS2 console. **D** draws on the 2D radar (pen or arrow, five colours, undo with Ctrl+Z); drawings are kept per round in your browser. **B** bookmarks the moment with a note into a playlist; bookmarks show as purple marks on the timeline.
 - **Clock**: round and bomb timers use the timings measured from the match itself (time-out rounds, bomb fuse), so non-matchmaking servers show the right clock after **Parse again**.
 
 Map assets come from Valve's game files, which is fine for a private instance but not something to redistribute publicly, so none are committed here. The worker downloads them the first time it parses a demo on a map (and on start for maps it already has demos of) into `data/maps`:
@@ -59,6 +60,11 @@ Under the viewer on every match page:
 - **Rounds**: every round's winner, reason and kills with the round clock, weapon and headshot/wallbang/smoke/no-scope tags; click a kill to watch it.
 - **Economy**: each team's equipment value and bank at freeze end with the buy type (pistol, eco, semi-eco, force, full buy). Recorded while parsing, so older demos need **Parse again**.
 - **Kill positions**: where kills happened on the radar, filtered by player, side and level; click a spot to watch that round.
+
+- **Utility**: every grenade of the match on the radar, landing spot plus a line back to where it was thrown, filtered by type, player, side and level. Click to watch the throw, right-click to copy the thrower's setpos (the lineup).
+- **Compare rounds**: a team's players from all chosen rounds at once, synced to time since freeze end with a 3 s trail, filtered by side, buy type and result (optionally with the opponents). Shows defaults, executes and rotations at a glance.
+
+**Playlists** collect bookmarked moments from any match with notes. **Play from the start** opens the first moment; a bar on the match page shows the note and steps to the previous/next moment, across matches. Playlists are shared by everyone on the instance.
 
 **Players** lists everyone in the library; a player's page has their career numbers (K/D, ADR, KAST, win rate, opening duels, clutches, multi-kills), a record per map and their matches. **This is me** on your own page (or a SteamID linked under Auto-import) adds **My stats** to the menu and shows your result and K–D on every match in the list.
 
@@ -374,4 +380,5 @@ Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web 
 - [x] 3D viewer
 - [x] Personal API tokens
 - [x] Import from a link + companion userscript
+- [x] Review tools: setpos copy, drawing, utility map, round comparison, bookmarks and playlists
 - [ ] Companion extension (FACEIT and other sites)
