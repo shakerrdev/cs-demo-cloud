@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import {
 		buyLabels,
 		mapTitle,
@@ -107,6 +108,18 @@
 		</div>
 	</header>
 
+	{#if data.playlistNav}
+		{@const nav = data.playlistNav}
+		<div class="playlist-bar">
+			<a href="/playlists/{nav.id}" class="name">{nav.name}</a>
+			<span class="pos">{nav.index + 1} / {nav.count}</span>
+			{#if nav.note}<span class="note">{nav.note}</span>{/if}
+			<span class="steps">
+				{#if nav.previous}<a href={nav.previous} data-sveltekit-reload>‹ Previous</a>{/if}
+				{#if nav.next}<a href={nav.next} data-sveltekit-reload>Next ›</a>{/if}
+			</span>
+		</div>
+	{/if}
 	<Viewer
 		demoId={data.demo.id}
 		version={match.parsedAt.getTime()}
@@ -119,6 +132,9 @@
 		{rounds}
 		{teamNames}
 		config={data.config}
+		playlists={data.playlists}
+		bookmarks={data.bookmarks}
+		onbookmark={() => invalidateAll()}
 	/>
 
 	{#if data.highlights.length}
@@ -513,6 +529,47 @@
 	th.player {
 		color: var(--text);
 		font-size: 13px;
+	}
+
+	.playlist-bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px 14px;
+		margin-bottom: 12px;
+		padding: 8px 12px;
+		border-radius: var(--radius);
+		background: var(--surface);
+		border: 1px solid #b48cff55;
+	}
+
+	.playlist-bar .name {
+		font-weight: 600;
+		color: #c9b1ff;
+		text-decoration: none;
+	}
+
+	.playlist-bar .pos {
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.playlist-bar .note {
+		flex: 1 1 200px;
+	}
+
+	.playlist-bar .steps {
+		display: flex;
+		gap: 8px;
+		margin-left: auto;
+	}
+
+	.playlist-bar .steps a {
+		padding: 4px 10px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		color: var(--text);
+		text-decoration: none;
 	}
 
 	.highlights {

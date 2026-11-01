@@ -30,6 +30,7 @@
 				class:active={page.url.pathname.startsWith('/players') &&
 					page.url.pathname !== `/players/${data.ownSteamId}`}>Players</a
 			>
+			<a href="/playlists" class:active={page.url.pathname.startsWith('/playlists')}>Playlists</a>
 			<a href="/auto-import" class:active={page.url.pathname === '/auto-import'}>Auto-import</a>
 			<a href="/settings" class:active={page.url.pathname === '/settings'}>Settings</a>
 			{#if data.user.role === 'admin'}

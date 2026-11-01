@@ -1,5 +1,13 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import { getDemo, getMatch, getMatchKills, requeueDemo } from '@cs-demo-cloud/db';
+import {
+	getDemo,
+	getMatch,
+	getMatchKills,
+	getPlaylist,
+	listDemoBookmarks,
+	listPlaylists,
+	requeueDemo
+} from '@cs-demo-cloud/db';
 import { matchHighlights, matchStats } from '@cs-demo-cloud/replay';
 import {
 	AGENTS_PACK,
@@ -14,7 +22,7 @@ import { canRemoveDemo, removeDemo } from '#lib/server/demos.ts';
 import { isDemoId, storage } from '#lib/server/storage.ts';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ params, locals }) => {
+export const load: PageServerLoad = async ({ params, locals, url }) => {
 	if (!isDemoId(params.id)) error(404, 'Demo not found');
 	const demo = getDemo(db, params.id);
 	if (!demo) error(404, 'Demo not found');
@@ -38,6 +46,9 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		details,
 		stats,
 		kills: killRows,
+		playlists: listPlaylists(db).map(({ id, name }) => ({ id, name })),
+		bookmarks: listDemoBookmarks(db, params.id),
+		playlistNav: playlistNav(url),
 		highlights: details && stats ? matchHighlights(details.players, killRows, stats) : [],
 		mapPack: pack?.version ?? null,
 		playerPack: players?.version ?? null,
@@ -64,3 +75,27 @@ export const actions: Actions = {
 		redirect(303, '/');
 	}
 };
+
+function playlistNav(url: URL) {
+	const id = url.searchParams.get('playlist');
+	const index = Number(url.searchParams.get('item'));
+	if (!id || !Number.isInteger(index)) return null;
+	const playlist = getPlaylist(db, id);
+	const item = playlist?.items[index];
+	if (!playlist || !item) return null;
+	const link = (i: number) => {
+		const target = playlist.items[i];
+		return target
+			? `/demos/${target.demoId}?playlist=${playlist.id}&item=${i}#round-${target.round}@${target.tick}`
+			: null;
+	};
+	return {
+		id: playlist.id,
+		name: playlist.name,
+		index,
+		count: playlist.items.length,
+		note: item.note,
+		previous: link(index - 1),
+		next: link(index + 1)
+	};
+}
