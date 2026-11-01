@@ -10,6 +10,7 @@ import {
 	horizontalToVerticalFov,
 	type AppConfig,
 	weaponKey,
+	weaponTitle,
 	type MapInfo,
 	type MapMesh,
 	type RoundReplay,
@@ -26,6 +27,7 @@ import {
 } from '../graphics.ts';
 import {
 	defuseProgress,
+	inventoryAt,
 	playerMotion,
 	recentHurts,
 	playerStates,
@@ -187,6 +189,9 @@ export class ReplayScene {
 	} | null = null;
 	private transitionFocus: number | null = null;
 	private tick = 0;
+	private hoverPoint: { x: number; y: number } | null = null;
+	private hovered: number | null = null;
+	private screenPlayers: { index: number; x: number; y: number }[] = [];
 	private angledOffset: THREE.Vector3 | null = null;
 	private shown = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 	private desired = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
@@ -247,6 +252,28 @@ export class ReplayScene {
 			}
 			this.pointer.down = false;
 		};
+		const hover = (event: PointerEvent) => {
+			if (event.buttons) return;
+			const rect = canvas.getBoundingClientRect();
+			this.hoverPoint = {
+				x: (event.clientX - rect.left) * this.pixelRatio,
+				y: (event.clientY - rect.top) * this.pixelRatio
+			};
+			const next = this.hoverTarget();
+			if (next !== this.hovered) {
+				this.hovered = next;
+				this.dirty = true;
+			}
+		};
+		const leave = () => {
+			this.hoverPoint = null;
+			if (this.hovered !== null) {
+				this.hovered = null;
+				this.dirty = true;
+			}
+		};
+		canvas.addEventListener('pointermove', hover);
+		canvas.addEventListener('pointerleave', leave);
 		const menu = (event: MouseEvent) => event.preventDefault();
 		let look: { x: number; y: number; id: number } | null = null;
 		const lookStart = (event: PointerEvent) => {
@@ -1084,6 +1111,60 @@ export class ReplayScene {
 		(this.mapMaterial.uniforms.uHeightRange!.value as THREE.Vector2).set(z - 250, z + 450);
 	}
 
+	private hoverTarget(): number | null {
+		const point = this.hoverPoint;
+		if (!point || this.pov !== null) return null;
+		let best: number | null = null;
+		let bestDistance = (30 * this.pixelRatio) ** 2;
+		for (const item of this.screenPlayers) {
+			const distance = (item.x - point.x) ** 2 + (item.y - point.y) ** 2;
+			if (distance < bestDistance) {
+				bestDistance = distance;
+				best = item.index;
+			}
+		}
+		return best;
+	}
+
+	private drawHoverCard(ctx: CanvasRenderingContext2D) {
+		const player = this.hovered !== null ? this.players[this.hovered] : undefined;
+		const spot = this.screenPlayers.find((item) => item.index === this.hovered);
+		if (!player || !spot || !this.replay || !player.alive) return;
+		const ratio = this.pixelRatio;
+		const items = inventoryAt(this.replay, player.index, this.tick);
+		const nades = items.filter((name) =>
+			/grenade|flash|smoke|molotov|incgrenade|decoy/i.test(name)
+		);
+		const lines = [
+			`${player.health} HP · ${player.armor}${player.helmet ? '+H' : ''} armor`,
+			weaponTitle(player.weapon),
+			`$${player.money}${player.defuser ? ' · kit' : ''}${player.bomb ? ' · C4' : ''}`,
+			nades.length ? nades.map(weaponTitle).join(', ') : 'No utility'
+		];
+		const pad = 8 * ratio;
+		const lineHeight = 15 * ratio;
+		ctx.font = `600 ${Math.round(12 * ratio)}px system-ui, sans-serif`;
+		const title = player.name;
+		const width =
+			Math.max(ctx.measureText(title).width, ...lines.map((line) => ctx.measureText(line).width)) +
+			pad * 2;
+		const height = pad * 2 + lineHeight * (lines.length + 1);
+		const x = Math.min(ctx.canvas.width - width - 4, spot.x + 18 * ratio);
+		const y = Math.max(4, spot.y - height / 2);
+		ctx.globalAlpha = 1;
+		ctx.fillStyle = 'rgba(12, 14, 18, 0.9)';
+		ctx.fillRect(x, y, width, height);
+		ctx.fillStyle = player.side === 'CT' ? '#5aa9e6' : '#e8b04a';
+		ctx.fillRect(x, y, 3 * ratio, height);
+		ctx.textAlign = 'left';
+		ctx.textBaseline = 'top';
+		ctx.fillStyle = '#ffffff';
+		ctx.fillText(title, x + pad, y + pad);
+		ctx.font = `500 ${Math.round(11.5 * ratio)}px system-ui, sans-serif`;
+		ctx.fillStyle = '#c9ced6';
+		lines.forEach((line, i) => ctx.fillText(line, x + pad, y + pad + lineHeight * (i + 1)));
+	}
+
 	private pick(event: PointerEvent) {
 		if (!this.onPick) return;
 		const rect = this.renderer.domElement.getBoundingClientRect();
@@ -1237,6 +1318,11 @@ export class ReplayScene {
 			}
 		}
 
+		this.screenPlayers = labels.map(({ player, ndc }) => ({
+			index: player.index,
+			x: ((ndc.x + 1) / 2) * width,
+			y: ((1 - ndc.y) / 2) * height + 40 * ratio
+		}));
 		for (const { player, label, x, y } of positioned.reverse()) {
 			const focused = player.index === focus;
 			const barWidth = 34 * ratio;
@@ -1270,6 +1356,10 @@ export class ReplayScene {
 		ctx.globalAlpha = 1;
 		if (names) this.drawUtilityTimers(ctx, width, height);
 		if (names && this.config.viewer.damageNumbers) this.drawDamage(ctx, width, height);
+		if (names) {
+			this.hovered = this.hoverTarget();
+			this.drawHoverCard(ctx);
+		}
 		if (tags) this.drawXrayTags(ctx, width, height);
 
 		if (this.hurt > 0) {
