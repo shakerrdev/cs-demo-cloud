@@ -222,6 +222,14 @@ export function analyzeDemo(
 	const skinTables = spans.map(() => new Map<string, number>());
 	const skinLists = spans.map(() => [] as ReplaySkin[]);
 	const skinChanges = spans.map(() => [] as number[]);
+	const buyTicks = spans.map((span) =>
+		Math.min(span.lastTick, (span.freezeEndTick ?? span.startTick) + 32)
+	);
+	const economy = spans.map(() => ({
+		equipment: { a: 0, b: 0 },
+		money: { a: 0, b: 0 },
+		counted: new Set<number>()
+	}));
 	const lastSkins = spans.map(() => new Map<number, number>());
 	const agents = spans.map(() => new Map<number, string>());
 	const inventories = spans.map(() => [] as number[]);
@@ -248,6 +256,13 @@ export function analyzeDemo(
 			cols.yaw[at] = packYaw(num(ticks.yaw[i]));
 			cols.pitch[at] = clamp16(packPitch(num(ticks.pitch[i])));
 			cols.money[at] = Math.max(0, Math.min(65535, num(ticks.balance[i])));
+			const buy = economy[r]!;
+			if (ticks.tick[i]! >= buyTicks[r]! && !buy.counted.has(p)) {
+				buy.counted.add(p);
+				const team = teamOf(roundPlayers[r]![p]!);
+				buy.equipment[team] += Math.max(0, num(ticks.current_equip_value[i]));
+				buy.money[team] += Math.max(0, num(ticks.balance[i]));
+			}
 			cols.health[at] = clampU8(num(ticks.health[i]));
 			cols.armor[at] = clampU8(num(ticks.armor_value[i]));
 			cols.weapon[at] = weapon;
@@ -402,7 +417,11 @@ export function analyzeDemo(
 			winnerTeam,
 			reason: span.reason,
 			scoreA,
-			scoreB
+			scoreB,
+			teamAEquipment: economy[r]!.counted.size ? economy[r]!.equipment.a : null,
+			teamBEquipment: economy[r]!.counted.size ? economy[r]!.equipment.b : null,
+			teamAMoney: economy[r]!.counted.size ? economy[r]!.money.a : null,
+			teamBMoney: economy[r]!.counted.size ? economy[r]!.money.b : null
 		});
 
 		const kills = roundEvents

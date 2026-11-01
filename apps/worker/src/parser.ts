@@ -80,6 +80,7 @@ export const tickProps = [
 	'total_ammo_left',
 	'zoom_lvl',
 	'inventory',
+	'current_equip_value',
 	'last_place_name'
 ] as const;
 
