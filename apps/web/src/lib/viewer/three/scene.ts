@@ -43,6 +43,8 @@ import type { PovPose, Viewmodel } from './cs2/viewmodel.ts';
 
 export type { TextureQuality, DebugToggles, GraphicsSettings };
 
+const GLIDE_SECONDS = 0.7;
+
 export type CameraMode = 'free' | 'follow' | 'chase' | 'pov';
 
 const MIN_AUTO_SCALE = 0.5;
@@ -171,6 +173,14 @@ export class ReplayScene {
 	private sunShadow: SunShadow | null = null;
 	private raycaster3: MeshRaycaster | null = null;
 	private raycasterMesh: MapMesh | null = null;
+	private transition: {
+		position: THREE.Vector3;
+		quaternion: THREE.Quaternion;
+		start: number;
+	} | null = null;
+	private transitionFocus: number | null = null;
+	private shown = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
+	private desired = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 	private chaseYaw: number | null = null;
 	private chasePitch = 0;
 	private chaseDistance = CHASE_DISTANCE;
@@ -628,6 +638,17 @@ export class ReplayScene {
 		const focused = focus !== null ? this.players[focus] : undefined;
 		this.pov = mode === 'pov' && focused?.alive ? focus : null;
 
+		const glides = mode === 'follow' || mode === 'chase';
+		if (glides && focus !== this.transitionFocus && this.transitionFocus !== null) {
+			this.transition = {
+				position: this.shown.position.clone(),
+				quaternion: this.shown.quaternion.clone(),
+				start: performance.now()
+			};
+		}
+		if (!glides) this.transition = null;
+		this.transitionFocus = glides ? focus : null;
+
 		if (mode === 'follow' && focused?.alive) this.follow(focused);
 		else this.followAnchor = null;
 		if (mode === 'chase' && focused?.alive) this.chase(focused);
@@ -695,6 +716,7 @@ export class ReplayScene {
 				(performance.now() - this.started) / 1000
 			);
 		profiler.end('effects');
+		const gliding = this.applyTransition();
 		profiler.begin('draw');
 		if (this.pack) this.renderPack(this.pack, viewmodel);
 		else {
@@ -706,6 +728,11 @@ export class ReplayScene {
 		profiler.begin('overlay');
 		this.drawOverlay(focus);
 		profiler.end('overlay');
+		if (gliding) {
+			this.camera.position.copy(this.desired.position);
+			this.camera.quaternion.copy(this.desired.quaternion);
+			this.camera.updateMatrixWorld();
+		}
 		if (this.syncTiming) {
 			profiler.begin('gpu wait');
 			const gl = this.renderer.getContext();
@@ -931,6 +958,33 @@ export class ReplayScene {
 			this.raycaster3 = new MeshRaycaster(this.mesh);
 		}
 		return this.raycaster3;
+	}
+
+	private applyTransition(): boolean {
+		const transition = this.transition;
+		if (transition) {
+			const t = (performance.now() - transition.start) / (GLIDE_SECONDS * 1000);
+			if (t >= 1) this.transition = null;
+			else {
+				const eased = 1 - (1 - t) ** 3;
+				this.desired.position.copy(this.camera.position);
+				this.desired.quaternion.copy(this.camera.quaternion);
+				this.camera.position.lerpVectors(transition.position, this.desired.position, eased);
+				this.camera.quaternion.slerpQuaternions(
+					transition.quaternion,
+					this.desired.quaternion,
+					eased
+				);
+				this.camera.updateMatrixWorld();
+				this.shown.position.copy(this.camera.position);
+				this.shown.quaternion.copy(this.camera.quaternion);
+				this.dirty = true;
+				return true;
+			}
+		}
+		this.shown.position.copy(this.camera.position);
+		this.shown.quaternion.copy(this.camera.quaternion);
+		return false;
 	}
 
 	private follow(player: PlayerState) {
