@@ -33,7 +33,8 @@
 		lastTick,
 		observerSlots,
 		playerStates,
-		setposCommand
+		setposCommand,
+		type PlayerState
 	} from './frame.ts';
 	import { loadMapMesh, loadRound } from './loader.ts';
 	import type { CameraMode, PackStatus, ReplayScene, TextureQuality } from './three/scene.ts';
@@ -86,6 +87,7 @@
 
 	const speeds = [0.5, 1, 2, 4, 8];
 	const DIRECTOR_HOLD_SECONDS = 1.5;
+	const DEATH_HOLD_SECONDS = 2;
 	const teamKeys: TeamKey[] = ['a', 'b'];
 	const cameraModes: { mode: CameraMode; label: string }[] = [
 		{ mode: 'free', label: 'Free' },
@@ -928,6 +930,8 @@
 			}
 
 			if (director && current && !loading) steerDirector(current);
+			else if (current && playing && !loading && view === '3d' && cameraMode !== 'free')
+				spectateNext(current);
 
 			if (!playing || now - lastHud > 100) {
 				if (hudTick !== tick) hudTick = tick;
@@ -1044,6 +1048,21 @@
 		if (focusedAlive && !settled) return;
 		focus = pick;
 		directorSwitchedAt = tick;
+	}
+
+	function spectateNext(current: RoundReplay) {
+		if (focus === null || tick >= current.meta.endTick) return;
+		const death = current.meta.kills.find((kill) => kill.victim === focus && kill.tick <= tick);
+		if (!death || tick - death.tick < DEATH_HOLD_SECONDS * current.meta.tickRate) return;
+		const players = playerStates(current, tick);
+		const dead = players[focus]!;
+		const alive = players.filter((p) => p.alive && p.present);
+		const distance = (p: PlayerState) => (p.x - dead.x) ** 2 + (p.y - dead.y) ** 2;
+		const next =
+			alive.filter((p) => p.team === dead.team).sort((a, b) => distance(a) - distance(b))[0] ??
+			alive.find((p) => p.index === death.attacker) ??
+			alive[0];
+		if (next) focus = next.index;
 	}
 
 	function toggleDirector() {
