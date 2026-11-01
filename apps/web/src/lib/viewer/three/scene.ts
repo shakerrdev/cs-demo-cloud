@@ -1269,7 +1269,7 @@ export class ReplayScene {
 		}
 		ctx.globalAlpha = 1;
 		if (names) this.drawUtilityTimers(ctx, width, height);
-		if (names) this.drawDamage(ctx, width, height);
+		if (names && this.config.viewer.damageNumbers) this.drawDamage(ctx, width, height);
 		if (tags) this.drawXrayTags(ctx, width, height);
 
 		if (this.hurt > 0) {

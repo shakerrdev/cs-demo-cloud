@@ -45,6 +45,7 @@ export interface AppConfig {
 		hud: boolean;
 		xray: boolean;
 		nameplates: boolean;
+		damageNumbers: boolean;
 	};
 	pov: {
 		fov: number;
@@ -117,7 +118,8 @@ export const defaultConfig: AppConfig = {
 		textures: 'auto',
 		hud: true,
 		xray: true,
-		nameplates: true
+		nameplates: true,
+		damageNumbers: true
 	},
 	pov: {
 		fov: 90,
@@ -269,7 +271,8 @@ export const configSections: ConfigSection[] = [
 			},
 			{ path: 'viewer.hud', label: 'Game HUD in 3D', kind: 'toggle' },
 			{ path: 'viewer.xray', label: 'Show players through walls (X-ray)', kind: 'toggle' },
-			{ path: 'viewer.nameplates', label: 'Names over players in Free and Follow', kind: 'toggle' }
+			{ path: 'viewer.nameplates', label: 'Names over players in Free and Follow', kind: 'toggle' },
+			{ path: 'viewer.damageNumbers', label: 'Damage numbers over hit players', kind: 'toggle' }
 		]
 	},
 	{

@@ -928,6 +928,7 @@
 							radar: image,
 							level,
 							focus,
+							damage: config.viewer.damageNumbers,
 							view: radarView
 						});
 				}

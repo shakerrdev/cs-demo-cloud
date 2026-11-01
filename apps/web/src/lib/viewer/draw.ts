@@ -39,6 +39,7 @@ export interface DrawOptions {
 	level: 'upper' | 'lower';
 	focus: number | null;
 	labels?: boolean;
+	damage?: boolean;
 	view?: RadarView;
 }
 
@@ -232,7 +233,7 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	ctx.globalAlpha = 1;
 
 	const bomb = bombState(replay, tick);
-	const hurts = labels ? recentHurts(replay, tick) : [];
+	const hurts = labels && options.damage !== false ? recentHurts(replay, tick) : [];
 	const bombLeft =
 		bomb?.kind === 'planted'
 			? ((meta.timing?.bombSeconds ?? 40) * meta.tickRate - (tick - bomb.tick)) / meta.tickRate
