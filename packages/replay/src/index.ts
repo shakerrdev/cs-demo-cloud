@@ -10,3 +10,4 @@ export * from './cosmetics.ts';
 export * from './config.ts';
 export * from './crosshair.ts';
 export * from './random.ts';
+export * from './timing.ts';

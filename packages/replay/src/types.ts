@@ -95,6 +95,11 @@ export interface ReplayBlind {
 	duration: number;
 }
 
+export interface RoundTiming {
+	roundSeconds: number | null;
+	bombSeconds: number | null;
+}
+
 export interface RoundMeta {
 	version: number;
 	round: number;
@@ -127,6 +132,7 @@ export interface RoundMeta {
 	steps?: number[];
 	places?: string[];
 	view?: RoundViewGrid;
+	timing?: RoundTiming;
 }
 
 export interface RoundViewGrid {
