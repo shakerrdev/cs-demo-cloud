@@ -245,15 +245,7 @@
 								{@const diff = player.kills - player.deaths}
 								<tr>
 									<td class="player">
-										{#if /^\d{17}$/.test(player.steamid)}
-											<a
-												href="https://steamcommunity.com/profiles/{player.steamid}"
-												target="_blank"
-												rel="noopener noreferrer">{player.name}</a
-											>
-										{:else}
-											{player.name}
-										{/if}
+										<a href="/players/{player.steamid}">{player.name}</a>
 									</td>
 									{#if board === 'basic'}
 										<td>{player.kills}</td>
