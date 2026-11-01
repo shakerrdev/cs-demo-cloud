@@ -4,6 +4,7 @@
 	import { buyLabels, mapTitle } from '@cs-demo-cloud/replay';
 	import PlaceTable from '#lib/components/PlaceTable.svelte';
 	import RoundStack, { type StackEntry } from '#lib/components/RoundStack.svelte';
+	import UtilityMap from '#lib/components/UtilityMap.svelte';
 	import { formatDate } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
@@ -127,10 +128,35 @@
 			{/each}
 		</ol>
 	</div>
-	{#if data.player}<PlaceTable {entries} steamid={data.player} />{/if}
+	{#if data.player}
+		<PlaceTable {entries} steamid={data.player} />
+		<section class="utility" aria-label="Grenades thrown">
+			<h2>Utility</h2>
+			{#key data.player}
+				<UtilityMap
+					map={data.filters.map}
+					sources={entries}
+					players={[{ steamid: data.player, name: playerName }]}
+					player={data.player}
+				/>
+			{/key}
+		</section>
+	{/if}
 {/if}
 
 <style>
+	.utility {
+		margin-top: 16px;
+		background: var(--surface);
+		border-radius: var(--radius);
+		padding: 14px 16px;
+	}
+
+	.utility h2 {
+		margin: 0 0 10px;
+		font-size: 1rem;
+	}
+
 	.heading h1 {
 		margin: 0;
 		font-size: 1.5rem;
