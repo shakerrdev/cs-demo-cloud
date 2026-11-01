@@ -19,7 +19,8 @@ const publicPaths = [
 	/^\/invite\/[^/]+\/?$/,
 	/^\/healthz\/?$/,
 	/^\/robots\.txt$/,
-	/^\/ca\.crt$/
+	/^\/ca\.crt$/,
+	/^\/cs-demo-cloud\.user\.js$/
 ];
 
 export const init: ServerInit = () => {

@@ -179,6 +179,11 @@
 		Let scripts and browser extensions upload demos as you, for example from FACEIT. Send the token
 		as <code>Authorization: Bearer …</code> (see the README).
 	</p>
+	<p class="hint">
+		With Tampermonkey or Violentmonkey, install the
+		<a href="/cs-demo-cloud.user.js">companion userscript</a>, then set this address and a token
+		from its menu. On FACEIT, HLTV and Leetify it shows a button to send the demo you open.
+	</p>
 	<form method="POST" action="?/token" class="row">
 		<input
 			name="name"

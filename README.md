@@ -122,6 +122,19 @@ curl -H "Authorization: Bearer cdc_…" \
 
 The answer is `{"id": "…", "duplicate": false}` (201, or 200 when the file is already in the library). Tokens work on every `/api/` route and nowhere else, and those routes answer CORS requests from any site, so a page script on FACEIT can call them directly. Demos uploaded with a token are marked as coming from an extension.
 
+The server can also fetch a demo from a link itself, which is how short-lived download links (FACEIT's CDN, HLTV) are handed over without passing the file through the browser:
+
+```sh
+curl -H "Authorization: Bearer cdc_…" -H "Content-Type: application/json" \
+  -d '{"url": "https://demo-cdn.example/1-abc.dem.zst"}' https://demos.example.com/api/demos/url
+```
+
+Only http(s) links to public addresses are followed (also after redirects); `fileName` in the body overrides the name taken from the link.
+
+### Companion userscript
+
+Install `/cs-demo-cloud.user.js` from your server (linked in **Settings → API tokens**) with Tampermonkey or Violentmonkey and enter your address and a token from its menu. On FACEIT, HLTV and Leetify it watches for demo download links (in the site's own API answers, opened windows and clicked links) and shows a **Send demo to cs-demo-cloud** button; the server downloads the demo from that link. **Send a demo link…** in the menu takes any link by hand. With the built-in HTTPS, install the local CA first so the userscript can reach the server.
+
 ### Exporting demos
 
 Every match page has a **Download .dem** button that gives back the actual demo file, ready for CS2's `replays` folder or another demo tool. Demos stored compressed (`.dem.bz2` from Valve, `.dem.gz`, `.dem.zst`) are decompressed on the fly; the second button hands over the file exactly as it was uploaded, which is smaller. Scripts can do the same with a token:
@@ -344,4 +357,5 @@ Lost the admin account? Run `node packages/db/src/invite.ts --admin` in the web 
 - [x] Published image with CI
 - [x] 3D viewer
 - [x] Personal API tokens
+- [x] Import from a link + companion userscript
 - [ ] Companion extension (FACEIT and other sites)
