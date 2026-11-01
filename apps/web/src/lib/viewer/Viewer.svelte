@@ -376,6 +376,16 @@
 		noticeTimer = setTimeout(() => (notice = null), 2500);
 	}
 
+	async function copyMomentLink() {
+		const url = `${location.origin}${location.pathname}#round-${round}@${Math.round(tick)}`;
+		try {
+			await navigator.clipboard.writeText(url);
+			showNotice('Link to this moment copied');
+		} catch {
+			showNotice(url);
+		}
+	}
+
 	async function copySetpos() {
 		if (!replay || focus === null) {
 			showNotice('Click a player first, then copy their position');
@@ -1590,6 +1600,11 @@
 						onclick={() => setView('3d')}>3D</button
 					>
 				</div>
+				<button
+					type="button"
+					title="Copy a link that opens this round at this moment"
+					onclick={copyMomentLink}>Copy link</button
+				>
 				<button
 					type="button"
 					class:active={bookmarking !== null}
