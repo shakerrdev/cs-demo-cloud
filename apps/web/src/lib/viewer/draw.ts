@@ -117,6 +117,26 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 		ctx.globalAlpha = 1;
 	}
 
+	function drawTimer(px: number, py: number, left: number, total: number, color: string) {
+		if (left <= 0 || total <= 0) return;
+		const r = Math.max(7 * pixelRatio, radius * 1.15);
+		const alpha = ctx.globalAlpha;
+		ctx.fillStyle = 'rgba(10, 12, 15, 0.72)';
+		circle(ctx, px, py, r);
+		ctx.fill();
+		ctx.strokeStyle = color;
+		ctx.lineWidth = 1.6 * pixelRatio;
+		ctx.beginPath();
+		ctx.arc(px, py, r - pixelRatio, -Math.PI / 2, -Math.PI / 2 + (left / total) * Math.PI * 2);
+		ctx.stroke();
+		ctx.fillStyle = color;
+		ctx.font = `600 ${Math.round(r * 0.95)}px system-ui, sans-serif`;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(String(Math.ceil(left)), px, py + 0.5 * pixelRatio);
+		ctx.globalAlpha = alpha;
+	}
+
 	ctx.clearRect(0, 0, size, size);
 	ctx.fillStyle = '#0b0d10';
 	ctx.fillRect(0, 0, size, size);
@@ -145,11 +165,13 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 			ctx.strokeStyle = `rgba(230, 234, 240, ${0.5 * fade})`;
 			ctx.lineWidth = pixelRatio;
 			ctx.stroke();
+			drawTimer(px, py, left, (effect.endTick - effect.startTick) / meta.tickRate, '#eef1f5');
 		} else if (effect.type === 'molotov') {
 			const fade = Math.min(1, age / 0.4, left / 0.8);
 			ctx.fillStyle = `rgba(255, 98, 40, ${0.42 * fade})`;
 			circle(ctx, px, py, unitsToPx(FIRE_RADIUS));
 			ctx.fill();
+			drawTimer(px, py, left, (effect.endTick - effect.startTick) / meta.tickRate, '#ffb47a');
 		} else if (effect.type === 'flash' || effect.type === 'he') {
 			const progress = Math.min(
 				1,
