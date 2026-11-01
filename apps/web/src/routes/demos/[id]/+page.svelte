@@ -3,6 +3,7 @@
 	import {
 		buyLabels,
 		mapTitle,
+		rating,
 		roundBuys,
 		type BuyType,
 		type TeamKey
@@ -33,6 +34,17 @@
 	const money = (value: number | null) =>
 		value === null ? '–' : `$${value.toLocaleString('en-US')}`;
 	const statsOf = $derived(new Map(data.stats?.players.map((p) => [p.steamid, p]) ?? []));
+	const ratingOf = (player: {
+		steamid: string;
+		kills: number;
+		deaths: number;
+		assists: number;
+		damage: number;
+	}) => {
+		const stats = statsOf.get(player.steamid);
+		if (!stats || !details) return null;
+		return rating({ ...player, rounds: details.match.roundCount, kast: stats.kast });
+	};
 	const openingsWon = (team: TeamKey) =>
 		data.stats?.openings.filter((o) => o.team === team).length ?? 0;
 
@@ -320,6 +332,7 @@
 									<th>HS%</th>
 									<th>MVP</th>
 									<th>Score</th>
+									<th title="Approximation of the HLTV 2.0 rating (1.00 is average)">Rating</th>
 								{:else}
 									<th title="Rounds with a kill, assist, survival or traded death">KAST</th>
 									<th title="Opening kills – opening deaths">Open</th>
@@ -347,6 +360,12 @@
 										<td>{percent(player.headshotKills, player.kills)}%</td>
 										<td>{player.mvps}</td>
 										<td>{player.score}</td>
+										{@const value = ratingOf(player)}
+										<td
+											class="rating"
+											class:pos={value !== null && value >= 1.15}
+											class:neg={value !== null && value < 0.85}>{value?.toFixed(2) ?? '–'}</td
+										>
 									{:else}
 										{@const s = statsOf.get(player.steamid)}
 										{@const won = s?.clutches.filter((c) => c.won) ?? []}

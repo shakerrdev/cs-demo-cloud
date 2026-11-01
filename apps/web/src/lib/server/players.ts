@@ -1,5 +1,11 @@
 import { getMatchesForStats, getPlayerMatches } from '@cs-demo-cloud/db';
-import { addSideSplit, emptySideSplit, matchStats, pistolRounds } from '@cs-demo-cloud/replay';
+import {
+	addSideSplit,
+	emptySideSplit,
+	matchStats,
+	pistolRounds,
+	rating
+} from '@cs-demo-cloud/replay';
 import { db } from './db.ts';
 
 export interface PlayerMatch {
@@ -15,6 +21,7 @@ export interface PlayerMatch {
 	assists: number;
 	adr: number;
 	kast: number | null;
+	rating: number | null;
 	headshotPercent: number;
 }
 
@@ -71,6 +78,16 @@ export function playerProfile(steamid: string) {
 			assists: row.assists,
 			adr: row.damage / Math.max(1, row.roundCount),
 			kast: stats ? stats.kast : null,
+			rating: stats
+				? rating({
+						rounds: row.roundCount,
+						kills: row.kills,
+						deaths: row.deaths,
+						assists: row.assists,
+						damage: row.damage,
+						kast: stats.kast
+					})
+				: null,
 			headshotPercent: row.kills ? row.headshotKills / row.kills : 0
 		};
 	});
@@ -129,6 +146,16 @@ export function playerProfile(steamid: string) {
 					sum((r) => r.kills)
 				),
 			kast: kastTotal ? kastRounds / kastTotal : null,
+			rating: kastTotal
+				? rating({
+						rounds: roundsPlayed,
+						kills: sum((r) => r.kills),
+						deaths: sum((r) => r.deaths),
+						assists: sum((r) => r.assists),
+						damage: sum((r) => r.damage),
+						kast: kastRounds / kastTotal
+					})
+				: null,
 			openingKills: allStats.reduce((t, s) => t + s.openingKills, 0),
 			openingDeaths: allStats.reduce((t, s) => t + s.openingDeaths, 0),
 			clutchesWon: allStats.reduce((t, s) => t + s.clutches.filter((c) => c.won).length, 0),

@@ -9,6 +9,14 @@
 	const profile = $derived(data.profile);
 	const s = $derived(profile.summary);
 	const pct = (value: number | null) => (value === null ? '–' : `${Math.round(value * 100)}%`);
+	const form = $derived(
+		profile.matches
+			.filter((m) => m.rating !== null)
+			.slice(0, 20)
+			.reverse()
+	);
+	const top = $derived(Math.max(2, ...form.map((m) => m.rating ?? 0)));
+	const y = (value: number) => 100 - (Math.min(value, top) / top) * 100;
 	const isSteam = $derived(/^\d{17}$/.test(profile.steamid));
 </script>
 
@@ -43,6 +51,12 @@
 </header>
 
 <section class="tiles" aria-label="Summary">
+	<div class="lead">
+		<span class="value">{s.rating?.toFixed(2) ?? '–'}</span><span
+			class="label"
+			title="Approximation of the HLTV 2.0 rating (1.00 is average)">Rating</span
+		>
+	</div>
 	<div>
 		<span class="value">{(s.kills / Math.max(1, s.deaths)).toFixed(2)}</span><span class="label"
 			>K/D</span
@@ -115,6 +129,36 @@
 	</div>
 </section>
 
+{#if form.length > 1}
+	<section class="panel form" aria-label="Recent form">
+		<h2>Form <small>rating in the last {form.length} matches, oldest first</small></h2>
+		<svg
+			viewBox="0 0 {form.length * 24} 100"
+			preserveAspectRatio="none"
+			role="img"
+			style:width="{form.length * 30}px"
+		>
+			<line x1="0" x2={form.length * 24} y1={y(1)} y2={y(1)} class="par" />
+			{#each form as m, i (m.demoId)}
+				<a href="/demos/{m.demoId}">
+					<rect
+						x={i * 24 + 4}
+						width="16"
+						y={Math.min(y(m.rating ?? 0), y(1))}
+						height={Math.max(1.5, Math.abs(y(m.rating ?? 0) - y(1)))}
+						class={m.result}
+					>
+						<title
+							>{mapTitle(m.map)}
+							{m.own}:{m.other} · rating {m.rating?.toFixed(2)} · {formatDate(m.playedAt)}</title
+						>
+					</rect>
+				</a>
+			{/each}
+		</svg>
+	</section>
+{/if}
+
 <div class="columns">
 	<section class="panel">
 		<h2>Matches</h2>
@@ -132,6 +176,11 @@
 							<span class="title">{mapTitle(m.map)}</span>
 							<span class="sub">{formatDate(m.playedAt)} · {platformName(m.platform)}</span>
 						</span>
+						<span
+							class="rating"
+							class:good={m.rating !== null && m.rating >= 1.15}
+							class:bad={m.rating !== null && m.rating < 0.85}>{m.rating?.toFixed(2) ?? '–'}</span
+						>
 						<span class="score {m.result}">{m.own}:{m.other}</span>
 						<span class="line"
 							>{m.kills}–{m.deaths}–{m.assists}<small
@@ -200,6 +249,64 @@
 		grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
 		gap: 8px;
 		margin: 20px 0;
+	}
+
+	.tiles .lead .value {
+		color: var(--accent);
+	}
+
+	.form {
+		margin-bottom: 16px;
+		position: relative;
+	}
+
+	.form small {
+		color: var(--muted);
+		font-weight: 400;
+	}
+
+	.form svg {
+		display: block;
+		max-width: 100%;
+		height: 120px;
+	}
+
+	.form rect {
+		fill: var(--muted);
+	}
+
+	.form rect.win {
+		fill: var(--ok);
+	}
+
+	.form rect.loss {
+		fill: var(--danger);
+	}
+
+	.form a:hover rect {
+		opacity: 0.75;
+	}
+
+	.form .par {
+		stroke: var(--border);
+		stroke-width: 1;
+		vector-effect: non-scaling-stroke;
+		stroke-dasharray: 4 4;
+	}
+
+	.rating {
+		font-weight: 650;
+		font-variant-numeric: tabular-nums;
+		min-width: 40px;
+		text-align: right;
+	}
+
+	.rating.good {
+		color: var(--ok);
+	}
+
+	.rating.bad {
+		color: var(--danger);
 	}
 
 	.tiles div {
@@ -294,7 +401,7 @@
 
 	.match {
 		display: grid;
-		grid-template-columns: 40px minmax(0, 1fr) auto auto;
+		grid-template-columns: 40px minmax(0, 1fr) auto auto auto;
 		align-items: center;
 		gap: 12px;
 		padding: 8px 4px;
