@@ -157,7 +157,8 @@
 								{@const value = team === 'a' ? r.teamAEquipment : r.teamBEquipment}
 								{@const cash = team === 'a' ? r.teamAMoney : r.teamBMoney}
 								{@const buy = buys.get(r.number)?.[team]}
-								<div
+								<a
+									href="#round-{r.number}"
 									class="eco-cell"
 									class:won={r.winnerTeam === team}
 									class:flip={team === 'b'}
@@ -169,7 +170,7 @@
 										class="eco-bar buy-{buy ?? 'none'}"
 										style="height: {Math.max(4, ((value ?? 0) / maxEquipment) * 100)}%"
 									></span>
-								</div>
+								</a>
 							{/each}
 						</div>
 					</div>
@@ -262,8 +263,11 @@
 											title={s?.clutches
 												.map((c) => `Round ${c.round}: 1v${c.opponents} ${c.won ? 'won' : 'lost'}`)
 												.join('\n')}
-											>{won.length}/{s?.clutches.length ?? 0}{#if won.length}<span class="best"
-													>1v{Math.max(...won.map((c) => c.opponents))}</span
+											>{won.length}/{s?.clutches.length ?? 0}{#if won.length}{@const best =
+													won.reduce((a, b) => (b.opponents > a.opponents ? b : a))}<a
+													class="best"
+													href="#round-{best.round}"
+													title="Watch round {best.round}">1v{best.opponents}</a
 												>{/if}</td
 										>
 										<td>{s?.flashAssists ?? 0}</td>
@@ -495,6 +499,10 @@
 		border-radius: 4px;
 		outline: 1px solid transparent;
 		outline-offset: -1px;
+	}
+
+	a.eco-cell:hover {
+		background: color-mix(in srgb, var(--text) 8%, transparent);
 	}
 
 	.eco-cell.flip {
