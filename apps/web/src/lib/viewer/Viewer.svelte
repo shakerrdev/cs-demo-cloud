@@ -990,6 +990,7 @@
 							focus,
 							damage: config.viewer.damageNumbers,
 							killLines: config.viewer.killLines,
+							footsteps: config.viewer.footsteps,
 							view: radarView
 						});
 				}

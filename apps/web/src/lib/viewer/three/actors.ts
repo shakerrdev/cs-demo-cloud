@@ -8,6 +8,7 @@ import {
 	type RoundReplay,
 	type Side
 } from '@cs-demo-cloud/replay';
+import { recentFootsteps } from '../audio.ts';
 import { bombState, grenadePosition, type PlayerState } from '../frame.ts';
 
 export const sideColors: Record<Side, number> = { CT: 0x5aa9e6, T: 0xe8b04a };
@@ -28,6 +29,8 @@ const SMOKE_RADIUS = 144;
 const FIRE_RADIUS = 110;
 const SHOT_LENGTH = 420;
 const SHOT_TICKS = 6;
+const STEP_SECONDS = 0.7;
+const STEP_RADIUS = 110;
 const DEG = Math.PI / 180;
 const STRIDE = 42;
 
@@ -217,10 +220,12 @@ export class Actors {
 	private sphere = new THREE.SphereGeometry(1, 24, 16);
 	private disc = new THREE.CircleGeometry(1, 40);
 	private ring = new THREE.RingGeometry(0.82, 1, 48);
+	private stepRing = new THREE.RingGeometry(0.93, 1, 48);
 	private smokes: Pool;
 	private fires: Pool;
 	private blasts: Pool;
 	private rings: Pool;
+	private steps: Pool;
 	private bomb: THREE.Mesh;
 	private color = new THREE.Color();
 	private color2 = new THREE.Color();
@@ -230,6 +235,7 @@ export class Actors {
 	private vector2 = new THREE.Vector3();
 	private capsules = true;
 	private simpleEffects = true;
+	private footsteps = true;
 
 	constructor() {
 		this.bodyGeometry.rotateX(Math.PI / 2);
@@ -297,6 +303,19 @@ export class Actors {
 					new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
 				)
 		);
+		this.steps = new Pool(
+			this.root,
+			() =>
+				new THREE.Mesh(
+					this.stepRing,
+					new THREE.MeshBasicMaterial({
+						transparent: true,
+						depthWrite: false,
+						side: THREE.DoubleSide
+					})
+				),
+			0.5
+		);
 		this.rings = new Pool(
 			this.root,
 			() =>
@@ -355,6 +374,10 @@ export class Actors {
 		this.capsules = visible;
 	}
 
+	setFootsteps(visible: boolean) {
+		this.footsteps = visible;
+	}
+
 	setSimpleEffects(visible: boolean) {
 		this.simpleEffects = visible;
 	}
@@ -386,6 +409,7 @@ export class Actors {
 		this.grenadeHeads.visible = this.simpleEffects;
 		if (!this.simpleEffects) this.bomb.visible = false;
 		this.updateShots(replay, tick, players, pov);
+		this.updateSteps(replay, tick, pov);
 		this.updatePath(replay, tick, path);
 	}
 
@@ -704,6 +728,22 @@ export class Actors {
 		);
 	}
 
+	private updateSteps(replay: RoundReplay, tick: number, pov: number | null) {
+		const { meta } = replay;
+		this.steps.begin();
+		for (const step of this.footsteps ? recentFootsteps(replay, tick, STEP_SECONDS) : []) {
+			const player = meta.players[step.player];
+			if (!player || step.player === pov) continue;
+			const age = (tick - step.tick) / meta.tickRate / STEP_SECONDS;
+			const mesh = this.steps.next();
+			mesh.position.set(step.x, step.y, step.z + 3);
+			mesh.scale.setScalar(STEP_RADIUS * (0.25 + 0.75 * age));
+			mesh.material.color.setHex(sideColors[player.side]);
+			mesh.material.opacity = 0.55 * (1 - age);
+		}
+		this.steps.end();
+	}
+
 	private updateShots(
 		replay: RoundReplay,
 		tick: number,
@@ -737,6 +777,7 @@ export class Actors {
 		this.sphere.dispose();
 		this.disc.dispose();
 		this.ring.dispose();
+		this.stepRing.dispose();
 		for (const actor of this.players) {
 			actor.body.material.dispose();
 			actor.ghost.material.dispose();
@@ -756,6 +797,6 @@ export class Actors {
 		(this.path.object.material as THREE.Material).dispose();
 		(this.trails.object.material as THREE.Material).dispose();
 		(this.shots.object.material as THREE.Material).dispose();
-		for (const pool of [this.smokes, this.fires, this.blasts, this.rings]) pool.dispose();
+		for (const pool of [this.smokes, this.fires, this.blasts, this.rings, this.steps]) pool.dispose();
 	}
 }

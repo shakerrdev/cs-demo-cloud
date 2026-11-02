@@ -14,6 +14,7 @@ import {
 	playerStates,
 	type PlayerState
 } from './frame.ts';
+import { recentFootsteps } from './audio.ts';
 
 export const sideColors: Record<Side, string> = { CT: '#5aa9e6', T: '#e8b04a' };
 
@@ -29,6 +30,8 @@ const SMOKE_RADIUS = 144;
 const FIRE_RADIUS = 110;
 const SHOT_LENGTH = 360;
 const KILL_LINE_SECONDS = 2.5;
+const STEP_SECONDS = 0.7;
+const STEP_RADIUS = 110;
 
 export interface DrawOptions {
 	ctx: CanvasRenderingContext2D;
@@ -43,6 +46,7 @@ export interface DrawOptions {
 	labels?: boolean;
 	damage?: boolean;
 	killLines?: boolean;
+	footsteps?: boolean;
 	view?: RadarView;
 }
 
@@ -257,6 +261,22 @@ export function drawFrame(options: DrawOptions): PlayerState[] {
 	}
 
 	const players = playerStates(replay, tick);
+
+	if (options.footsteps !== false) {
+		ctx.lineWidth = 1.5 * pixelRatio;
+		for (const step of recentFootsteps(replay, tick, STEP_SECONDS)) {
+			const player = meta.players[step.player];
+			if (!player) continue;
+			const age = (tick - step.tick) / meta.tickRate / STEP_SECONDS;
+			const { px, py } = project(step.x, step.y);
+			ctx.globalAlpha = 0.45 * (1 - age) * levelAlpha(step.z);
+			ctx.strokeStyle = sideColors[player.side];
+			ctx.beginPath();
+			ctx.arc(px, py, unitsToPx(STEP_RADIUS * (0.25 + 0.75 * age)), 0, Math.PI * 2);
+			ctx.stroke();
+		}
+		ctx.globalAlpha = 1;
+	}
 
 	if (options.killLines !== false) {
 		const window = KILL_LINE_SECONDS * meta.tickRate;

@@ -740,6 +740,7 @@ export class ReplayScene {
 		const models = this.models?.active && debug.models ? this.models : null;
 		profiler.begin('actors');
 		this.actors.setCapsules(!this.models?.active);
+		this.actors.setFootsteps(this.config.viewer.footsteps);
 		this.actors.update(
 			replay,
 			tick,
