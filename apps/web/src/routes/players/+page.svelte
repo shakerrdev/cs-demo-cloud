@@ -70,8 +70,9 @@
 				{#each shown as p (p.steamid)}
 					<tr>
 						<td class="name"
-							><a href="/players/{p.steamid}">{p.name}</a
-							>{#if p.steamid === data.ownSteamId}<span class="you">you</span>{/if}</td
+							><a href="/players/{p.steamid}">{p.name}</a>{#if p.steamid === data.ownSteamId}<span
+									class="you">you</span
+								>{/if}</td
 						>
 						<td>{p.matches}</td>
 						<td>{Math.round(p.win * 100)}%</td>

@@ -797,6 +797,7 @@ export class Actors {
 		(this.path.object.material as THREE.Material).dispose();
 		(this.trails.object.material as THREE.Material).dispose();
 		(this.shots.object.material as THREE.Material).dispose();
-		for (const pool of [this.smokes, this.fires, this.blasts, this.rings, this.steps]) pool.dispose();
+		for (const pool of [this.smokes, this.fires, this.blasts, this.rings, this.steps])
+			pool.dispose();
 	}
 }
