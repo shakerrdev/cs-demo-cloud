@@ -429,6 +429,22 @@ export class GameEffects {
 		this.updateShots(replay, tick, players, muzzle);
 	}
 
+	warm() {
+		this.smoke(0);
+		this.fire(0);
+		this.blast(0);
+		this.muzzle(0);
+		const hidden: THREE.Object3D[] = [];
+		this.root.traverse((object) => {
+			if (object.visible) return;
+			hidden.push(object);
+			object.visible = true;
+		});
+		return () => {
+			for (const object of hidden) object.visible = false;
+		};
+	}
+
 	private smoke(index: number): Smoke {
 		let smoke = this.smokes[index];
 		if (!smoke) {

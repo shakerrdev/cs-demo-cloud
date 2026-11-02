@@ -506,11 +506,16 @@ export class ReplayScene {
 				this.scene.add(pack.main);
 				if (this.mapObject) this.mapObject.visible = false;
 				this.models?.setShading(pack.characterShading);
-				void import('./cs2/effects.ts').then(({ GameEffects }) => {
+				void import('./cs2/effects.ts').then(async ({ GameEffects }) => {
 					if (this.pack !== pack) return;
-					this.effects = new GameEffects();
-					this.effects.setShading(pack.characterShading);
-					this.scene.add(this.effects.root);
+					const effects = new GameEffects();
+					effects.setShading(pack.characterShading);
+					const restore = effects.warm();
+					await this.compile(effects.root, pack.post.target);
+					restore();
+					if (this.pack !== pack) return effects.dispose();
+					this.effects = effects;
+					this.scene.add(effects.root);
 					this.actors.setSimpleEffects(false);
 					this.dirty = true;
 				});
