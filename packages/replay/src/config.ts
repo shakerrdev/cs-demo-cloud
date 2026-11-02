@@ -47,6 +47,7 @@ export interface AppConfig {
 		nameplates: boolean;
 		damageNumbers: boolean;
 		killLines: boolean;
+		footsteps: boolean;
 	};
 	pov: {
 		fov: number;
@@ -121,7 +122,8 @@ export const defaultConfig: AppConfig = {
 		xray: true,
 		nameplates: true,
 		damageNumbers: true,
-		killLines: true
+		killLines: true,
+		footsteps: true
 	},
 	pov: {
 		fov: 90,
@@ -275,7 +277,8 @@ export const configSections: ConfigSection[] = [
 			{ path: 'viewer.xray', label: 'Show players through walls (X-ray)', kind: 'toggle' },
 			{ path: 'viewer.nameplates', label: 'Names over players in Free and Follow', kind: 'toggle' },
 			{ path: 'viewer.damageNumbers', label: 'Damage numbers over hit players', kind: 'toggle' },
-			{ path: 'viewer.killLines', label: 'Lines from killer to victim on kills', kind: 'toggle' }
+			{ path: 'viewer.killLines', label: 'Lines from killer to victim on kills', kind: 'toggle' },
+			{ path: 'viewer.footsteps', label: 'Rings where players make footstep noise', kind: 'toggle' }
 		]
 	},
 	{
