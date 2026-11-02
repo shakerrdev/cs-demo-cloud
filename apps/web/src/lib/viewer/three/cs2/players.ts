@@ -1130,6 +1130,50 @@ export class PlayerModels {
 		});
 	}
 
+	async preload(replay: RoundReplay): Promise<THREE.Group | null> {
+		if (!this.active) return null;
+		const { meta, columns } = replay;
+		const wanted = new Map<string, { key: string; skin: ReplaySkin | null }>();
+		meta.players.forEach((player, p) => {
+			const used = new Set<number>();
+			const start = p * meta.frameCount;
+			for (let i = 0; i < meta.frameCount; i++) used.add(columns.weapon[start + i]!);
+			const skins = new Set<number>();
+			const changes = meta.skinChanges ?? [];
+			for (let i = 0; i < changes.length; i += 3)
+				if (changes[i + 1] === p) skins.add(changes[i + 2]!);
+			for (const index of used) {
+				const key = weaponKey(meta.weapons[index] ?? '');
+				if (!key) continue;
+				const model = weaponModelKey(key, player.side);
+				if (!model) continue;
+				wanted.set(model, { key: model, skin: null });
+				for (const s of skins) {
+					const skin = meta.skins?.[s];
+					if (skin && itemWeaponKey(skin.item) === key)
+						wanted.set(`${model}|${skin.paint}|${skin.wear}`, { key: model, skin });
+				}
+			}
+		});
+		const loaded = await Promise.all(
+			[...wanted.values()].map(({ key, skin }) => this.pack.weapon(key, skin))
+		);
+		if (!this.active) return null;
+		const group = new THREE.Group();
+		for (const template of loaded) {
+			if (!template) continue;
+			const weapon = cloneSkinned(template.scene);
+			weapon.traverse((object) => {
+				const mesh = object as THREE.Mesh;
+				if (!mesh.isMesh) return;
+				const material = this.pack.material((mesh.userData.extras ?? {}) as MaterialExtras);
+				if (material) mesh.material = material;
+			});
+			group.add(weapon);
+		}
+		return group;
+	}
+
 	muzzle(player: PlayerState, target: THREE.Vector3): THREE.Vector3 | null {
 		return this.active ? (this.models[player.index]?.muzzle(player, target) ?? null) : null;
 	}

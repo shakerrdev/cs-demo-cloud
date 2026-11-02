@@ -558,6 +558,13 @@ export class ReplayScene {
 			});
 	}
 
+	private async warmRound(replay: RoundReplay) {
+		const models = this.models;
+		const group = await models?.preload(replay);
+		if (!group || models !== this.models || !this.pack) return;
+		await this.compile(group, this.pack.post.target);
+	}
+
 	private async compile(object: THREE.Object3D, target: THREE.WebGLRenderTarget | null) {
 		const previous = this.renderer.getRenderTarget();
 		this.renderer.setRenderTarget(target);
@@ -682,6 +689,7 @@ export class ReplayScene {
 			this.round = replay.meta.round;
 			this.actors.setPlayers(replay.meta.players);
 			this.models?.setPlayers(replay.meta.players, sideColors);
+			this.warmRound(replay);
 			this.updateHeightRange(replay);
 			this.dirty = true;
 		}
